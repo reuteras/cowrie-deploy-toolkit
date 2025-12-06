@@ -35,30 +35,51 @@ echo "[*] Installing system dependencies..."
 apt-get update -qq
 apt-get install -y \
     python3 \
-    python3-pip \
     yara \
     geoipupdate \
     git \
     sqlite3 \
+    curl \
     > /dev/null 2>&1
 
 echo "[*] System dependencies installed"
 
 # ============================================================
-# STEP 2 — Install Python dependencies
+# STEP 2 — Install uv (modern Python package manager)
 # ============================================================
 
-echo "[*] Installing Python dependencies..."
+echo "[*] Installing uv..."
 
-pip3 install --quiet \
-    requests \
-    geoip2 \
-    yara-python
-
-echo "[*] Python dependencies installed"
+if ! command -v uv &> /dev/null; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
+    # Add uv to PATH for current session
+    export PATH="$HOME/.cargo/bin:$PATH"
+    echo "[*] uv installed successfully"
+else
+    echo "[*] uv already installed"
+fi
 
 # ============================================================
-# STEP 3 — Create directory structure
+# STEP 3 — Install Python dependencies using uv
+# ============================================================
+
+echo "[*] Installing Python dependencies with uv..."
+
+# Assume the toolkit is already in /opt/cowrie
+if [ -f "/opt/cowrie/pyproject.toml" ]; then
+    cd /opt/cowrie
+    uv sync --quiet 2>/dev/null || {
+        echo "[!] Warning: uv sync failed, falling back to pip"
+        pip3 install --quiet requests geoip2 yara-python
+    }
+    echo "[*] Python dependencies installed"
+else
+    echo "[!] Warning: pyproject.toml not found, installing with pip"
+    pip3 install --quiet requests geoip2 yara-python
+fi
+
+# ============================================================
+# STEP 4 — Create directory structure
 # ============================================================
 
 echo "[*] Creating directory structure..."
@@ -72,7 +93,7 @@ mkdir -p /opt/cowrie/var
 echo "[*] Directory structure created"
 
 # ============================================================
-# STEP 4 — Configure MaxMind GeoIP (requires manual setup)
+# STEP 5 — Configure MaxMind GeoIP (requires manual setup)
 # ============================================================
 
 echo ""
@@ -105,7 +126,7 @@ fi
 echo ""
 
 # ============================================================
-# STEP 5 — Download YARA rules
+# STEP 6 — Download YARA rules
 # ============================================================
 
 echo "[*] Downloading YARA rules..."
@@ -143,7 +164,7 @@ RULE_COUNT=$(find /opt/cowrie/yara-rules -name "*.yar" -o -name "*.yara" | wc -l
 echo "[*] Downloaded $RULE_COUNT YARA rule files"
 
 # ============================================================
-# STEP 6 — Create example configuration
+# STEP 7 — Create example configuration
 # ============================================================
 
 echo "[*] Creating example configuration..."
@@ -194,12 +215,20 @@ else
 fi
 
 # ============================================================
-# STEP 7 — Set up cron job
+# STEP 8 — Set up cron job
 # ============================================================
 
 echo "[*] Setting up cron job..."
 
-CRON_ENTRY="0 6 * * * source /opt/cowrie/etc/report.env && /usr/bin/python3 /opt/cowrie/scripts/daily-report.py 2>&1 | logger -t cowrie-report"
+# Use uv if available, otherwise fall back to python3
+if command -v uv &> /dev/null && [ -f "/opt/cowrie/pyproject.toml" ]; then
+    UV_PATH="$HOME/.cargo/bin/uv"
+    CRON_ENTRY="0 6 * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && $UV_PATH run scripts/daily-report.py 2>&1 | logger -t cowrie-report"
+    echo "[*] Will use uv for cron job"
+else
+    CRON_ENTRY="0 6 * * * source /opt/cowrie/etc/report.env && /usr/bin/python3 /opt/cowrie/scripts/daily-report.py 2>&1 | logger -t cowrie-report"
+    echo "[*] Will use python3 for cron job"
+fi
 
 # Check if cron job already exists
 if crontab -l 2>/dev/null | grep -q "daily-report.py"; then
@@ -211,7 +240,7 @@ else
 fi
 
 # ============================================================
-# STEP 8 — Test installation
+# STEP 9 — Test installation
 # ============================================================
 
 echo ""
@@ -275,11 +304,19 @@ echo "   - Webhook URLs (optional, for Slack/Discord/Teams)"
 echo ""
 echo "3. Test the report:"
 echo "   source /opt/cowrie/etc/report.env"
-echo "   python3 /opt/cowrie/scripts/daily-report.py --test"
+if command -v uv &> /dev/null && [ -f "/opt/cowrie/pyproject.toml" ]; then
+    echo "   cd /opt/cowrie && uv run scripts/daily-report.py --test"
+else
+    echo "   python3 /opt/cowrie/scripts/daily-report.py --test"
+fi
 echo ""
 echo "4. Send a test email:"
 echo "   source /opt/cowrie/etc/report.env"
-echo "   python3 /opt/cowrie/scripts/daily-report.py --hours 168"
+if command -v uv &> /dev/null && [ -f "/opt/cowrie/pyproject.toml" ]; then
+    echo "   cd /opt/cowrie && uv run scripts/daily-report.py --hours 168"
+else
+    echo "   python3 /opt/cowrie/scripts/daily-report.py --hours 168"
+fi
 echo ""
 echo "The report will run automatically daily at 6 AM via cron."
 echo ""

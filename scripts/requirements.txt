@@ -1,4 +1,15 @@
 # Cowrie Daily Report Requirements
+#
+# DEPRECATED: This file is kept for backward compatibility only.
+# Please use pyproject.toml and uv for dependency management instead.
+#
+# Installation with uv (recommended):
+#   curl -LsSf https://astral.sh/uv/install.sh | sh
+#   uv sync
+#
+# Installation with pip (legacy):
+#   pip3 install -r requirements.txt
+#
 
 # HTTP requests (VirusTotal, webhooks, SendGrid/Mailgun)
 requests>=2.31.0
@@ -8,6 +19,3 @@ geoip2>=4.7.0
 
 # YARA malware scanning
 yara-python>=4.3.1
-
-# Email sending (standard library, no install needed for smtplib)
-# But we'll add these for completeness

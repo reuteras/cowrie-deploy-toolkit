@@ -19,15 +19,26 @@ Automated daily reporting with threat intelligence enrichment for Cowrie honeypo
 On your Cowrie honeypot server:
 
 ```bash
-# Install Python dependencies
-cd /opt/cowrie/scripts
-pip3 install -r requirements.txt
+# Install uv (modern Python package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone or upload the cowrie-deploy-toolkit to /opt/cowrie
+cd /opt/cowrie
+
+# Install Python dependencies using uv
+uv sync
 
 # Install YARA system package (Debian/Ubuntu)
 apt-get install -y yara
 
 # Or install from source for latest version
 # See: https://yara.readthedocs.io/en/stable/gettingstarted.html
+```
+
+**Alternative (using pip):** If you prefer traditional pip:
+```bash
+cd /opt/cowrie
+pip3 install -e .
 ```
 
 ### 2. Download MaxMind GeoLite2 Databases
@@ -148,15 +159,18 @@ Add to root's crontab:
 # Edit crontab
 crontab -e
 
-# Add this line to run daily at 6 AM
+# Add this line to run daily at 6 AM (using uv)
+0 6 * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && /root/.cargo/bin/uv run scripts/daily-report.py 2>&1 | logger -t cowrie-report
+
+# Or using direct Python (if installed with pip)
 0 6 * * * source /opt/cowrie/etc/report.env && /usr/bin/python3 /opt/cowrie/scripts/daily-report.py 2>&1 | logger -t cowrie-report
 ```
 
 For testing, you can run it every hour during setup:
 
 ```bash
-# Run every hour (for testing)
-0 * * * * source /opt/cowrie/etc/report.env && /usr/bin/python3 /opt/cowrie/scripts/daily-report.py 2>&1 | logger -t cowrie-report
+# Run every hour (for testing, using uv)
+0 * * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && /root/.cargo/bin/uv run scripts/daily-report.py 2>&1 | logger -t cowrie-report
 ```
 
 ## Usage
@@ -167,17 +181,23 @@ For testing, you can run it every hour during setup:
 # Source environment variables
 source /opt/cowrie/etc/report.env
 
+# Using uv (recommended)
+cd /opt/cowrie
+
 # Run report for last 24 hours (sends email)
-python3 /opt/cowrie/scripts/daily-report.py
+uv run scripts/daily-report.py
 
 # Run report for last 6 hours
-python3 /opt/cowrie/scripts/daily-report.py --hours 6
+uv run scripts/daily-report.py --hours 6
 
 # Test mode: print to stdout instead of sending email
-python3 /opt/cowrie/scripts/daily-report.py --test
+uv run scripts/daily-report.py --test
 
 # Save to file instead of sending email
-python3 /opt/cowrie/scripts/daily-report.py --output /tmp/report.html
+uv run scripts/daily-report.py --output /tmp/report.html
+
+# Alternative: Using python3 directly (if installed with pip)
+python3 scripts/daily-report.py --test
 ```
 
 ### Configuration File

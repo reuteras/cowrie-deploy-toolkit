@@ -100,10 +100,16 @@ cd scripts
 # Configure your API keys and email settings
 nano /opt/cowrie/etc/report.env
 
-# Test the report
+# Test the report (using uv - recommended)
 source /opt/cowrie/etc/report.env
-python3 daily-report.py --test
+cd /opt/cowrie
+uv run scripts/daily-report.py --test
+
+# Or using python3 directly
+python3 scripts/daily-report.py --test
 ```
+
+**Dependencies managed with [uv](https://github.com/astral-sh/uv)** - modern, fast Python package manager
 
 **Features:**
 - 📊 Comprehensive attack statistics (connections, IPs, credentials, commands)
