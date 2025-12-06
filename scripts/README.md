@@ -35,12 +35,6 @@ apt-get install -y yara
 # See: https://yara.readthedocs.io/en/stable/gettingstarted.html
 ```
 
-**Alternative (using pip):** If you prefer traditional pip:
-```bash
-cd /opt/cowrie
-pip3 install -e .
-```
-
 ### 2. Download MaxMind GeoLite2 Databases
 
 Sign up for a free MaxMind account: https://www.maxmind.com/en/geolite2/signup
@@ -159,17 +153,14 @@ Add to root's crontab:
 # Edit crontab
 crontab -e
 
-# Add this line to run daily at 6 AM (using uv)
+# Add this line to run daily at 6 AM
 0 6 * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && /root/.cargo/bin/uv run scripts/daily-report.py 2>&1 | logger -t cowrie-report
-
-# Or using direct Python (if installed with pip)
-0 6 * * * source /opt/cowrie/etc/report.env && /usr/bin/python3 /opt/cowrie/scripts/daily-report.py 2>&1 | logger -t cowrie-report
 ```
 
 For testing, you can run it every hour during setup:
 
 ```bash
-# Run every hour (for testing, using uv)
+# Run every hour (for testing)
 0 * * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && /root/.cargo/bin/uv run scripts/daily-report.py 2>&1 | logger -t cowrie-report
 ```
 
@@ -180,8 +171,6 @@ For testing, you can run it every hour during setup:
 ```bash
 # Source environment variables
 source /opt/cowrie/etc/report.env
-
-# Using uv (recommended)
 cd /opt/cowrie
 
 # Run report for last 24 hours (sends email)
@@ -195,9 +184,6 @@ uv run scripts/daily-report.py --test
 
 # Save to file instead of sending email
 uv run scripts/daily-report.py --output /tmp/report.html
-
-# Alternative: Using python3 directly (if installed with pip)
-python3 scripts/daily-report.py --test
 ```
 
 ### Configuration File

@@ -1,14 +1,18 @@
-# Cowrie Daily Report Requirements
+# ============================================================
+# DEPRECATED - DO NOT USE
+# ============================================================
 #
-# DEPRECATED: This file is kept for backward compatibility only.
-# Please use pyproject.toml and uv for dependency management instead.
+# This file is DEPRECATED and kept only for backward compatibility.
 #
-# Installation with uv (recommended):
+# ⚠️  Please use pyproject.toml and uv for dependency management.
+#
+# Modern installation (uv):
 #   curl -LsSf https://astral.sh/uv/install.sh | sh
+#   cd /opt/cowrie
 #   uv sync
 #
-# Installation with pip (legacy):
-#   pip3 install -r requirements.txt
+# This requirements.txt file will be removed in a future version.
+# ============================================================
 #
 
 # HTTP requests (VirusTotal, webhooks, SendGrid/Mailgun)
