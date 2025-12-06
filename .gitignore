@@ -203,3 +203,28 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 output*
+
+# Cowrie honeypot specific
+# Output directories from generate_cowrie_fs_from_hetzner.sh
+output_*/
+
+# Reporting configuration (contains API keys and credentials)
+scripts/report.env
+scripts/report-config.json
+**/report-config.json
+**/report.env
+
+# Report cache database
+scripts/report-cache.db
+**/report-cache.db
+
+# GeoIP databases (binary files, download separately)
+**/GeoLite2-*.mmdb
+
+# YARA rules (large, download separately)
+**/yara-rules/*.yar
+**/yara-rules/*.yara
+
+# Test reports
+scripts/test-report.html
+scripts/test-report.txt
