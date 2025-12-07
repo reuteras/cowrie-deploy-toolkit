@@ -584,7 +584,7 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
         # Upload toolkit files to server
         echo "[*] Uploading reporting toolkit..."
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
-            scripts pyproject.toml /tmp/server-report.env "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
+            scripts README.md pyproject.toml /tmp/server-report.env "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
 
         # Move config to correct location
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
