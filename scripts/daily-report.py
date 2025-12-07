@@ -17,7 +17,7 @@ import json
 import os
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import sqlite3
@@ -152,7 +152,7 @@ class LogParser:
     def __init__(self, log_path: str, hours: int = 24):
         self.log_path = log_path
         self.hours = hours
-        self.cutoff_time = datetime.now() - timedelta(hours=hours)
+        self.cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
         # Statistics
         self.total_connections = 0
