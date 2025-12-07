@@ -29,10 +29,39 @@ if [ ! -d "$IDENTITY_DIR" ]; then
     exit 1
 fi
 
-# Check if master config exists
+# Default deployment configuration
+SERVER_TYPE="cpx11"
+SERVER_IMAGE="debian-13"
+SSH_KEY_NAME1="SSH Key - default"
+SSH_KEY_NAME2="ShellFish@iPhone-23112023"
+COWRIE_SSH_PORT="22"        # Cowrie listens on port 22
+REAL_SSH_PORT="2222"        # Move real SSH to 2222
+
+# Check if master config exists and read settings
 ENABLE_REPORTING="false"
 if [ -f "$MASTER_CONFIG" ]; then
-    echo "[*] Found master-config.toml, will process for deployment"
+    echo "[*] Found master-config.toml, reading deployment settings..."
+
+    # Read deployment section if present
+    if grep -q "\[deployment\]" "$MASTER_CONFIG" 2>/dev/null; then
+        # Extract server_type
+        CONFIG_SERVER_TYPE=$(grep "^server_type" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
+        [ -n "$CONFIG_SERVER_TYPE" ] && SERVER_TYPE="$CONFIG_SERVER_TYPE"
+
+        # Extract server_image
+        CONFIG_SERVER_IMAGE=$(grep "^server_image" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
+        [ -n "$CONFIG_SERVER_IMAGE" ] && SERVER_IMAGE="$CONFIG_SERVER_IMAGE"
+
+        # Extract SSH keys from array (parse ["key1", "key2"] format)
+        SSH_KEYS_LINE=$(grep "^ssh_keys" "$MASTER_CONFIG" | sed 's/.*=\s*\[\(.*\)\]/\1/')
+        if [ -n "$SSH_KEYS_LINE" ]; then
+            # Extract first and second keys
+            SSH_KEY_NAME1=$(echo "$SSH_KEYS_LINE" | sed 's/"\([^"]*\)".*/\1/')
+            SSH_KEY_NAME2=$(echo "$SSH_KEYS_LINE" | sed 's/[^,]*,\s*"\([^"]*\)".*/\1/')
+        fi
+
+        echo "[*] Using deployment config: $SERVER_TYPE, $SERVER_IMAGE"
+    fi
 
     # Check if reporting is enabled
     if grep -q "enable_reporting.*=.*true" "$MASTER_CONFIG" 2>/dev/null; then
@@ -40,17 +69,11 @@ if [ -f "$MASTER_CONFIG" ]; then
         echo "[*] Reporting is enabled in master config"
     fi
 else
-    echo "[!] Warning: master-config.toml not found, skipping automated reporting setup"
+    echo "[!] Warning: master-config.toml not found, using default settings"
     echo "[!] Copy example-config.toml to master-config.toml and customize for full features"
 fi
 
 SERVER_NAME="cowrie-honeypot-$(date +%s)"
-SERVER_TYPE="cpx11"
-SERVER_IMAGE="debian-13"
-SSH_KEY_NAME1="SSH Key - default"
-SSH_KEY_NAME2="ShellFish@iPhone-23112023"
-COWRIE_SSH_PORT="22"        # Cowrie listens on port 22
-REAL_SSH_PORT="2222"        # Move real SSH to 2222
 
 echo "[*] Deploying Cowrie honeypot from: $OUTPUT_DIR"
 
@@ -253,8 +276,8 @@ if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A $CONTENTS_DIR 2>/dev/null)" ]; then
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
         "mkdir -p /opt/cowrie/share/cowrie/contents"
 
-    # Upload contents as tarball for efficiency
-    tar czf /tmp/contents.tar.gz -C "$CONTENTS_DIR" . 2>/dev/null
+    # Upload contents as tarball for efficiency (--no-xattrs to avoid macOS extended attributes)
+    tar --no-xattrs -czf /tmp/contents.tar.gz -C "$CONTENTS_DIR" . 2>/dev/null
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
         /tmp/contents.tar.gz "root@$SERVER_IP:/tmp/contents.tar.gz" > /dev/null
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
@@ -444,6 +467,10 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     if [ -n "$MAXMIND_ACCOUNT_ID" ] && [ -n "$MAXMIND_LICENSE_KEY" ]; then
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << MAXMINDEOF
 set -e
+
+# Install geoipupdate
+DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
+DEBIAN_FRONTEND=noninteractive apt-get install -qq -y geoipupdate > /dev/null
 
 # Create GeoIP config
 cat > /etc/GeoIP.conf << 'EOF'
