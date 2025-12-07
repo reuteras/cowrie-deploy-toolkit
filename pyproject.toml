@@ -1,0 +1,104 @@
+[project]
+name = "cowrie-deploy-toolkit"
+version = "1.0.0"
+description = "Deploy realistic Cowrie SSH honeypots on Hetzner Cloud with automated daily reporting and threat intelligence"
+authors = [
+    { name = "Cowrie Deploy Toolkit Contributors" }
+]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+
+dependencies = [
+    # HTTP requests (VirusTotal, webhooks, SendGrid/Mailgun)
+    "requests>=2.31.0",
+
+    # GeoIP lookups (MaxMind GeoLite2)
+    "geoip2>=4.7.0",
+
+    # YARA malware scanning
+    "yara-python>=4.3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+]
+
+[project.scripts]
+cowrie-report = "scripts.daily_report:main"
+
+[project.urls]
+Homepage = "https://github.com/reuteras/cowrie-deploy-toolkit"
+Repository = "https://github.com/reuteras/cowrie-deploy-toolkit"
+Issues = "https://github.com/reuteras/cowrie-deploy-toolkit/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501", # line too long (handled by formatter)
+    "B008", # do not perform function calls in argument defaults
+    "C901", # too complex
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--verbose",
+    "--strict-markers",
+    "--cov=scripts",
+    "--cov-report=term-missing",
+]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "geoip2.*",
+    "yara.*",
+]
+ignore_missing_imports = true

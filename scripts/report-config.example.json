@@ -1,0 +1,38 @@
+{
+  "comment": "Example configuration for Cowrie Daily Report System",
+
+  "log_path": "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json",
+  "download_path": "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads",
+  "geoip_db_path": "/opt/cowrie/geoip/GeoLite2-City.mmdb",
+  "geoip_asn_path": "/opt/cowrie/geoip/GeoLite2-ASN.mmdb",
+  "yara_rules_path": "/opt/cowrie/yara-rules",
+  "cache_db_path": "/opt/cowrie/var/report-cache.db",
+
+  "virustotal_api_key": "YOUR_VIRUSTOTAL_API_KEY_HERE",
+  "virustotal_enabled": true,
+
+  "email_enabled": true,
+  "email_from": "honeypot@yourdomain.com",
+  "email_to": "admin@yourdomain.com",
+  "email_subject_prefix": "[Honeypot]",
+
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 587,
+  "smtp_user": "your_email@gmail.com",
+  "smtp_password": "your_app_password_here",
+  "smtp_tls": true,
+
+  "sendgrid_api_key": null,
+  "mailgun_api_key": null,
+  "mailgun_domain": null,
+
+  "slack_webhook": null,
+  "discord_webhook": null,
+  "teams_webhook": null,
+
+  "alert_threshold_connections": 100,
+  "alert_on_malware": true,
+
+  "report_hours": 24,
+  "include_map": true
+}

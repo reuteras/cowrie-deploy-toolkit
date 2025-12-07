@@ -88,12 +88,44 @@ deploy_cowrie_honeypot.sh <output_dir>
 └── Starts Cowrie container on port 22
 ```
 
+## Daily Reporting (Phase 1) ✅
+
+**NEW:** Automated daily reports with threat intelligence integration!
+
+```bash
+# After honeypot deployment, set up reporting
+cd scripts
+./setup-reporting.sh
+
+# Configure your API keys and email settings
+nano /opt/cowrie/etc/report.env
+
+# Test the report
+source /opt/cowrie/etc/report.env
+cd /opt/cowrie
+uv run scripts/daily-report.py --test
+```
+
+**Dependencies managed with [uv](https://github.com/astral-sh/uv)** - modern, fast Python package manager
+
+**Features:**
+- 📊 Comprehensive attack statistics (connections, IPs, credentials, commands)
+- 🌍 GeoIP enrichment (MaxMind GeoLite2) - country, city, ASN, organization
+- 🦠 VirusTotal malware analysis with SQLite caching
+- 🔍 YARA rule scanning for malware classification
+- 📧 Email delivery (SMTP, SendGrid, Mailgun) with beautiful HTML reports
+- 🚨 Real-time alerts via webhooks (Slack, Discord, Teams)
+- ⚡ Configurable thresholds for high attack volumes and malware downloads
+
+See [scripts/README.md](scripts/README.md) for complete setup instructions.
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for planned features:
-- Daily email reports with GeoIP, VirusTotal, and YARA integration
-- Dashboard visualization (Grafana + Loki)
-- Multi-honeypot fleet deployment
+- ✅ **Phase 1 COMPLETE:** Daily email reports with GeoIP, VirusTotal, and YARA integration
+- Phase 2: Dashboard visualization (Grafana + Loki)
+- Phase 3: Log management and extended threat intelligence
+- Future: Multi-honeypot fleet deployment, IoC sharing, IaC
 
 ## License
 
