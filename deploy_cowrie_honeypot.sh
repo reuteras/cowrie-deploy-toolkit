@@ -44,20 +44,20 @@ if [ -f "$MASTER_CONFIG" ]; then
 
     # Read deployment section if present
     if grep -q "\[deployment\]" "$MASTER_CONFIG" 2>/dev/null; then
-        # Extract server_type
-        CONFIG_SERVER_TYPE=$(grep "^server_type" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
+        # Extract server_type (match: server_type = "value" and extract value)
+        CONFIG_SERVER_TYPE=$(grep "^server_type" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
         [ -n "$CONFIG_SERVER_TYPE" ] && SERVER_TYPE="$CONFIG_SERVER_TYPE"
 
         # Extract server_image
-        CONFIG_SERVER_IMAGE=$(grep "^server_image" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
+        CONFIG_SERVER_IMAGE=$(grep "^server_image" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
         [ -n "$CONFIG_SERVER_IMAGE" ] && SERVER_IMAGE="$CONFIG_SERVER_IMAGE"
 
         # Extract SSH keys from array (parse ["key1", "key2"] format)
-        SSH_KEYS_LINE=$(grep "^ssh_keys" "$MASTER_CONFIG" | sed 's/.*=\s*\[\(.*\)\]/\1/')
+        SSH_KEYS_LINE=$(grep "^ssh_keys" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *\[(.*)\]/\1/')
         if [ -n "$SSH_KEYS_LINE" ]; then
             # Extract first and second keys
-            SSH_KEY_NAME1=$(echo "$SSH_KEYS_LINE" | sed 's/"\([^"]*\)".*/\1/')
-            SSH_KEY_NAME2=$(echo "$SSH_KEYS_LINE" | sed 's/[^,]*,\s*"\([^"]*\)".*/\1/')
+            SSH_KEY_NAME1=$(echo "$SSH_KEYS_LINE" | sed -E 's/"([^"]+)".*/\1/')
+            SSH_KEY_NAME2=$(echo "$SSH_KEYS_LINE" | sed -E 's/[^,]*, *"([^"]+)".*/\1/')
         fi
 
         echo "[*] Using deployment config: $SERVER_TYPE, $SERVER_IMAGE"
@@ -453,8 +453,8 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     echo "[*] Setting up MaxMind GeoIP auto-updates..."
 
     # Extract MaxMind credentials from master config
-    MAXMIND_ACCOUNT_ID=$(grep "maxmind_account_id" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/')
-    MAXMIND_LICENSE_KEY=$(grep "maxmind_license_key" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/')
+    MAXMIND_ACCOUNT_ID=$(grep "maxmind_account_id" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+    MAXMIND_LICENSE_KEY=$(grep "maxmind_license_key" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
 
     # Execute commands if they look like "op read" commands
     if echo "$MAXMIND_ACCOUNT_ID" | grep -q "^op read"; then
@@ -506,8 +506,8 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     echo "[*] Setting up Postfix for Scaleway Transactional Email..."
 
     # Extract SMTP credentials from master config
-    SMTP_USER=$(grep "smtp_user" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
-    SMTP_PASSWORD=$(grep "smtp_password" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
+    SMTP_USER=$(grep "smtp_user" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+    SMTP_PASSWORD=$(grep "smtp_password" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
 
     # Execute commands if they look like "op read" commands
     if echo "$SMTP_USER" | grep -q "^op read"; then
