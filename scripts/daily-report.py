@@ -159,8 +159,11 @@ class LogParser:
         self.unique_ips = set()
         self.credentials = Counter()
         self.commands = []
+        self.command_counts = Counter()  # Track command frequency
         self.sessions = defaultdict(dict)
+        self.session_commands = defaultdict(list)  # Track commands per session
         self.downloads = []
+        self.download_counts = Counter()  # Track download frequency by hash
         self.ip_list = []
 
     def parse(self) -> dict:
@@ -222,16 +225,22 @@ class LogParser:
                     'session': session,
                     'src_ip': src_ip
                 })
+                self.command_counts[command] += 1
+                if session:
+                    self.session_commands[session].append(command)
 
         # File downloads
         elif event_id == 'cowrie.session.file_download':
+            shasum = entry.get('shasum', '')
             self.downloads.append({
                 'url': entry.get('url', ''),
-                'shasum': entry.get('shasum', ''),
+                'shasum': shasum,
                 'outfile': entry.get('outfile', ''),
                 'timestamp': entry['timestamp'],
                 'src_ip': src_ip
             })
+            if shasum:
+                self.download_counts[shasum] += 1
 
         # Session close
         elif event_id == 'cowrie.session.closed':
@@ -251,6 +260,20 @@ class LogParser:
 
         avg_duration = sum(durations) / len(durations) if durations else 0
 
+        # Get unique downloads (deduplicated by hash)
+        unique_downloads = {}
+        for download in self.downloads:
+            shasum = download['shasum']
+            if shasum and shasum not in unique_downloads:
+                unique_downloads[shasum] = download
+
+        # Sort sessions by number of commands (most interesting first)
+        sessions_by_activity = sorted(
+            self.session_commands.items(),
+            key=lambda x: len(x[1]),
+            reverse=True
+        )
+
         return {
             'total_connections': self.total_connections,
             'unique_ips': len(self.unique_ips),
@@ -258,8 +281,12 @@ class LogParser:
             'unique_ip_set': self.unique_ips,
             'top_credentials': self.credentials.most_common(10),
             'commands': self.commands,
+            'top_commands': self.command_counts.most_common(20),  # Top 20 commands with counts
             'sessions_with_commands': len(set(cmd['session'] for cmd in self.commands if cmd['session'])),
+            'sessions_by_activity': sessions_by_activity,  # Sessions sorted by command count
             'downloads': self.downloads,
+            'unique_downloads': unique_downloads,  # Deduplicated downloads
+            'download_counts': self.download_counts,  # Download frequency
             'avg_session_duration': avg_duration,
             'total_sessions': len(self.sessions)
         }
@@ -463,7 +490,7 @@ class ReportGenerator:
         lines.append(f"Connections:              {self.stats['total_connections']}")
         lines.append(f"Unique IPs:               {self.stats['unique_ips']}")
         lines.append(f"Sessions with commands:   {self.stats['sessions_with_commands']}")
-        lines.append(f"Files downloaded:         {len(self.stats['downloads'])}")
+        lines.append(f"Files downloaded:         {len(self.stats['downloads'])} ({len(self.stats['unique_downloads'])} unique)")
         lines.append(f"Avg session duration:     {self.stats['avg_session_duration']:.1f} seconds")
         lines.append("")
 
@@ -490,7 +517,10 @@ class ReportGenerator:
             lines.append("DOWNLOADED FILES")
             lines.append("-" * 70)
             for file_info in self.file_analysis:
-                lines.append(f"SHA256: {file_info['sha256']}")
+                sha256 = file_info['sha256']
+                download_count = self.stats['download_counts'].get(sha256, 1)
+                lines.append(f"SHA256: {sha256}")
+                lines.append(f"  Downloads:   {download_count}x")
                 lines.append(f"  Size:        {file_info['size']} bytes")
                 if file_info.get('yara_matches'):
                     lines.append(f"  YARA:        {', '.join(file_info['yara_matches'])}")
@@ -500,14 +530,24 @@ class ReportGenerator:
                     lines.append(f"  VT Link:     {vt['link']}")
                 lines.append("")
 
-        # Notable commands
-        if self.stats['commands']:
-            lines.append("NOTABLE COMMANDS")
+        # Top commands (deduplicated with counts)
+        if self.stats['top_commands']:
+            lines.append("TOP COMMANDS")
             lines.append("-" * 70)
-            for cmd in self.stats['commands'][:20]:  # Top 20 commands
-                lines.append(f"{cmd['src_ip']:15s} | {cmd['command']}")
-            if len(self.stats['commands']) > 20:
-                lines.append(f"... and {len(self.stats['commands']) - 20} more commands")
+            for command, count in self.stats['top_commands']:
+                lines.append(f"{count:4d}x | {command}")
+            lines.append("")
+
+        # Most active sessions
+        if self.stats['sessions_by_activity']:
+            lines.append("MOST ACTIVE SESSIONS (by command count)")
+            lines.append("-" * 70)
+            for session_id, commands in self.stats['sessions_by_activity'][:10]:
+                lines.append(f"Session {session_id[:16]}... ({len(commands)} commands)")
+                for cmd in commands[:5]:  # Show first 5 commands
+                    lines.append(f"  → {cmd}")
+                if len(commands) > 5:
+                    lines.append(f"  ... and {len(commands) - 5} more commands")
             lines.append("")
 
         return "\n".join(lines)
@@ -629,6 +669,7 @@ class ReportGenerator:
             <div class="stat-box">
                 <div class="stat-label">Files Downloaded</div>
                 <div class="stat-value">{len(self.stats['downloads'])}</div>
+                <div class="stat-label" style="margin-top:5px;font-size:12px;">({len(self.stats['unique_downloads'])} unique)</div>
             </div>
         </div>
 """
@@ -694,11 +735,18 @@ class ReportGenerator:
         </div>
 """
 
+                sha256 = file_info['sha256']
+                download_count = self.stats['download_counts'].get(sha256, 1)
+
                 html += f"""
         <table>
             <tr>
                 <td><strong>SHA256:</strong></td>
-                <td><code>{file_info['sha256']}</code></td>
+                <td><code>{sha256}</code></td>
+            </tr>
+            <tr>
+                <td><strong>Downloads:</strong></td>
+                <td>{download_count}x</td>
             </tr>
             <tr>
                 <td><strong>Size:</strong></td>
@@ -731,20 +779,45 @@ class ReportGenerator:
         </table>
 """
 
-        # Notable commands
-        if self.stats['commands']:
+        # Top commands
+        if self.stats['top_commands']:
             html += """
-        <h2>💻 Notable Commands Executed</h2>
+        <h2>💻 Top Commands Executed</h2>
+        <table>
+            <tr>
+                <th>Count</th>
+                <th>Command</th>
+            </tr>
 """
-            for cmd in self.stats['commands'][:20]:
+            for command, count in self.stats['top_commands']:
                 html += f"""
+            <tr>
+                <td>{count}</td>
+                <td><code>{command}</code></td>
+            </tr>
+"""
+            html += """
+        </table>
+"""
+
+        # Most active sessions
+        if self.stats['sessions_by_activity']:
+            html += """
+        <h2>🎯 Most Active Sessions</h2>
+"""
+            for session_id, commands in self.stats['sessions_by_activity'][:10]:
+                html += f"""
+        <h3>Session {session_id[:16]}... ({len(commands)} commands)</h3>
+"""
+                for cmd in commands[:10]:  # Show first 10 commands
+                    html += f"""
         <div class="command">
-            <strong>{cmd['src_ip']}</strong> &gt; {cmd['command']}
+            {cmd}
         </div>
 """
-            if len(self.stats['commands']) > 20:
-                html += f"""
-        <p><em>... and {len(self.stats['commands']) - 20} more commands</em></p>
+                if len(commands) > 10:
+                    html += f"""
+        <p><em>... and {len(commands) - 10} more commands</em></p>
 """
 
         html += """
@@ -1019,8 +1092,10 @@ def main():
     file_analysis = []
     cache = CacheDB(config.get('cache_db_path'))
 
-    if stats['downloads']:
-        print(f"[*] Analyzing {len(stats['downloads'])} downloaded files...")
+    if stats['unique_downloads']:
+        total_downloads = len(stats['downloads'])
+        unique_downloads = len(stats['unique_downloads'])
+        print(f"[*] Analyzing {unique_downloads} unique files ({total_downloads} total downloads)...")
 
         vt_scanner = None
         if config.get('virustotal_enabled') and config.get('virustotal_api_key'):
@@ -1030,8 +1105,7 @@ def main():
 
         download_path = config.get('download_path')
 
-        for download in stats['downloads']:
-            sha256 = download['shasum']
+        for sha256, download in stats['unique_downloads'].items():
             file_path = os.path.join(download_path, sha256) if download_path else None
 
             file_info = {
