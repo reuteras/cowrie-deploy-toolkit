@@ -1,0 +1,71 @@
+# Cowrie Honeypot Deployment - Master Configuration
+#
+# This is an example configuration file. Copy to master-config.toml and customize.
+# Commands starting with "op read" will be executed to fetch secrets from 1Password.
+#
+# Usage:
+#   cp example-config.toml master-config.toml
+#   # Edit master-config.toml with your settings
+#   ./deploy_cowrie_honeypot.sh ./output_YYYYMMDD_HHMMSS
+
+[honeypot]
+# Enable automated daily reporting (set to false to skip reporting setup)
+enable_reporting = true
+
+# MaxMind GeoIP credentials (free account: https://www.maxmind.com/en/geolite2/signup)
+# Can use commands like: "op read op://Personal/MaxMind/account_id"
+maxmind_account_id = "YOUR_ACCOUNT_ID"
+maxmind_license_key = "YOUR_LICENSE_KEY"
+
+[reporting]
+# Number of commands to show per session before "... and X more" (default: 20)
+max_commands_per_session = 20
+
+# VirusTotal API key (free: https://www.virustotal.com/)
+virustotal_api_key = "YOUR_VT_API_KEY"
+# Or fetch from 1Password: "op read op://Personal/VirusTotal/api_key"
+
+# Report recipients
+email_from = "honeypot@yourdomain.com"
+email_to = "admin@yourdomain.com"
+email_subject_prefix = "[Honeypot]"
+
+[email]
+# Scaleway Transactional Email settings
+# Docs: https://www.scaleway.com/en/docs/managed-services/transactional-email/
+smtp_host = "smtp.tem.scw.cloud"
+smtp_port = 587
+smtp_user = "YOUR_SMTP_USERNAME"
+# Or: "op read op://Personal/Scaleway/smtp_user"
+smtp_password = "YOUR_SMTP_PASSWORD"
+# Or: "op read op://Personal/Scaleway/smtp_password"
+smtp_tls = true
+
+# Alternative: SendGrid API
+# sendgrid_api_key = "op read op://Personal/SendGrid/api_key"
+
+# Alternative: Mailgun API
+# mailgun_api_key = "op read op://Personal/Mailgun/api_key"
+# mailgun_domain = "mg.yourdomain.com"
+
+[alerts]
+# Webhook URLs for real-time alerts (optional)
+# slack_webhook = "op read op://Personal/Slack/honeypot_webhook"
+# discord_webhook = "op read op://Personal/Discord/honeypot_webhook"
+# teams_webhook = "op read op://Personal/Teams/honeypot_webhook"
+
+# Alert thresholds
+alert_threshold_connections = 100
+alert_on_malware = true
+
+[advanced]
+# Report generation interval (hours)
+report_hours = 24
+
+# Paths (usually don't need to change these)
+log_path = "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json"
+download_path = "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
+geoip_db_path = "/opt/cowrie/geoip/GeoLite2-City.mmdb"
+geoip_asn_path = "/opt/cowrie/geoip/GeoLite2-ASN.mmdb"
+yara_rules_path = "/opt/cowrie/yara-rules"
+cache_db_path = "/opt/cowrie/var/report-cache.db"
