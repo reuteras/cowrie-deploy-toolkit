@@ -34,7 +34,6 @@ echo "[*] Installing system dependencies..."
 apt-get update -qq
 apt-get install -y \
     python3 \
-    python3-pip \
     yara \
     geoipupdate \
     git \
@@ -52,17 +51,18 @@ echo "[*] Installing uv..."
 
 if ! command -v uv &> /dev/null; then
     curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
-    # Add to PATH
+    # Add uv to PATH (installs to ~/.local/bin by default)
     export PATH="$HOME/.local/bin:$PATH"
     echo "[*] uv installed successfully"
 else
     echo "[*] uv already installed"
 fi
 
-# Verify uv is available
+# Verify uv is available (required - no fallback)
 if ! command -v uv &> /dev/null; then
-    echo "[!] Error: uv installation succeeded but command not found in PATH"
-    exit
+    echo "[!] Error: uv installation failed and is required for this setup"
+    echo "[!] Please install uv manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
 fi
 
 # ============================================================
@@ -72,17 +72,14 @@ fi
 echo "[*] Installing Python dependencies with uv..."
 
 # Assume the toolkit is already in /opt/cowrie
-if [ -f "/opt/cowrie/pyproject.toml" ]; then
-    cd /opt/cowrie
-    if uv sync --quiet 2>&1; then
-        echo "[*] Python dependencies installed with uv"
-    else
-        echo "[!] Error: uv sync failed"
-        exit
-    fi
-else
-    exit
+if [ ! -f "/opt/cowrie/pyproject.toml" ]; then
+    echo "[!] Error: pyproject.toml not found at /opt/cowrie/pyproject.toml"
+    exit 1
 fi
+
+cd /opt/cowrie
+uv sync --quiet
+echo "[*] Python dependencies installed"
 
 # ============================================================
 # STEP 4 — Create directory structure
@@ -226,15 +223,9 @@ fi
 
 echo "[*] Setting up cron job..."
 
-# Use uv if available, otherwise fall back to python3
-if command -v uv &> /dev/null && [ -f "/opt/cowrie/pyproject.toml" ]; then
-    UV_PATH="$HOME/.cargo/bin/uv"
-    CRON_ENTRY="0 6 * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && $UV_PATH run scripts/daily-report.py 2>&1 | logger -t cowrie-report"
-    echo "[*] Will use uv for cron job"
-else
-    CRON_ENTRY="0 6 * * * source /opt/cowrie/etc/report.env && /usr/bin/python3 /opt/cowrie/scripts/daily-report.py 2>&1 | logger -t cowrie-report"
-    echo "[*] Will use python3 for cron job"
-fi
+# Use full path to uv for cron reliability
+UV_PATH="$HOME/.local/bin/uv"
+CRON_ENTRY="0 6 * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && $UV_PATH run scripts/daily-report.py 2>&1 | logger -t cowrie-report"
 
 # Check if cron job already exists
 if crontab -l 2>/dev/null | grep -q "daily-report.py"; then
@@ -310,19 +301,11 @@ echo "   - Webhook URLs (optional, for Slack/Discord/Teams)"
 echo ""
 echo "3. Test the report:"
 echo "   source /opt/cowrie/etc/report.env"
-if command -v uv &> /dev/null && [ -f "/opt/cowrie/pyproject.toml" ]; then
-    echo "   cd /opt/cowrie && uv run scripts/daily-report.py --test"
-else
-    echo "   python3 /opt/cowrie/scripts/daily-report.py --test"
-fi
+echo "   cd /opt/cowrie && uv run scripts/daily-report.py --test"
 echo ""
 echo "4. Send a test email:"
 echo "   source /opt/cowrie/etc/report.env"
-if command -v uv &> /dev/null && [ -f "/opt/cowrie/pyproject.toml" ]; then
-    echo "   cd /opt/cowrie && uv run scripts/daily-report.py --hours 168"
-else
-    echo "   python3 /opt/cowrie/scripts/daily-report.py --hours 168"
-fi
+echo "   cd /opt/cowrie && uv run scripts/daily-report.py --hours 168"
 echo ""
 echo "The report will run automatically daily at 6 AM via cron."
 echo ""

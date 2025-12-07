@@ -32,7 +32,7 @@ try:
     import smtplib
 except ImportError as e:
     print(f"Error: Missing required dependency: {e}")
-    print("Install dependencies with: pip install -r requirements.txt")
+    print("Install dependencies with: cd /opt/cowrie && uv sync")
     sys.exit(1)
 
 
