@@ -18,7 +18,6 @@ set -euo pipefail
 
 echo "[*] Cowrie Daily Report System - Setup"
 echo "========================================"
-echo ""
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
@@ -35,6 +34,7 @@ echo "[*] Installing system dependencies..."
 apt-get update -qq
 apt-get install -y \
     python3 \
+    python3-pip \
     yara \
     geoipupdate \
     git \
@@ -52,11 +52,19 @@ echo "[*] Installing uv..."
 
 if ! command -v uv &> /dev/null; then
     curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
-    # Add uv to PATH for current session
+    # Source the cargo env file created by the installer
+    [ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
+    # Also add to PATH as fallback
     export PATH="$HOME/.cargo/bin:$PATH"
     echo "[*] uv installed successfully"
 else
     echo "[*] uv already installed"
+fi
+
+# Verify uv is available
+if ! command -v uv &> /dev/null; then
+    echo "[!] Warning: uv installation succeeded but command not found in PATH"
+    echo "[!] Will fall back to pip for dependencies"
 fi
 
 # ============================================================
@@ -68,14 +76,23 @@ echo "[*] Installing Python dependencies with uv..."
 # Assume the toolkit is already in /opt/cowrie
 if [ -f "/opt/cowrie/pyproject.toml" ]; then
     cd /opt/cowrie
-    uv sync --quiet 2>/dev/null || {
-        echo "[!] Warning: uv sync failed, falling back to pip"
+    if command -v uv &> /dev/null; then
+        if uv sync --quiet 2>&1; then
+            echo "[*] Python dependencies installed with uv"
+        else
+            echo "[!] Warning: uv sync failed, falling back to pip"
+            pip3 install --quiet requests geoip2 yara-python
+            echo "[*] Python dependencies installed with pip"
+        fi
+    else
+        echo "[!] uv not available, using pip"
         pip3 install --quiet requests geoip2 yara-python
-    }
-    echo "[*] Python dependencies installed"
+        echo "[*] Python dependencies installed with pip"
+    fi
 else
     echo "[!] Warning: pyproject.toml not found, installing with pip"
     pip3 install --quiet requests geoip2 yara-python
+    echo "[*] Python dependencies installed with pip"
 fi
 
 # ============================================================
