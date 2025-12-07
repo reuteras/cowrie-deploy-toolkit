@@ -39,6 +39,10 @@ REAL_SSH_PORT="2222"        # Move real SSH to 2222
 
 # Check if master config exists and read settings
 ENABLE_REPORTING="false"
+ENABLE_WEB_DASHBOARD="false"
+WEB_BASE_URL=""
+TAILSCALE_AUTHKEY=""
+
 if [ -f "$MASTER_CONFIG" ]; then
     echo "[*] Found master-config.toml, reading deployment settings..."
 
@@ -67,6 +71,23 @@ if [ -f "$MASTER_CONFIG" ]; then
     if grep -q "enable_reporting.*=.*true" "$MASTER_CONFIG" 2>/dev/null; then
         ENABLE_REPORTING="true"
         echo "[*] Reporting is enabled in master config"
+    fi
+
+    # Check if web dashboard is enabled
+    if grep -q "\[web_dashboard\]" "$MASTER_CONFIG" 2>/dev/null; then
+        if sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
+            ENABLE_WEB_DASHBOARD="true"
+            echo "[*] Web dashboard is enabled in master config"
+
+            # Extract base URL
+            WEB_BASE_URL=$(sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep "^base_url" | head -1 | sed -E 's/^[^=]*= *"([^"]*)".*/\1/')
+
+            # Extract Tailscale auth key
+            TAILSCALE_AUTHKEY=$(sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep "^tailscale_authkey" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+            if echo "$TAILSCALE_AUTHKEY" | grep -q "^op read"; then
+                TAILSCALE_AUTHKEY=$(eval "$TAILSCALE_AUTHKEY")
+            fi
+        fi
     fi
 else
     echo "[!] Warning: master-config.toml not found, using default settings"
@@ -350,6 +371,7 @@ cat > /tmp/cowrie.cfg << EOFCFG
 hostname = $HOSTNAME
 log_path = var/log/cowrie
 download_path = var/lib/cowrie/downloads
+ttylog_path = var/lib/cowrie/tty
 
 [shell]
 filesystem = share/cowrie/fs.pickle
@@ -377,6 +399,10 @@ logfile = var/log/cowrie/cowrie.json
 [output_textlog]
 enabled = true
 logfile = var/log/cowrie/cowrie.log
+
+# TTY session recording for playback
+[output_playlog]
+enabled = true
 EOFCFG
 
 # Add VirusTotal configuration if API key is available
@@ -683,6 +709,105 @@ else
 fi
 
 # ============================================================
+# STEP 13 — Set up web dashboard (if enabled)
+# ============================================================
+
+if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
+    echo "[*] Setting up SSH Session Playback Web Dashboard..."
+
+    # Upload web service files
+    echo "[*] Uploading web service files..."
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
+        web "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
+
+    # Set up web dashboard on server
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << WEBEOF
+set -e
+
+# Create TTY log directory with correct permissions
+mkdir -p /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty
+chown -R 999:999 /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty
+
+# Create web dashboard docker-compose file
+cat > /opt/cowrie/docker-compose.yml << 'DOCKEREOF'
+services:
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: cowrie
+    restart: unless-stopped
+    ports:
+      - "22:2222"
+    volumes:
+      - cowrie-etc:/cowrie/cowrie-git/etc
+      - cowrie-var:/cowrie/cowrie-git/var
+      - /opt/cowrie/share:/cowrie/cowrie-git/share:ro
+    environment:
+      - COWRIE_HOSTNAME=server
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    networks:
+      - cowrie-internal
+
+  cowrie-web:
+    build:
+      context: /opt/cowrie/web
+      dockerfile: Dockerfile
+    image: cowrie-web:local
+    container_name: cowrie-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - cowrie-var:/cowrie-data:ro
+      - /var/lib/GeoIP:/cowrie-data/geoip:ro
+    environment:
+      - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
+      - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
+      - COWRIE_DOWNLOAD_PATH=/cowrie-data/lib/cowrie/downloads
+      - GEOIP_DB_PATH=/cowrie-data/geoip/GeoLite2-City.mmdb
+      - BASE_URL=${WEB_BASE_URL:-}
+    depends_on:
+      - cowrie
+    networks:
+      - cowrie-internal
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=10M,mode=1777
+
+volumes:
+  cowrie-etc:
+    name: cowrie-etc
+  cowrie-var:
+    name: cowrie-var
+
+networks:
+  cowrie-internal:
+    driver: bridge
+DOCKEREOF
+
+# Build and start web service
+cd /opt/cowrie
+docker compose build cowrie-web > /dev/null 2>&1
+docker compose up -d > /dev/null 2>&1
+
+echo "[*] Web dashboard deployed on localhost:5000"
+echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@SERVER_IP"
+WEBEOF
+
+    echo "[*] Web dashboard configured successfully"
+    echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
+else
+    echo "[*] Web dashboard disabled, skipping setup"
+fi
+
+# ============================================================
 # DONE
 # ============================================================
 
@@ -702,6 +827,7 @@ SSH Access:
 Monitoring:
   View logs:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.log'
   JSON logs:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'
+  TTY recordings:  ssh -p $REAL_SSH_PORT root@$SERVER_IP 'ls -la /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty/'
   Downloads:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'file /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads/*'
   Container logs:  ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose logs -f'
 
@@ -720,6 +846,16 @@ Identity used:
   Operating System: $OS_NAME
   Architecture:    $ARCH
   SSH Banner:      $SSH_BANNER
-
-============================================
 EOFINFO
+
+# Add web dashboard info if enabled
+if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
+cat << WEBINFO
+
+Web Dashboard:
+  SSH Tunnel:      ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP
+  Then open:       http://localhost:5000
+WEBINFO
+fi
+
+echo "============================================"

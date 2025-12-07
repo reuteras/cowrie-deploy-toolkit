@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Sessions - Cowrie Honeypot{% endblock %}
+
+{% block content %}
+<div class="sessions-page">
+    <div class="page-header">
+        <h1>SSH Sessions</h1>
+        <div class="filters">
+            <form method="get" class="filter-form">
+                <select name="hours" onchange="this.form.submit()">
+                    <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
+                    <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
+                    <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
+                    <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
+                </select>
+                <input type="text" name="ip" placeholder="Filter by IP" value="{{ ip_filter }}">
+                <label>
+                    <input type="checkbox" name="has_commands" value="1"
+                           {% if has_commands == '1' %}checked{% endif %}
+                           onchange="this.form.submit()">
+                    Has commands
+                </label>
+                <label>
+                    <input type="checkbox" name="has_tty" value="1"
+                           {% if has_tty == '1' %}checked{% endif %}
+                           onchange="this.form.submit()">
+                    Has TTY recording
+                </label>
+                <button type="submit">Filter</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="results-info">
+        Showing {{ sessions | length }} of {{ total }} sessions
+    </div>
+
+    <table class="data-table sessions-table">
+        <thead>
+            <tr>
+                <th>Session ID</th>
+                <th>IP Address</th>
+                <th>Country</th>
+                <th>Start Time</th>
+                <th>Duration</th>
+                <th>Credentials</th>
+                <th>Commands</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for session in sessions %}
+            <tr class="{% if session.login_success %}success-login{% endif %}">
+                <td>
+                    <a href="{{ url_for('session_detail', session_id=session.id) }}">
+                        {{ session.id | truncate_hash }}
+                    </a>
+                </td>
+                <td>
+                    <a href="?ip={{ session.src_ip }}&hours={{ hours }}">{{ session.src_ip }}</a>
+                </td>
+                <td>{{ session.geo.country if session.geo else 'Unknown' }}</td>
+                <td>{{ session.start_time | format_timestamp }}</td>
+                <td>{{ session.duration | format_duration }}</td>
+                <td>
+                    {% if session.username %}
+                    <code>{{ session.username }}:{{ session.password or '***' }}</code>
+                    {% else %}
+                    <span class="no-data">N/A</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {{ session.commands | length }}
+                    {% if session.downloads %}
+                    <span class="badge badge-warning" title="Downloaded {{ session.downloads | length }} file(s)">
+                        {{ session.downloads | length }}
+                    </span>
+                    {% endif %}
+                </td>
+                <td class="actions">
+                    <a href="{{ url_for('session_detail', session_id=session.id) }}" class="btn btn-sm">View</a>
+                    {% if session.tty_log %}
+                    <a href="{{ url_for('session_playback', session_id=session.id) }}" class="btn btn-sm btn-primary">Play</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="8" class="no-data">No sessions found</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Pagination -->
+    {% if total > per_page %}
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="?page={{ page - 1 }}&hours={{ hours }}&ip={{ ip_filter }}&has_commands={{ has_commands }}&has_tty={{ has_tty }}" class="btn">&laquo; Previous</a>
+        {% endif %}
+
+        <span class="page-info">Page {{ page }} of {{ (total // per_page) + (1 if total % per_page else 0) }}</span>
+
+        {% if page * per_page < total %}
+        <a href="?page={{ page + 1 }}&hours={{ hours }}&ip={{ ip_filter }}&has_commands={{ has_commands }}&has_tty={{ has_tty }}" class="btn">Next &raquo;</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

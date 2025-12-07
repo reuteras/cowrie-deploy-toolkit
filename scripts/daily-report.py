@@ -89,6 +89,9 @@ class Config:
             'report_hours': int(os.getenv('REPORT_HOURS', '24')),
             'max_commands_per_session': int(os.getenv('MAX_COMMANDS_PER_SESSION', '20')),
             'include_map': os.getenv('INCLUDE_MAP', 'true').lower() == 'true',
+
+            # Web dashboard settings
+            'web_base_url': os.getenv('WEB_BASE_URL', ''),
         }
 
         # Load from file if exists
@@ -497,6 +500,7 @@ class ReportGenerator:
         self.file_analysis = file_analysis
         self.config = config
         self.max_commands = config.get('max_commands_per_session', 20)
+        self.web_base_url = config.get('web_base_url', '').rstrip('/')
 
     def generate_text_report(self) -> str:
         """Generate plain text report."""
@@ -576,11 +580,20 @@ class ReportGenerator:
             lines.append("MOST ACTIVE SESSIONS (by command count)")
             lines.append("-" * 70)
             for session_id, commands in self.stats['sessions_by_activity'][:10]:
-                lines.append(f"Session {session_id[:16]}... ({len(commands)} commands)")
+                session_header = f"Session {session_id[:16]}... ({len(commands)} commands)"
+                if self.web_base_url:
+                    session_header += f" → {self.web_base_url}/session/{session_id}"
+                lines.append(session_header)
                 for cmd in commands[:self.max_commands]:
                     lines.append(f"  → {cmd}")
                 if len(commands) > self.max_commands:
                     lines.append(f"  ... and {len(commands) - self.max_commands} more commands")
+            lines.append("")
+
+        # Add web dashboard link if configured
+        if self.web_base_url:
+            lines.append("-" * 70)
+            lines.append(f"Web Dashboard: {self.web_base_url}")
             lines.append("")
 
         return "\n".join(lines)
@@ -867,8 +880,14 @@ class ReportGenerator:
         <h2>🎯 Most Active Sessions</h2>
 """
             for session_id, commands in self.stats['sessions_by_activity'][:10]:
+                if self.web_base_url:
+                    session_link = f'<a href="{self.web_base_url}/session/{session_id}">{session_id[:16]}...</a>'
+                    playback_link = f' <a href="{self.web_base_url}/session/{session_id}/playback" style="font-size: 0.8em; margin-left: 10px;">▶ Watch Recording</a>'
+                else:
+                    session_link = f'{session_id[:16]}...'
+                    playback_link = ''
                 html += f"""
-        <h3>Session {session_id[:16]}... ({len(commands)} commands)</h3>
+        <h3>Session {session_link} ({len(commands)} commands){playback_link}</h3>
 """
                 for cmd in commands[:self.max_commands]:
                     html += f"""
@@ -879,6 +898,17 @@ class ReportGenerator:
                 if len(commands) > self.max_commands:
                     html += f"""
         <p><em>... and {len(commands) - self.max_commands} more commands</em></p>
+"""
+
+        # Add web dashboard link if configured
+        if self.web_base_url:
+            html += f"""
+        <div style="margin-top: 30px; padding: 20px; background: #e8f4f8; border-radius: 8px; text-align: center;">
+            <p style="margin: 0; font-size: 14px;">
+                <strong>🖥️ Web Dashboard:</strong>
+                <a href="{self.web_base_url}" style="color: #3498db;">{self.web_base_url}</a>
+            </p>
+        </div>
 """
 
         html += """

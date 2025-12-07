@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Cowrie Honeypot{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="{{ url_for('index') }}">Cowrie Dashboard</a>
+        </div>
+        <div class="nav-links">
+            <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">Dashboard</a>
+            <a href="{{ url_for('sessions') }}" class="{% if request.endpoint == 'sessions' %}active{% endif %}">Sessions</a>
+            <a href="{{ url_for('downloads') }}" class="{% if request.endpoint == 'downloads' %}active{% endif %}">Downloads</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <p>Cowrie Honeypot Session Viewer &bull; Accessible via Tailscale only</p>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
