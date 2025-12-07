@@ -18,6 +18,9 @@ dependencies = [
 
     # YARA malware scanning
     "yara-python>=4.3.1",
+
+    # TOML config parsing
+    "tomli>=2.0.1; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]

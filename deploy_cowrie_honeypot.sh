@@ -8,12 +8,15 @@ set -euo pipefail
 if [ $# -ne 1 ]; then
     echo "Usage: $0 <output_directory>"
     echo "Example: $0 ./output_20251204_135502"
+    echo ""
+    echo "Requires master-config.toml in project root for automated reporting setup"
     exit 1
 fi
 
 OUTPUT_DIR="$1"
 IDENTITY_DIR="$OUTPUT_DIR/identity"
 FS_PICKLE="$OUTPUT_DIR/fs.pickle"
+MASTER_CONFIG="./master-config.toml"
 
 # Verify the required files exist
 if [ ! -f "$FS_PICKLE" ]; then
@@ -24,6 +27,21 @@ fi
 if [ ! -d "$IDENTITY_DIR" ]; then
     echo "Error: identity directory not found at $IDENTITY_DIR"
     exit 1
+fi
+
+# Check if master config exists
+ENABLE_REPORTING="false"
+if [ -f "$MASTER_CONFIG" ]; then
+    echo "[*] Found master-config.toml, will process for deployment"
+
+    # Check if reporting is enabled
+    if grep -q "enable_reporting.*=.*true" "$MASTER_CONFIG" 2>/dev/null; then
+        ENABLE_REPORTING="true"
+        echo "[*] Reporting is enabled in master config"
+    fi
+else
+    echo "[!] Warning: master-config.toml not found, skipping automated reporting setup"
+    echo "[!] Copy example-config.toml to master-config.toml and customize for full features"
 fi
 
 SERVER_NAME="cowrie-honeypot-$(date +%s)"
@@ -402,6 +420,162 @@ if timeout 15 bash -c "echo | nc $SERVER_IP 22" 2>/dev/null | grep -q "SSH"; the
     echo "[*] Honeypot is responding on port 22!"
 else
     echo "[!] Warning: Honeypot may not be responding correctly on port 22"
+fi
+
+# ============================================================
+# STEP 10 — Set up MaxMind GeoIP (if reporting enabled)
+# ============================================================
+
+if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
+    echo "[*] Setting up MaxMind GeoIP auto-updates..."
+
+    # Extract MaxMind credentials from master config
+    MAXMIND_ACCOUNT_ID=$(grep "maxmind_account_id" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/')
+    MAXMIND_LICENSE_KEY=$(grep "maxmind_license_key" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/')
+
+    # Execute commands if they look like "op read" commands
+    if echo "$MAXMIND_ACCOUNT_ID" | grep -q "^op read"; then
+        MAXMIND_ACCOUNT_ID=$(eval "$MAXMIND_ACCOUNT_ID")
+    fi
+    if echo "$MAXMIND_LICENSE_KEY" | grep -q "^op read"; then
+        MAXMIND_LICENSE_KEY=$(eval "$MAXMIND_LICENSE_KEY")
+    fi
+
+    if [ -n "$MAXMIND_ACCOUNT_ID" ] && [ -n "$MAXMIND_LICENSE_KEY" ]; then
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << MAXMINDEOF
+set -e
+
+# Create GeoIP config
+cat > /etc/GeoIP.conf << 'EOF'
+AccountID $MAXMIND_ACCOUNT_ID
+LicenseKey $MAXMIND_LICENSE_KEY
+EditionIDs GeoLite2-City GeoLite2-ASN
+DatabaseDirectory /opt/cowrie/geoip
+EOF
+
+# Download databases
+mkdir -p /opt/cowrie/geoip
+geoipupdate
+
+# Set up weekly auto-updates (Wednesdays at 3 AM)
+(crontab -l 2>/dev/null || echo "") | grep -v geoipupdate | crontab -
+(crontab -l; echo "0 3 * * 3 /usr/bin/geoipupdate") | crontab -
+
+echo "[*] MaxMind GeoIP databases downloaded and auto-update configured"
+MAXMINDEOF
+
+        echo "[*] MaxMind GeoIP configured successfully"
+    else
+        echo "[!] Warning: MaxMind credentials not found in master-config.toml"
+        echo "[!] GeoIP enrichment will not be available"
+    fi
+fi
+
+# ============================================================
+# STEP 11 — Set up Postfix for Scaleway (if reporting enabled)
+# ============================================================
+
+if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
+    echo "[*] Setting up Postfix for Scaleway Transactional Email..."
+
+    # Extract SMTP credentials from master config
+    SMTP_USER=$(grep "smtp_user" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
+    SMTP_PASSWORD=$(grep "smtp_password" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
+
+    # Execute commands if they look like "op read" commands
+    if echo "$SMTP_USER" | grep -q "^op read"; then
+        SMTP_USER=$(eval "$SMTP_USER")
+    fi
+    if echo "$SMTP_PASSWORD" | grep -q "^op read"; then
+        SMTP_PASSWORD=$(eval "$SMTP_PASSWORD")
+    fi
+
+    if [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASSWORD" ]; then
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << POSTFIXEOF
+set -e
+
+# Install Postfix
+DEBIAN_FRONTEND=noninteractive apt-get install -y postfix mailutils libsasl2-modules > /dev/null 2>&1
+
+# Configure Postfix for Scaleway
+cat > /etc/postfix/main.cf << 'EOF'
+# Postfix configuration for Scaleway Transactional Email
+myhostname = $(hostname)
+mydestination = localhost
+relayhost = [smtp.tem.scw.cloud]:587
+smtp_use_tls = yes
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_security_options = noanonymous
+smtp_tls_CAfile = /etc/ssl/certs/ca-certificates.crt
+EOF
+
+# Set up SASL password
+cat > /etc/postfix/sasl_passwd << 'EOF'
+[smtp.tem.scw.cloud]:587 $SMTP_USER:$SMTP_PASSWORD
+EOF
+
+# Secure the password file
+chmod 600 /etc/postfix/sasl_passwd
+postmap /etc/postfix/sasl_passwd
+
+# Restart Postfix
+systemctl restart postfix
+systemctl enable postfix > /dev/null 2>&1
+
+echo "[*] Postfix configured for Scaleway Transactional Email"
+POSTFIXEOF
+
+        echo "[*] Postfix configured successfully"
+    else
+        echo "[!] Warning: SMTP credentials not found in master-config.toml"
+        echo "[!] Email delivery will not be available"
+    fi
+fi
+
+# ============================================================
+# STEP 12 — Set up reporting (if enabled)
+# ============================================================
+
+if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
+    echo "[*] Setting up automated reporting..."
+
+    # Process master config to generate server config
+    echo "[*] Processing master-config.toml..."
+    if command -v uv &> /dev/null; then
+        uv run scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env
+    elif command -v python3 &> /dev/null; then
+        python3 scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env
+    else
+        echo "[!] Error: Neither uv nor python3 found. Cannot process config."
+        echo "[!] Skipping automated reporting setup."
+    fi
+
+    if [ -f /tmp/server-report.env ]; then
+        # Upload toolkit files to server
+        echo "[*] Uploading reporting toolkit..."
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
+            scripts pyproject.toml /tmp/server-report.env "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
+
+        # Move config to correct location
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+            "mv /opt/cowrie/server-report.env /opt/cowrie/etc/report.env && chmod 600 /opt/cowrie/etc/report.env"
+
+        # Run setup-reporting.sh on the server
+        echo "[*] Running setup-reporting.sh on server..."
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'REPORTEOF'
+cd /opt/cowrie
+chmod +x scripts/setup-reporting.sh scripts/daily-report.py scripts/process-config.py
+./scripts/setup-reporting.sh
+REPORTEOF
+
+        echo "[*] Reporting configured successfully"
+        rm -f /tmp/server-report.env
+    else
+        echo "[!] Failed to process config. Skipping automated reporting setup."
+    fi
+else
+    echo "[*] Reporting disabled or master-config.toml not found, skipping reporting setup"
 fi
 
 # ============================================================

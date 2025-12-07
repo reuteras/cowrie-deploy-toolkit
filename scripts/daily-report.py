@@ -87,6 +87,7 @@ class Config:
 
             # Report settings
             'report_hours': int(os.getenv('REPORT_HOURS', '24')),
+            'max_commands_per_session': int(os.getenv('MAX_COMMANDS_PER_SESSION', '20')),
             'include_map': os.getenv('INCLUDE_MAP', 'true').lower() == 'true',
         }
 
@@ -474,6 +475,7 @@ class ReportGenerator:
         self.country_counts = country_counts
         self.file_analysis = file_analysis
         self.config = config
+        self.max_commands = config.get('max_commands_per_session', 20)
 
     def generate_text_report(self) -> str:
         """Generate plain text report."""
@@ -544,10 +546,10 @@ class ReportGenerator:
             lines.append("-" * 70)
             for session_id, commands in self.stats['sessions_by_activity'][:10]:
                 lines.append(f"Session {session_id[:16]}... ({len(commands)} commands)")
-                for cmd in commands[:5]:  # Show first 5 commands
+                for cmd in commands[:self.max_commands]:
                     lines.append(f"  → {cmd}")
-                if len(commands) > 5:
-                    lines.append(f"  ... and {len(commands) - 5} more commands")
+                if len(commands) > self.max_commands:
+                    lines.append(f"  ... and {len(commands) - self.max_commands} more commands")
             lines.append("")
 
         return "\n".join(lines)
@@ -809,15 +811,15 @@ class ReportGenerator:
                 html += f"""
         <h3>Session {session_id[:16]}... ({len(commands)} commands)</h3>
 """
-                for cmd in commands[:10]:  # Show first 10 commands
+                for cmd in commands[:self.max_commands]:
                     html += f"""
         <div class="command">
             {cmd}
         </div>
 """
-                if len(commands) > 10:
+                if len(commands) > self.max_commands:
                     html += f"""
-        <p><em>... and {len(commands) - 10} more commands</em></p>
+        <p><em>... and {len(commands) - self.max_commands} more commands</em></p>
 """
 
         html += """

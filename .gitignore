@@ -208,6 +208,9 @@ output*
 # Output directories from generate_cowrie_fs_from_hetzner.sh
 output_*/
 
+# Master configuration (contains secrets)
+master-config.toml
+
 # Reporting configuration (contains API keys and credentials)
 scripts/report.env
 scripts/report-config.json

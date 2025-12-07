@@ -12,7 +12,28 @@ Automated daily reporting with threat intelligence enrichment for Cowrie honeypo
 - **Real-time Alerts**: Webhook notifications for Slack, Discord, and Microsoft Teams
 - **Threshold Alerts**: Configurable alerts for high attack volumes and malware downloads
 
-## Installation
+## Quick Setup (Recommended)
+
+**✨ NEW: Fully automated deployment using `master-config.toml`**
+
+1. Copy the example config: `cp example-config.toml master-config.toml`
+2. Edit `master-config.toml` with your API keys and settings
+3. Set `enable_reporting = true` in the `[honeypot]` section
+4. Run `./deploy_cowrie_honeypot.sh ./output_YYYYMMDD_HHMMSS`
+
+The deployment script automatically:
+- Sets up MaxMind GeoIP with weekly auto-updates
+- Configures Postfix for email delivery
+- Installs all Python dependencies with uv
+- Configures daily cron job for reports
+
+**That's it!** No manual configuration needed. See `example-config.toml` for all options.
+
+---
+
+## Manual Installation (Advanced)
+
+> **Note:** The sections below are for manual setup or troubleshooting. If you use `master-config.toml` with the deployment script, these steps are handled automatically.
 
 ### 1. Install Dependencies
 
