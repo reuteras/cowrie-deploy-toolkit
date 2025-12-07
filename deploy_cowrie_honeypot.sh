@@ -145,14 +145,16 @@ sshd -t > /dev/null
 systemctl restart sshd > /dev/null
 EOF
 
-echo -n "[*] SSH moved to port $REAL_SSH_PORT. Reconnecting."
+echo "[*] SSH moved to port $REAL_SSH_PORT. Reconnecting..."
 sleep 3
 
 # Test new SSH port
+echo -n "[*] Testing SSH on port $REAL_SSH_PORT"
 until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=3 -p "$REAL_SSH_PORT" "root@$SERVER_IP" "echo -n ." 2>/dev/null; do
     printf "."
     sleep 2
 done
+echo ""
 echo "[*] SSH confirmed on port $REAL_SSH_PORT."
 
 # ============================================================
@@ -570,9 +572,9 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     # Process master config to generate server config
     echo "[*] Processing master-config.toml..."
     if command -v uv &> /dev/null; then
-        uv run scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env
+        uv run --quiet scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env 2>&1
     elif command -v python3 &> /dev/null; then
-        python3 scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env
+        python3 scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env 2>&1
     else
         echo "[!] Error: Neither uv nor python3 found. Cannot process config."
         echo "[!] Skipping automated reporting setup."

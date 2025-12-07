@@ -9,13 +9,8 @@ Reads master-config.toml, executes any shell commands in values
 import sys
 import subprocess
 import re
+import tomllib
 from pathlib import Path
-
-try:
-    import tomli
-except ImportError:
-    print("Error: tomli not installed. Install with: uv add tomli", file=sys.stderr)
-    sys.exit(1)
 
 
 def execute_command(value: str) -> str:
@@ -66,7 +61,7 @@ def execute_command(value: str) -> str:
 def process_config(config_path: str) -> dict:
     """Process config file and execute any commands."""
     with open(config_path, 'rb') as f:
-        config = tomli.load(f)
+        config = tomllib.load(f)
 
     # Recursively process all string values
     def process_value(val):
