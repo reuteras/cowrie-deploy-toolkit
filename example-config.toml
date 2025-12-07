@@ -6,7 +6,18 @@
 # Usage:
 #   cp example-config.toml master-config.toml
 #   # Edit master-config.toml with your settings
-#   ./deploy_cowrie_honeypot.sh ./output_YYYYMMDD_HHMMSS
+#   ./generate_cowrie_fs_from_hetzner.sh  # Generate filesystem
+#   ./deploy_cowrie_honeypot.sh ./output_YYYYMMDD_HHMMSS  # Deploy
+
+[deployment]
+# Hetzner Cloud settings for server creation
+server_type = "cpx11"          # Server size: cpx11 (cheapest), cpx21, cpx31, etc.
+server_image = "debian-13"     # OS image: debian-13, debian-12, ubuntu-24.04, etc.
+honeypot_hostname = "dmz-web01"  # Realistic hostname shown to attackers
+
+# SSH keys registered in your Hetzner account (required for server access)
+# Update these to match your SSH key names from: hcloud ssh-key list
+ssh_keys = ["SSH Key - default", "ShellFish@iPhone-23112023"]
 
 [honeypot]
 # Enable automated daily reporting (set to false to skip reporting setup)
