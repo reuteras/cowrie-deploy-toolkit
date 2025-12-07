@@ -40,8 +40,8 @@ Issues = "https://github.com/reuteras/cowrie-deploy-toolkit/issues"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
@@ -102,3 +102,6 @@ module = [
     "yara.*",
 ]
 ignore_missing_imports = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["scripts"]
