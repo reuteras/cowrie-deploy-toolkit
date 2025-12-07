@@ -19,24 +19,24 @@ if [ -f "$MASTER_CONFIG" ]; then
 
     # Read deployment section if present
     if grep -q "\[deployment\]" "$MASTER_CONFIG" 2>/dev/null; then
-        # Extract server_type
-        CONFIG_SERVER_TYPE=$(grep "^server_type" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
+        # Extract server_type (match: server_type = "value" and extract value)
+        CONFIG_SERVER_TYPE=$(grep "^server_type" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
         [ -n "$CONFIG_SERVER_TYPE" ] && SERVER_TYPE="$CONFIG_SERVER_TYPE"
 
         # Extract server_image
-        CONFIG_SERVER_IMAGE=$(grep "^server_image" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
+        CONFIG_SERVER_IMAGE=$(grep "^server_image" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
         [ -n "$CONFIG_SERVER_IMAGE" ] && SERVER_IMAGE="$CONFIG_SERVER_IMAGE"
 
         # Extract honeypot_hostname
-        CONFIG_HOSTNAME=$(grep "^honeypot_hostname" "$MASTER_CONFIG" | sed 's/.*=\s*"\([^"]*\)".*/\1/' | head -1)
+        CONFIG_HOSTNAME=$(grep "^honeypot_hostname" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
         [ -n "$CONFIG_HOSTNAME" ] && HONEYPOT_HOSTNAME="$CONFIG_HOSTNAME"
 
         # Extract SSH keys from array (parse ["key1", "key2"] format)
-        SSH_KEYS_LINE=$(grep "^ssh_keys" "$MASTER_CONFIG" | sed 's/.*=\s*\[\(.*\)\]/\1/')
+        SSH_KEYS_LINE=$(grep "^ssh_keys" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *\[(.*)\]/\1/')
         if [ -n "$SSH_KEYS_LINE" ]; then
             # Extract first and second keys
-            SSH_KEY_NAME1=$(echo "$SSH_KEYS_LINE" | sed 's/"\([^"]*\)".*/\1/')
-            SSH_KEY_NAME2=$(echo "$SSH_KEYS_LINE" | sed 's/[^,]*,\s*"\([^"]*\)".*/\1/')
+            SSH_KEY_NAME1=$(echo "$SSH_KEYS_LINE" | sed -E 's/"([^"]+)".*/\1/')
+            SSH_KEY_NAME2=$(echo "$SSH_KEYS_LINE" | sed -E 's/[^,]*, *"([^"]+)".*/\1/')
         fi
 
         echo "[*] Using config: $SERVER_TYPE, $SERVER_IMAGE, hostname=$HONEYPOT_HOSTNAME"
