@@ -374,34 +374,16 @@ rm /opt/cowrie/var/report-cache.db
 
 ## Deployment Integration
 
-To automatically install reporting on new honeypot deployments, add this to `deploy_cowrie_honeypot.sh`:
+**✨ Automated deployment is now built-in!**
 
-```bash
-# After Cowrie deployment, install reporting
-ssh -p $REAL_SSH_PORT "root@$SERVER_IP" bash << 'EOF'
-# Install dependencies
-apt-get update
-apt-get install -y python3-pip yara geoipupdate
+Reporting is automatically configured when you deploy a honeypot with `enable_reporting = true` in `master-config.toml`. The deployment script handles:
 
-# Install Python packages
-cd /opt/cowrie/scripts
-pip3 install -r requirements.txt
+- Installing uv and Python dependencies
+- Setting up MaxMind GeoIP with auto-updates
+- Configuring Postfix for email delivery
+- Creating cron job for daily reports
 
-# Download GeoIP databases
-mkdir -p /opt/cowrie/geoip
-# (Configure geoipupdate and download databases)
-
-# Download YARA rules
-mkdir -p /opt/cowrie/yara-rules
-# (Download rules as shown above)
-
-# Configure environment
-# (Upload report.env file)
-
-# Set up cron
-(crontab -l 2>/dev/null; echo "0 6 * * * source /opt/cowrie/etc/report.env && /usr/bin/python3 /opt/cowrie/scripts/daily-report.py 2>&1 | logger -t cowrie-report") | crontab -
-EOF
-```
+No manual steps needed! See the main [README.md](../README.md) for deployment instructions.
 
 ## Advanced Configuration
 
