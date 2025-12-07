@@ -17,7 +17,6 @@ set -euo pipefail
 # ============================================================
 
 echo "[*] Cowrie Daily Report System - Setup"
-echo "========================================"
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
@@ -95,38 +94,12 @@ mkdir -p /opt/cowrie/var
 
 echo "[*] Directory structure created"
 
-# ============================================================
-# STEP 5 — Configure MaxMind GeoIP (requires manual setup)
-# ============================================================
-
-echo ""
-echo "[!] MANUAL STEP REQUIRED: MaxMind GeoIP Configuration"
-echo "======================================================"
-echo ""
-echo "You need to download MaxMind GeoLite2 databases:"
-echo ""
-echo "1. Sign up for free account: https://www.maxmind.com/en/geolite2/signup"
-echo "2. Get your Account ID and License Key"
-echo "3. Configure /etc/GeoIP.conf with:"
-echo ""
-echo "   AccountID YOUR_ACCOUNT_ID"
-echo "   LicenseKey YOUR_LICENSE_KEY"
-echo "   EditionIDs GeoLite2-City GeoLite2-ASN"
-echo ""
-echo "4. Run: geoipupdate"
-echo "5. Copy databases:"
-echo "   cp /usr/share/GeoIP/GeoLite2-City.mmdb /opt/cowrie/geoip/"
-echo "   cp /usr/share/GeoIP/GeoLite2-ASN.mmdb /opt/cowrie/geoip/"
-echo ""
-
 # Check if databases already exist
 if [ -f "/opt/cowrie/geoip/GeoLite2-City.mmdb" ] && [ -f "/opt/cowrie/geoip/GeoLite2-ASN.mmdb" ]; then
     echo "[*] GeoIP databases found!"
 else
     echo "[!] GeoIP databases not found. Please complete steps above."
 fi
-
-echo ""
 
 # ============================================================
 # STEP 6 — Download YARA rules
@@ -240,13 +213,12 @@ fi
 # STEP 9 — Test installation
 # ============================================================
 
-echo ""
 echo "[*] Testing installation..."
-echo ""
 
 # Test Python dependencies
 echo -n "[*] Testing Python dependencies... "
-if python3 -c "import requests, geoip2, yara" 2>/dev/null; then
+cd /opt/cowrie
+if uv run python -c "import requests, geoip2, yara" 2>/dev/null; then
     echo "OK"
 else
     echo "FAILED"
