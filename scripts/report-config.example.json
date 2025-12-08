@@ -3,8 +3,8 @@
 
   "log_path": "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json",
   "download_path": "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads",
-  "geoip_db_path": "/opt/cowrie/geoip/GeoLite2-City.mmdb",
-  "geoip_asn_path": "/opt/cowrie/geoip/GeoLite2-ASN.mmdb",
+  "geoip_db_path": "/var/lib/GeoIP/GeoLite2-City.mmdb",
+  "geoip_asn_path": "/var/lib/GeoIP/GeoLite2-ASN.mmdb",
   "yara_rules_path": "/opt/cowrie/yara-rules",
   "cache_db_path": "/opt/cowrie/var/report-cache.db",
 

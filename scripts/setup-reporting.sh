@@ -88,14 +88,13 @@ echo "[*] Creating directory structure..."
 
 mkdir -p /opt/cowrie/scripts
 mkdir -p /opt/cowrie/etc
-mkdir -p /opt/cowrie/geoip
 mkdir -p /opt/cowrie/yara-rules
 mkdir -p /opt/cowrie/var
 
 echo "[*] Directory structure created"
 
-# Check if databases already exist
-if [ -f "/opt/cowrie/geoip/GeoLite2-City.mmdb" ] && [ -f "/opt/cowrie/geoip/GeoLite2-ASN.mmdb" ]; then
+# Check if databases already exist (Debian default location)
+if [ -f "/var/lib/GeoIP/GeoLite2-City.mmdb" ] && [ -f "/var/lib/GeoIP/GeoLite2-ASN.mmdb" ]; then
     echo "[*] GeoIP databases found!"
 else
     echo "[!] GeoIP databases not found. Please complete steps above."
@@ -153,8 +152,8 @@ if [ ! -f "/opt/cowrie/etc/report.env" ]; then
 # Paths
 export COWRIE_LOG_PATH="/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json"
 export COWRIE_DOWNLOAD_PATH="/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
-export GEOIP_DB_PATH="/opt/cowrie/geoip/GeoLite2-City.mmdb"
-export GEOIP_ASN_PATH="/opt/cowrie/geoip/GeoLite2-ASN.mmdb"
+export GEOIP_DB_PATH="/var/lib/GeoIP/GeoLite2-City.mmdb"
+export GEOIP_ASN_PATH="/var/lib/GeoIP/GeoLite2-ASN.mmdb"
 export YARA_RULES_PATH="/opt/cowrie/yara-rules"
 export CACHE_DB_PATH="/opt/cowrie/var/report-cache.db"
 
@@ -235,7 +234,7 @@ fi
 
 # Test GeoIP databases
 echo -n "[*] Testing GeoIP databases... "
-if [ -f "/opt/cowrie/geoip/GeoLite2-City.mmdb" ]; then
+if [ -f "/var/lib/GeoIP/GeoLite2-City.mmdb" ]; then
     echo "OK"
 else
     echo "NOT FOUND (requires manual setup)"
