@@ -179,7 +179,8 @@ rm -rf /tmp/.venv /tmp/createfs.py
 
 # Capture process list with nginx running
 # This gives us a realistic process list without honeypot artifacts
-ps -ef > /root/ps.txt
+# Use 'ps aux' format for easier parsing into cmdoutput.json
+ps aux > /root/ps.txt
 
 EOF
 
