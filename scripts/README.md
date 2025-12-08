@@ -87,27 +87,38 @@ cp /usr/share/GeoIP/GeoLite2-ASN.mmdb /opt/cowrie/geoip/
 
 ### 3. Download YARA Rules
 
-Download community YARA rules for malware detection:
+Download YARA rules from YARA Forge (curated, high-quality ruleset):
 
 ```bash
 # Create rules directory
 mkdir -p /opt/cowrie/yara-rules
 
-# Clone Yara-Rules repository (community rules)
+# Download YARA Forge full ruleset
 cd /tmp
-git clone https://github.com/Yara-Rules/rules.git yara-community
-cp yara-community/malware/*.yar /opt/cowrie/yara-rules/
-
-# Clone Neo23x0's signature-base (Florian Roth's rules)
-git clone https://github.com/Neo23x0/signature-base.git
-cp signature-base/yara/*.yar /opt/cowrie/yara-rules/
+curl -sSL -o yara-rules.zip https://github.com/YARAHQ/yara-forge/releases/latest/download/yara-forge-rules-full.zip
+unzip -q yara-rules.zip
+find . -name "*.yar" -o -name "*.yara" | xargs -I{} cp {} /opt/cowrie/yara-rules/
 
 # Cleanup
-rm -rf /tmp/yara-community /tmp/signature-base
+rm -rf /tmp/yara-rules.zip
 
 # Test rules
 yara -r /opt/cowrie/yara-rules/ /bin/ls
+
+# Optional: Set up daily automatic updates
+cat > /opt/cowrie/scripts/update-yara-rules.sh << 'EOF'
+#!/usr/bin/env bash
+curl -sSL -o /tmp/yara-rules.zip https://github.com/YARAHQ/yara-forge/releases/latest/download/yara-forge-rules-full.zip
+cd /tmp && unzip -q yara-rules.zip
+rm -f /opt/cowrie/yara-rules/*.yar
+find . -name "*.yar" | xargs -I{} cp {} /opt/cowrie/yara-rules/
+rm -rf /tmp/yara-rules.zip
+EOF
+chmod +x /opt/cowrie/scripts/update-yara-rules.sh
+(crontab -l 2>/dev/null; echo "0 2 * * * /opt/cowrie/scripts/update-yara-rules.sh") | crontab -
 ```
+
+**Note:** YARA Forge provides curated, quality-controlled rules from multiple sources. The full ruleset is updated regularly and available at https://yarahq.github.io
 
 ### 4. Configure Environment Variables
 

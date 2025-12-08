@@ -102,42 +102,83 @@ else
 fi
 
 # ============================================================
-# STEP 6 — Download YARA rules
+# STEP 6 — Download YARA rules from YARA Forge
 # ============================================================
 
-echo "[*] Downloading YARA rules..."
+echo "[*] Downloading YARA rules from YARA Forge..."
 
-# Create temp directory
+# Install unzip if not present
+if ! command -v unzip &> /dev/null; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y unzip > /dev/null 2>&1
+fi
+
+# Create scripts directory
+mkdir -p /opt/cowrie/scripts
+
+# Create update script for daily cron job
+cat > /opt/cowrie/scripts/update-yara-rules.sh << 'YARAUPDATE'
+#!/usr/bin/env bash
+# Automated YARA rules update script
+# Downloads latest YARA Forge full ruleset and updates rules directory
+
+set -e
+
+RULES_DIR="/opt/cowrie/yara-rules"
+RULES_URL="https://github.com/YARAHQ/yara-forge/releases/latest/download/yara-forge-rules-full.zip"
 TEMP_DIR=$(mktemp -d)
+
+echo "[*] Downloading YARA Forge full ruleset..."
 cd "$TEMP_DIR"
 
-# Download Yara-Rules community repository
-echo "[*] Downloading community YARA rules..."
-git clone --quiet --depth 1 https://github.com/Yara-Rules/rules.git yara-community 2>/dev/null || true
+# Download latest full ruleset
+if curl -sSL -o yara-rules.zip "$RULES_URL"; then
+    # Clear old rules and extract new ones
+    rm -rf "$RULES_DIR"/*.yar "$RULES_DIR"/*.yara 2>/dev/null || true
 
-if [ -d "yara-community/malware" ]; then
-    cp yara-community/malware/*.yar /opt/cowrie/yara-rules/ 2>/dev/null || true
+    # Extract rules
+    unzip -q yara-rules.zip
+
+    # Move rules to destination (handle various archive structures)
+    if [ -d "yara-forge-rules-full" ]; then
+        find yara-forge-rules-full -name "*.yar" -o -name "*.yara" | xargs -I{} cp {} "$RULES_DIR/" 2>/dev/null || true
+    elif [ -d "rules" ]; then
+        find rules -name "*.yar" -o -name "*.yara" | xargs -I{} cp {} "$RULES_DIR/" 2>/dev/null || true
+    else
+        # Rules might be in root of zip
+        find . -maxdepth 2 -name "*.yar" -o -name "*.yara" | xargs -I{} cp {} "$RULES_DIR/" 2>/dev/null || true
+    fi
+
+    # Cleanup
+    cd /
+    rm -rf "$TEMP_DIR"
+
+    # Count rules
+    RULE_COUNT=$(find "$RULES_DIR" -name "*.yar" -o -name "*.yara" 2>/dev/null | wc -l)
+    echo "[*] Updated YARA rules: $RULE_COUNT files"
+    logger -t yara-update "Successfully updated YARA Forge rules: $RULE_COUNT files"
+else
+    echo "[!] Failed to download YARA rules"
+    logger -t yara-update "Failed to download YARA Forge rules"
+    rm -rf "$TEMP_DIR"
+    exit 1
 fi
+YARAUPDATE
 
-# Download Neo23x0's signature-base
-echo "[*] Downloading signature-base YARA rules..."
-git clone --quiet --depth 1 https://github.com/Neo23x0/signature-base.git 2>/dev/null || true
+chmod +x /opt/cowrie/scripts/update-yara-rules.sh
 
-if [ -d "signature-base/yara" ]; then
-    # Copy only malware-related rules (avoid false positives from other categories)
-    cp signature-base/yara/apt_*.yar /opt/cowrie/yara-rules/ 2>/dev/null || true
-    cp signature-base/yara/gen_*.yar /opt/cowrie/yara-rules/ 2>/dev/null || true
-    cp signature-base/yara/mal_*.yar /opt/cowrie/yara-rules/ 2>/dev/null || true
-    cp signature-base/yara/webshell_*.yar /opt/cowrie/yara-rules/ 2>/dev/null || true
-fi
+# Run initial update
+echo "[*] Running initial YARA rules download..."
+/opt/cowrie/scripts/update-yara-rules.sh
 
-# Cleanup
-cd /
-rm -rf "$TEMP_DIR"
+# Set up daily cron job (runs at 2 AM daily)
+echo "[*] Setting up daily YARA rules update cron job..."
+(crontab -l 2>/dev/null || echo "") | grep -v "update-yara-rules.sh" | crontab -
+(crontab -l; echo "0 2 * * * /opt/cowrie/scripts/update-yara-rules.sh >> /var/log/yara-update.log 2>&1") | crontab -
 
 # Count rules
-RULE_COUNT=$(find /opt/cowrie/yara-rules -name "*.yar" -o -name "*.yara" | wc -l)
-echo "[*] Downloaded $RULE_COUNT YARA rule files"
+RULE_COUNT=$(find /opt/cowrie/yara-rules -name "*.yar" -o -name "*.yara" 2>/dev/null | wc -l)
+echo "[*] Downloaded $RULE_COUNT YARA rule files from YARA Forge"
+echo "[*] Daily automatic updates configured (runs at 2 AM)"
 
 # ============================================================
 # STEP 7 — Create example configuration
