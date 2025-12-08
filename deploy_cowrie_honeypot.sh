@@ -317,6 +317,17 @@ case "$KERNEL_ARCH" in
     *) ARCH="linux-x64-lsb" ;;
 esac
 
+# Extract VirusTotal API key if available
+VT_API_KEY=""
+if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
+    VT_API_KEY=$(grep "virustotal_api_key" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+
+    # Execute command if it looks like "op read" command
+    if echo "$VT_API_KEY" | grep -q "^op read"; then
+        VT_API_KEY=$(eval "$VT_API_KEY" 2>/dev/null || echo "")
+    fi
+fi
+
 # Create cowrie.cfg
 cat > /tmp/cowrie.cfg << EOFCFG
 [honeypot]
@@ -351,6 +362,21 @@ logfile = var/log/cowrie/cowrie.json
 enabled = true
 logfile = var/log/cowrie/cowrie.log
 EOFCFG
+
+# Add VirusTotal configuration if API key is available
+if [ -n "$VT_API_KEY" ]; then
+    cat >> /tmp/cowrie.cfg << EOFVT
+
+[output_virustotal]
+enabled = true
+api_key = $VT_API_KEY
+upload = true
+scan_file = true
+scan_url = false
+debug = false
+EOFVT
+    echo "[*] VirusTotal integration enabled in cowrie.cfg"
+fi
 
 # Upload cowrie.cfg
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
@@ -556,6 +582,34 @@ echo "[*] Postfix configured for Scaleway Transactional Email"
 POSTFIXEOF
 
         echo "[*] Postfix configured successfully"
+
+        # Send test email to verify configuration
+        echo "[*] Sending test email..."
+        EMAIL_TO=$(grep "email_to" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+        EMAIL_FROM=$(grep "email_from" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+
+        if [ -n "$EMAIL_TO" ] && [ -n "$EMAIL_FROM" ]; then
+            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << TESTEMAILEOF
+set -e
+echo "Cowrie honeypot email configuration test
+
+This is an automated test email sent during honeypot deployment.
+
+If you receive this message, your email configuration is working correctly.
+
+Server: $(hostname)
+IP: $(hostname -I | awk '{print $1}')
+Time: $(date)
+
+You will receive daily reports from this honeypot at the configured interval.
+" | mail -s "[Honeypot] Test Email - Configuration Successful" -a "From: $EMAIL_FROM" "$EMAIL_TO"
+
+echo "[*] Test email sent to $EMAIL_TO"
+TESTEMAILEOF
+            echo "[*] Test email sent to $EMAIL_TO"
+        else
+            echo "[!] Warning: Email addresses not found in master-config.toml, skipping test email"
+        fi
     else
         echo "[!] Warning: SMTP credentials not found in master-config.toml"
         echo "[!] Email delivery will not be available"
