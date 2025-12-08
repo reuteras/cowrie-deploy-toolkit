@@ -139,21 +139,14 @@ if curl -sSL -o yara-rules.zip "$RULES_URL"; then
     unzip -q yara-rules.zip
 
     # Move rules to destination (handle various archive structures)
-    if [ -d "yara-forge-rules-full" ]; then
-        find yara-forge-rules-full -name "*.yar" -o -name "*.yara" | xargs -I{} cp {} "$RULES_DIR/" 2>/dev/null || true
-    elif [ -d "rules" ]; then
-        find rules -name "*.yar" -o -name "*.yara" | xargs -I{} cp {} "$RULES_DIR/" 2>/dev/null || true
-    else
-        # Rules might be in root of zip
-        find . -maxdepth 2 -name "*.yar" -o -name "*.yara" | xargs -I{} cp {} "$RULES_DIR/" 2>/dev/null || true
-    fi
+    cp packages/full/yara-rules-full.yar "$RULES_DIR"
 
     # Cleanup
     cd /
     rm -rf "$TEMP_DIR"
 
     # Count rules
-    RULE_COUNT=$(find "$RULES_DIR" -name "*.yar" -o -name "*.yara" 2>/dev/null | wc -l)
+    RULE_COUNT=$(grep -E "^rule " RULES_DIR/yara-rules-full.yar | wc -l)
     echo "[*] Updated YARA rules: $RULE_COUNT files"
     logger -t yara-update "Successfully updated YARA Forge rules: $RULE_COUNT files"
 else
