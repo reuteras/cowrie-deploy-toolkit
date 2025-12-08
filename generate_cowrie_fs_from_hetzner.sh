@@ -9,7 +9,6 @@ set -euo pipefail
 SERVER_TYPE="cpx11"              # cheapest and fast enough
 SERVER_IMAGE="debian-13"
 SSH_KEY_NAME1="SSH Key - default"          # must exist in your hcloud account
-SSH_KEY_NAME2="ShellFish@iPhone-23112023"          # must exist in your hcloud account
 HONEYPOT_HOSTNAME="dmz-web01"    # Realistic hostname for the honeypot
 
 # Check for master-config.toml and read deployment settings
@@ -219,29 +218,32 @@ mkdir -p "$CONTENTS_DIR"
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOFCONTENTS'
 cd /
 tar --no-xattrs -czf /tmp/contents.tar.gz \
-    etc/passwd \
-    etc/group \
-    etc/hetzner-build \
-    etc/shadow \
-    etc/hosts \
-    etc/hostname \
-    etc/resolv.conf \
+    etc/debian_version \
     etc/fstab \
     etc/group \
+    etc/hetzner-build \
+    etc/host.conf \
+    etc/hosts \
+    etc/inittab \
     etc/issue \
     etc/issue.net \
-    etc/motd \
-    etc/timezone \
-    etc/sudoers \
-    etc/os-release \
     etc/lsb-release \
-    etc/debian_version \
+    etc/motd \
+    etc/os-release \
+    etc/passwd \
+    etc/resolv.conf \
+    etc/shadow \
+    etc/sudoers \
+    etc/timezone \
     etc/nginx/nginx.conf \
     etc/nginx/sites-available/default \
-    var/www/html/index.nginx-debian.html \
     proc/cpuinfo \
     proc/meminfo \
+    proc/mounts \
+    proc/modules \
+    proc/net/arp \
     proc/version \
+    var/www/html/index.nginx-debian.html \
     2>/dev/null || true
 EOFCONTENTS
 
