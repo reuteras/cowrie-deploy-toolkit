@@ -591,20 +591,23 @@ POSTFIXEOF
         if [ -n "$EMAIL_TO" ] && [ -n "$EMAIL_FROM" ]; then
             ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << TESTEMAILEOF
 set -e
+
+# Get server IP (portable across Linux/BSD)
+SERVER_IP=\$(ip addr show | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print \$2}' | cut -d/ -f1 || echo "unavailable")
+
 echo "Cowrie honeypot email configuration test
 
 This is an automated test email sent during honeypot deployment.
 
 If you receive this message, your email configuration is working correctly.
 
-Server: $(hostname)
-IP: $(hostname -I | awk '{print $1}')
-Time: $(date)
+Server: \$(hostname)
+IP: \$SERVER_IP
+Time: \$(date)
 
 You will receive daily reports from this honeypot at the configured interval.
 " | mail -s "[Honeypot] Test Email - Configuration Successful" -a "From: $EMAIL_FROM" "$EMAIL_TO"
 
-echo "[*] Test email sent to $EMAIL_TO"
 TESTEMAILEOF
             echo "[*] Test email sent to $EMAIL_TO"
         else
