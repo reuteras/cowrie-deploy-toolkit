@@ -252,7 +252,7 @@ echo "[*] Uploading Cowrie configuration..."
 
 # Create remote directory structure
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
-mkdir -p /opt/cowrie/etc /opt/cowrie/var/lib/cowrie/downloads /opt/cowrie/var/log/cowrie /opt/cowrie/share/cowrie/txtcmds
+mkdir -p /opt/cowrie/etc /opt/cowrie/var/lib/cowrie/downloads /opt/cowrie/var/log/cowrie /opt/cowrie/share/cowrie
 
 # Set ownership to UID 999 (cowrie user in container) for writable directories
 chown -R 999:999 /opt/cowrie/var
@@ -262,11 +262,27 @@ EOF
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
     "$FS_PICKLE" "root@$SERVER_IP:/opt/cowrie/share/cowrie/fs.pickle" > /dev/null
 
-# Upload ps.txt for realistic process list
+# Generate and upload cmdoutput.json for realistic process list
 if [ -f "$IDENTITY_DIR/ps.txt" ]; then
-    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-        "$IDENTITY_DIR/ps.txt" "root@$SERVER_IP:/opt/cowrie/share/cowrie/txtcmds/ps" > /dev/null
-    echo "[*] fs.pickle and ps.txt uploaded."
+    echo "[*] Generating cmdoutput.json from ps.txt..."
+
+    # Generate cmdoutput.json using the converter script
+    if command -v uv &> /dev/null; then
+        uv run --quiet scripts/ps-to-cmdoutput.py "$IDENTITY_DIR/ps.txt" /tmp/cmdoutput.json
+    elif command -v python3 &> /dev/null; then
+        python3 scripts/ps-to-cmdoutput.py "$IDENTITY_DIR/ps.txt" /tmp/cmdoutput.json
+    else
+        echo "[!] Warning: Neither uv nor python3 found. Cannot generate cmdoutput.json."
+        echo "[*] fs.pickle uploaded (cmdoutput.json generation skipped)."
+    fi
+
+    # Upload cmdoutput.json if it was generated
+    if [ -f /tmp/cmdoutput.json ]; then
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+            /tmp/cmdoutput.json "root@$SERVER_IP:/opt/cowrie/share/cowrie/cmdoutput.json" > /dev/null
+        rm /tmp/cmdoutput.json
+        echo "[*] fs.pickle and cmdoutput.json uploaded."
+    fi
 else
     echo "[*] fs.pickle uploaded (ps.txt not found, using default)."
 fi
