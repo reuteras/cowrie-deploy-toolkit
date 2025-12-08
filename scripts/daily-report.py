@@ -49,8 +49,8 @@ class Config:
             # Paths
             'log_path': os.getenv('COWRIE_LOG_PATH', '/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'),
             'download_path': os.getenv('COWRIE_DOWNLOAD_PATH', '/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads'),
-            'geoip_db_path': os.getenv('GEOIP_DB_PATH', '/opt/cowrie/geoip/GeoLite2-City.mmdb'),
-            'geoip_asn_path': os.getenv('GEOIP_ASN_PATH', '/opt/cowrie/geoip/GeoLite2-ASN.mmdb'),
+            'geoip_db_path': os.getenv('GEOIP_DB_PATH', '/var/lib/GeoIP/GeoLite2-City.mmdb'),
+            'geoip_asn_path': os.getenv('GEOIP_ASN_PATH', '/var/lib/GeoIP/GeoLite2-ASN.mmdb'),
             'yara_rules_path': os.getenv('YARA_RULES_PATH', '/opt/cowrie/yara-rules'),
             'cache_db_path': os.getenv('CACHE_DB_PATH', '/opt/cowrie/var/report-cache.db'),
 

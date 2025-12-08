@@ -63,16 +63,8 @@ Sign up for a free MaxMind account: https://www.maxmind.com/en/geolite2/signup
 Download the databases:
 
 ```bash
-# Create directory
-mkdir -p /opt/cowrie/geoip
+# GeoIP databases are stored in Debian default location: /var/lib/GeoIP
 
-# Download GeoLite2-City and GeoLite2-ASN (requires MaxMind account)
-# Method 1: Manual download from MaxMind website
-#   - Download GeoLite2-City.mmdb
-#   - Download GeoLite2-ASN.mmdb
-#   - Place in /opt/cowrie/geoip/
-
-# Method 2: Using geoipupdate tool (recommended for automatic updates)
 # Install geoipupdate
 apt-get install -y geoipupdate
 
@@ -80,9 +72,8 @@ apt-get install -y geoipupdate
 # Then run:
 geoipupdate
 
-# Copy databases to cowrie directory
-cp /usr/share/GeoIP/GeoLite2-City.mmdb /opt/cowrie/geoip/
-cp /usr/share/GeoIP/GeoLite2-ASN.mmdb /opt/cowrie/geoip/
+# Databases are automatically downloaded to /var/lib/GeoIP/
+# (Debian default location - no need to copy)
 ```
 
 ### 3. Download YARA Rules
@@ -128,8 +119,8 @@ Create `/opt/cowrie/etc/report.env`:
 # Paths
 export COWRIE_LOG_PATH="/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json"
 export COWRIE_DOWNLOAD_PATH="/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
-export GEOIP_DB_PATH="/opt/cowrie/geoip/GeoLite2-City.mmdb"
-export GEOIP_ASN_PATH="/opt/cowrie/geoip/GeoLite2-ASN.mmdb"
+export GEOIP_DB_PATH="/var/lib/GeoIP/GeoLite2-City.mmdb"
+export GEOIP_ASN_PATH="/var/lib/GeoIP/GeoLite2-ASN.mmdb"
 export YARA_RULES_PATH="/opt/cowrie/yara-rules"
 export CACHE_DB_PATH="/opt/cowrie/var/report-cache.db"
 
@@ -228,8 +219,8 @@ Create `/opt/cowrie/etc/report-config.json`:
 {
   "log_path": "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json",
   "download_path": "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads",
-  "geoip_db_path": "/opt/cowrie/geoip/GeoLite2-City.mmdb",
-  "geoip_asn_path": "/opt/cowrie/geoip/GeoLite2-ASN.mmdb",
+  "geoip_db_path": "/var/lib/GeoIP/GeoLite2-City.mmdb",
+  "geoip_asn_path": "/var/lib/GeoIP/GeoLite2-ASN.mmdb",
   "yara_rules_path": "/opt/cowrie/yara-rules",
   "cache_db_path": "/opt/cowrie/var/report-cache.db",
 
@@ -334,8 +325,8 @@ docker logs cowrie
 
 ### GeoIP errors
 ```bash
-# Verify database files exist
-ls -la /opt/cowrie/geoip/
+# Verify database files exist (Debian default location)
+ls -la /var/lib/GeoIP/
 
 # Download databases if missing
 # See installation section above
