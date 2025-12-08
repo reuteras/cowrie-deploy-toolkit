@@ -516,16 +516,16 @@ set -e
 DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
 DEBIAN_FRONTEND=noninteractive apt-get install -qq -y geoipupdate > /dev/null
 
-# Create GeoIP config
+# Create GeoIP config using Debian default location
 cat > /etc/GeoIP.conf << 'EOF'
 AccountID $MAXMIND_ACCOUNT_ID
 LicenseKey $MAXMIND_LICENSE_KEY
 EditionIDs GeoLite2-City GeoLite2-ASN
-DatabaseDirectory /opt/cowrie/geoip
+DatabaseDirectory /var/lib/GeoIP
 EOF
 
-# Download databases
-mkdir -p /opt/cowrie/geoip
+# Create directory and download databases
+mkdir -p /var/lib/GeoIP
 geoipupdate
 
 # Set up weekly auto-updates (Wednesdays at 3 AM)
