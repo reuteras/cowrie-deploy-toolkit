@@ -572,9 +572,9 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     # Process master config to generate server config
     echo "[*] Processing master-config.toml..."
     if command -v uv &> /dev/null; then
-        uv run --quiet scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env 2>&1
+        uv run --quiet scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env
     elif command -v python3 &> /dev/null; then
-        python3 scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env 2>&1
+        python3 scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env
     else
         echo "[!] Error: Neither uv nor python3 found. Cannot process config."
         echo "[!] Skipping automated reporting setup."
