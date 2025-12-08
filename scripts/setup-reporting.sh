@@ -126,6 +126,8 @@ RULES_DIR="/opt/cowrie/yara-rules"
 RULES_URL="https://github.com/YARAHQ/yara-forge/releases/latest/download/yara-forge-rules-full.zip"
 TEMP_DIR=$(mktemp -d)
 
+[[ -d "$RULES_DIR" ]] || mkdir -p "$RULES_DIR"
+
 echo "[*] Downloading YARA Forge full ruleset..."
 cd "$TEMP_DIR"
 
@@ -138,15 +140,15 @@ if curl -sSL -o yara-rules.zip "$RULES_URL"; then
     unzip -q yara-rules.zip
 
     # Move rules to destination (handle various archive structures)
-    cp packages/full/yara-rules-full.yar "$RULES_DIR"
+    cp packages/full/yara-rules-full.yar "$RULES_DIR/"
 
     # Cleanup
     cd /
     rm -rf "$TEMP_DIR"
 
     # Count rules
-    RULE_COUNT=$(grep -E "^rule " RULES_DIR/yara-rules-full.yar | wc -l)
-    echo "[*] Updated YARA rules: $RULE_COUNT files"
+    RULE_COUNT=$(grep -E "^rule" $RULES_DIR/yara-rules-full.yar | wc -l)
+    echo "[*] Updated YARA rules: $RULE_COUNT rules"
     logger -t yara-update "Successfully updated YARA Forge rules: $RULE_COUNT files"
 else
     echo "[!] Failed to download YARA rules"
@@ -283,36 +285,3 @@ else
     echo "NO RULES FOUND"
 fi
 
-# ============================================================
-# DONE
-# ============================================================
-
-echo ""
-echo "========================================"
-echo "  SETUP COMPLETED"
-echo "========================================"
-echo ""
-echo "Next steps:"
-echo ""
-echo "1. Configure MaxMind GeoIP (see instructions above)"
-echo ""
-echo "2. Edit configuration file:"
-echo "   nano /opt/cowrie/etc/report.env"
-echo ""
-echo "   Set your:"
-echo "   - VirusTotal API key (free from virustotal.com)"
-echo "   - Email settings (SMTP or SendGrid/Mailgun)"
-echo "   - Webhook URLs (optional, for Slack/Discord/Teams)"
-echo ""
-echo "3. Test the report:"
-echo "   source /opt/cowrie/etc/report.env"
-echo "   cd /opt/cowrie && uv run scripts/daily-report.py --test"
-echo ""
-echo "4. Send a test email:"
-echo "   source /opt/cowrie/etc/report.env"
-echo "   cd /opt/cowrie && uv run scripts/daily-report.py --hours 168"
-echo ""
-echo "The report will run automatically daily at 6 AM via cron."
-echo ""
-echo "Documentation: /opt/cowrie/scripts/README.md"
-echo "========================================"
