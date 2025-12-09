@@ -28,6 +28,9 @@ COPY . .
 # Create directory for static files
 RUN mkdir -p /app/static /app/templates
 
+# Create mount point directories (needed for read-only container)
+RUN mkdir -p /cowrie-data/geoip
+
 # Change ownership
 RUN chown -R cowrie:cowrie /app
 
