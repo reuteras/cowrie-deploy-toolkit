@@ -903,10 +903,24 @@ docker compose up -d
 
 echo "[*] Web dashboard deployed on localhost:5000"
 echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@SERVER_IP"
+
+# Configure Tailscale Serve if Tailscale is enabled
+if command -v tailscale &> /dev/null; then
+    echo "[*] Configuring Tailscale Serve for web dashboard..."
+    tailscale serve --bg --https=443 http://localhost:5000
+    echo "[*] Web dashboard available at: https://\$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
+fi
 WEBEOF
 
     echo "[*] Web dashboard configured successfully"
-    echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
+    if [ "$ENABLE_TAILSCALE" = "true" ]; then
+        # Get Tailscale hostname
+        TAILSCALE_HOSTNAME=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo 'cowrie-honeypot'")
+        echo "[*] Web dashboard available at: https://$TAILSCALE_HOSTNAME"
+        echo "[*] Also via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
+    else
+        echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
+    fi
 else
     echo "[*] Web dashboard disabled, skipping setup"
 fi
@@ -949,6 +963,37 @@ EOFINFO
 
 # Display appropriate SSH access info based on Tailscale configuration
 if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
+    # Get Tailscale hostname for Tailscale SSH
+    if [ "$TAILSCALE_USE_SSH" = "true" ]; then
+        TS_HOSTNAME=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo ''" 2>/dev/null)
+    fi
+
+    if [ "$TAILSCALE_USE_SSH" = "true" ] && [ -n "$TS_HOSTNAME" ]; then
+cat << TSINFO
+
+Tailscale IP:        $TAILSCALE_IP
+Tailscale Hostname:  $TS_HOSTNAME
+
+SSH Access (TAILSCALE SSH):
+  Management SSH:  ssh root@$TS_HOSTNAME
+  Honeypot SSH:    ssh root@$SERVER_IP (port 22 - public)
+
+IMPORTANT: Using Tailscale SSH (connects via port 22 over Tailscale network).
+Public SSH on port $REAL_SSH_PORT is blocked by firewall.
+
+Monitoring:
+  View logs:       ssh root@$TS_HOSTNAME 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.log'
+  JSON logs:       ssh root@$TS_HOSTNAME 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'
+  TTY recordings:  ssh root@$TS_HOSTNAME 'ls -la /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty/'
+  Downloads:       ssh root@$TS_HOSTNAME 'file /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads/*'
+  Container logs:  ssh root@$TS_HOSTNAME 'cd /opt/cowrie && docker compose logs -f'
+
+Management:
+  Stop:            ssh root@$TS_HOSTNAME 'cd /opt/cowrie && docker compose stop'
+  Start:           ssh root@$TS_HOSTNAME 'cd /opt/cowrie && docker compose start'
+  Restart:         ssh root@$TS_HOSTNAME 'cd /opt/cowrie && docker compose restart'
+TSINFO
+    else
 cat << TSINFO
 
 Tailscale IP:    $TAILSCALE_IP
@@ -972,6 +1017,7 @@ Management:
   Start:           ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'cd /opt/cowrie && docker compose start'
   Restart:         ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'cd /opt/cowrie && docker compose restart'
 TSINFO
+    fi
 elif [ "$ENABLE_TAILSCALE" = "true" ]; then
 cat << TSPUBLICINFO
 

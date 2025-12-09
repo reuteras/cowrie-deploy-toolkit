@@ -155,12 +155,15 @@ Once deployed with Tailscale enabled:
 # Connect to Tailscale on your local machine first
 tailscale up
 
-# SSH via Tailscale IP (shown in deployment output)
+# Method 1: Regular SSH via Tailscale IP (if use_tailscale_ssh = false)
 ssh -p 2222 root@100.x.y.z
 
-# Or use Tailscale SSH (if use_tailscale_ssh = true)
+# Method 2: Tailscale SSH (if use_tailscale_ssh = true)
+# Uses Tailscale's built-in SSH on port 22 (not 2222!)
 ssh root@cowrie-honeypot
 ```
+
+**Important**: When `use_tailscale_ssh = true`, you connect on **port 22** using the Tailscale hostname, not port 2222!
 
 ### Security Notes
 
