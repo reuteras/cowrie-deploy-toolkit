@@ -78,23 +78,23 @@ if [ -f "$MASTER_CONFIG" ]; then
 
     # Check if Tailscale is enabled
     if grep -q "\[tailscale\]" "$MASTER_CONFIG" 2>/dev/null; then
-        if sed -n '/\[tailscale\]/,/\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
+        if sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
             ENABLE_TAILSCALE="true"
             echo "[*] Tailscale is enabled in master config"
 
             # Extract auth key
-            TAILSCALE_AUTHKEY=$(sed -n '/\[tailscale\]/,/\[/p' "$MASTER_CONFIG" | grep "^authkey" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+            TAILSCALE_AUTHKEY=$(sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep "^authkey" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
             if echo "$TAILSCALE_AUTHKEY" | grep -q "^op read"; then
                 TAILSCALE_AUTHKEY=$(eval "$TAILSCALE_AUTHKEY")
             fi
 
             # Extract block_public_ssh setting
-            if sed -n '/\[tailscale\]/,/\[/p' "$MASTER_CONFIG" | grep -q "block_public_ssh.*=.*false"; then
+            if sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep -q "block_public_ssh.*=.*false"; then
                 TAILSCALE_BLOCK_PUBLIC_SSH="false"
             fi
 
             # Extract use_tailscale_ssh setting
-            if sed -n '/\[tailscale\]/,/\[/p' "$MASTER_CONFIG" | grep -q "use_tailscale_ssh.*=.*true"; then
+            if sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep -q "use_tailscale_ssh.*=.*true"; then
                 TAILSCALE_USE_SSH="true"
             fi
         fi
@@ -102,12 +102,12 @@ if [ -f "$MASTER_CONFIG" ]; then
 
     # Check if web dashboard is enabled
     if grep -q "\[web_dashboard\]" "$MASTER_CONFIG" 2>/dev/null; then
-        if sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
+        if sed -n '/\[web_dashboard\]/,/^\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
             ENABLE_WEB_DASHBOARD="true"
             echo "[*] Web dashboard is enabled in master config"
 
             # Extract base URL
-            WEB_BASE_URL=$(sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep "^base_url" | head -1 | sed -E 's/^[^=]*= *"([^"]*)".*/\1/')
+            WEB_BASE_URL=$(sed -n '/\[web_dashboard\]/,/^\[/p' "$MASTER_CONFIG" | grep "^base_url" | head -1 | sed -E 's/^[^=]*= *"([^"]*)".*/\1/')
         fi
     fi
 else

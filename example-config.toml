@@ -102,7 +102,7 @@ enabled = false
 # Base URL for session links in email reports
 # Example: "https://honeypot-dashboard.your-tailnet.ts.net"
 # Leave empty to use relative links
-# Note: To use Tailscale for web dashboard access, enable it in [tailscale] section above
+# Note: To use Tailscale for web dashboard access, enable it in the tailscale section above
 base_url = ""
 
 [advanced]
