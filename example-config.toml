@@ -52,23 +52,6 @@ smtp_password = "YOUR_SMTP_PASSWORD"
 # Or: "op read op://Personal/Scaleway/smtp_password"
 smtp_tls = true
 
-# Alternative: SendGrid API
-# sendgrid_api_key = "op read op://Personal/SendGrid/api_key"
-
-# Alternative: Mailgun API
-# mailgun_api_key = "op read op://Personal/Mailgun/api_key"
-# mailgun_domain = "mg.yourdomain.com"
-
-[alerts]
-# Webhook URLs for real-time alerts (optional)
-# slack_webhook = "op read op://Personal/Slack/honeypot_webhook"
-# discord_webhook = "op read op://Personal/Discord/honeypot_webhook"
-# teams_webhook = "op read op://Personal/Teams/honeypot_webhook"
-
-# Alert thresholds
-alert_threshold_connections = 100
-alert_on_malware = true
-
 [tailscale]
 # Tailscale VPN for secure management access
 # When enabled, management SSH (port 2222) is only accessible via Tailscale
