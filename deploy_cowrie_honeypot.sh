@@ -227,35 +227,30 @@ tailscale up --authkey="$TAILSCALE_AUTHKEY" --ssh=${TAILSCALE_USE_SSH} --hostnam
 TAILSCALE_IP=\$(tailscale ip -4)
 echo "[*] Tailscale IP: \$TAILSCALE_IP"
 
-# Configure firewall if block_public_ssh is enabled
+# Configure firewall if block_public_ssh is enabled (but don't enable it yet)
 if [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
-    echo "[*] Configuring firewall to block public SSH access..."
+    echo "[*] Configuring firewall rules (will be enabled at end of deployment)..."
 
     # Install UFW if not present
     DEBIAN_FRONTEND=noninteractive apt-get install -qq -y ufw > /dev/null 2>&1
 
-    # Disable UFW first to ensure clean state
+    # Disable UFW to ensure clean state
     ufw --force disable > /dev/null 2>&1
 
     # Set default policies
     ufw --force default deny incoming > /dev/null
     ufw --force default allow outgoing > /dev/null
 
-    # CRITICAL: Allow established/related connections to prevent killing current SSH session
-    ufw allow in from any to any state established,related comment 'Allow established connections' > /dev/null
-
-    # Allow SSH from Tailscale network only (for NEW connections)
+    # Allow SSH from Tailscale network only
     ufw allow in on tailscale0 to any port $REAL_SSH_PORT proto tcp comment 'SSH via Tailscale' > /dev/null
 
     # Allow honeypot SSH from anywhere (port 22 for Cowrie)
     ufw allow $COWRIE_SSH_PORT/tcp comment 'Cowrie honeypot' > /dev/null
 
-    # Enable firewall (current SSH session will stay alive due to established rule)
-    ufw --force enable > /dev/null
-
-    echo "[*] Firewall configured: Port $REAL_SSH_PORT only accessible via Tailscale"
+    # Note: Firewall will be enabled at the end of deployment to avoid disconnection
+    echo "[*] Firewall rules configured (not yet enabled)"
 else
-    echo "[*] Public SSH access remains enabled (block_public_ssh=false)"
+    echo "[*] Firewall will not be configured (block_public_ssh=false)"
 fi
 TAILSCALEEOF
 
@@ -900,6 +895,28 @@ WEBEOF
     echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
 else
     echo "[*] Web dashboard disabled, skipping setup"
+fi
+
+# ============================================================
+# STEP 14 — Enable firewall (if Tailscale is configured to block public SSH)
+# ============================================================
+
+if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
+    echo "[*] Enabling firewall to block public SSH access..."
+
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'UFWEOF'
+set -e
+
+# Enable UFW firewall
+ufw --force enable > /dev/null
+
+echo "[*] Firewall enabled: Port 2222 now only accessible via Tailscale"
+UFWEOF
+
+    echo "[*] Firewall successfully enabled"
+    echo "[!] IMPORTANT: Management SSH is now ONLY accessible via Tailscale IP: $TAILSCALE_IP"
+else
+    echo "[*] Firewall not enabled (Tailscale block_public_ssh is disabled)"
 fi
 
 # ============================================================
