@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}IP Addresses - Cowrie Honeypot{% endblock %}
+
+{% block content %}
+<div class="ips-page">
+    <div class="page-header">
+        <h1>Attacking IP Addresses</h1>
+        <div class="time-filter">
+            <label>Time range:</label>
+            <select onchange="window.location.href='?hours=' + this.value">
+                <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
+                <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
+                <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
+                <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="ips-info">
+        <p>{{ ips | length }} unique IP addresses</p>
+    </div>
+
+    <table class="data-table ips-table">
+        <thead>
+            <tr>
+                <th>IP Address</th>
+                <th>Country</th>
+                <th>City</th>
+                <th>Sessions</th>
+                <th>Last Seen</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ip_data in ips %}
+            <tr>
+                <td>
+                    <code>{{ ip_data.ip }}</code>
+                </td>
+                <td>
+                    {% if ip_data.geo and ip_data.geo.country %}
+                    {{ ip_data.geo.country }}
+                    {% else %}
+                    Unknown
+                    {% endif %}
+                </td>
+                <td>
+                    {% if ip_data.geo and ip_data.geo.city %}
+                    {{ ip_data.geo.city }}
+                    {% else %}
+                    Unknown
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="badge badge-success">{{ ip_data.count }}</span>
+                </td>
+                <td>{{ ip_data.last_seen | format_timestamp if ip_data.last_seen else 'N/A' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" class="no-data">No IP addresses recorded</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

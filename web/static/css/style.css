@@ -141,6 +141,22 @@ body {
     margin-top: 4px;
 }
 
+/* Clickable stat cards */
+.stat-card-link {
+    text-decoration: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+
+.stat-card-link:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.stat-card-link:active {
+    transform: translateY(0);
+}
+
 /* Dashboard grid */
 .dashboard-grid {
     display: grid;

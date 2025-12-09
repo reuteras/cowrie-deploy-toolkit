@@ -19,25 +19,31 @@
 
     <!-- Stats Cards -->
     <div class="stats-grid">
-        <div class="stat-card">
+        <a href="{{ url_for('sessions', hours=hours) }}" class="stat-card stat-card-link">
             <div class="stat-value">{{ stats.total_sessions }}</div>
             <div class="stat-label">Total Sessions</div>
-        </div>
-        <div class="stat-card">
+        </a>
+        <a href="{{ url_for('ip_list', hours=hours) }}" class="stat-card stat-card-link">
             <div class="stat-value">{{ stats.unique_ips }}</div>
             <div class="stat-label">Unique IPs</div>
-        </div>
-        <div class="stat-card">
+        </a>
+        <a href="{{ url_for('sessions', hours=hours) }}" class="stat-card stat-card-link">
             <div class="stat-value">{{ stats.sessions_with_commands }}</div>
             <div class="stat-label">Sessions with Commands</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{{ stats.total_downloads }}</div>
-            <div class="stat-label">Files Downloaded</div>
-        </div>
+        </a>
+        <a href="{{ url_for('downloads', hours=hours) }}" class="stat-card stat-card-link">
+            <div class="stat-value">{{ stats.unique_downloads }} / {{ stats.total_downloads }}</div>
+            <div class="stat-label">Unique / Total Downloads</div>
+        </a>
     </div>
 
     <div class="dashboard-grid">
+        <!-- Attack Map -->
+        <div class="dashboard-card full-width">
+            <h2>Attack Origins Map</h2>
+            <div id="attack-map" style="height: 400px; border-radius: 8px;"></div>
+        </div>
+
         <!-- Top Countries -->
         <div class="dashboard-card">
             <h2>Top Attacking Countries</h2>
@@ -142,4 +148,50 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize map
+    const map = L.map('attack-map').setView([20, 0], 2);
+
+    // Add tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 18
+    }).addTo(map);
+
+    // Add markers for attack origins
+    const locations = {{ stats.ip_locations | tojson }};
+    const markerCounts = {};
+
+    // Count occurrences of each location
+    locations.forEach(loc => {
+        const key = `${loc.lat},${loc.lon}`;
+        markerCounts[key] = markerCounts[key] || { count: 0, ...loc };
+        markerCounts[key].count++;
+    });
+
+    // Add markers
+    Object.values(markerCounts).forEach(loc => {
+        const marker = L.circleMarker([loc.lat, loc.lon], {
+            radius: Math.min(5 + Math.log(loc.count) * 3, 20),
+            fillColor: '#dc3545',
+            color: '#fff',
+            weight: 1,
+            opacity: 1,
+            fillOpacity: 0.6
+        }).addTo(map);
+
+        marker.bindPopup(`
+            <strong>${loc.city}, ${loc.country}</strong><br>
+            IP: ${loc.ip}<br>
+            Sessions: ${loc.count}
+        `);
+    });
+});
+</script>
 {% endblock %}

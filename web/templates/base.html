@@ -15,6 +15,7 @@
         <div class="nav-links">
             <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">Dashboard</a>
             <a href="{{ url_for('sessions') }}" class="{% if request.endpoint == 'sessions' %}active{% endif %}">Sessions</a>
+            <a href="{{ url_for('ip_list') }}" class="{% if request.endpoint == 'ip_list' %}active{% endif %}">IPs</a>
             <a href="{{ url_for('downloads') }}" class="{% if request.endpoint == 'downloads' %}active{% endif %}">Downloads</a>
         </div>
     </nav>

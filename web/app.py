@@ -281,17 +281,36 @@ class SessionParser:
 
         # Calculate stats
         ips = set()
+        ip_details = defaultdict(lambda: {'count': 0, 'geo': None, 'last_seen': None})
         country_counter = Counter()
         credential_counter = Counter()
         successful_credentials = set()
         command_counter = Counter()
         sessions_with_cmds = 0
         total_downloads = 0
+        unique_downloads = set()
         hourly_activity = defaultdict(int)
+        ip_locations = []  # For map
 
         for session in sessions.values():
             if session['src_ip']:
                 ips.add(session['src_ip'])
+                ip = session['src_ip']
+                ip_details[ip]['count'] += 1
+                ip_details[ip]['geo'] = session.get('geo', {})
+                ip_details[ip]['last_seen'] = session['start_time']
+
+                # Collect IP locations for map
+                geo = session.get('geo', {})
+                if geo and 'latitude' in geo and 'longitude' in geo:
+                    ip_locations.append({
+                        'ip': ip,
+                        'lat': geo['latitude'],
+                        'lon': geo['longitude'],
+                        'country': geo.get('country', 'Unknown'),
+                        'city': geo.get('city', 'Unknown')
+                    })
+
                 country = session.get('geo', {}).get('country', 'Unknown')
                 country_counter[country] += 1
 
@@ -307,7 +326,11 @@ class SessionParser:
                 for cmd in session['commands']:
                     command_counter[cmd['command']] += 1
 
-            total_downloads += len(session['downloads'])
+            # Track downloads
+            for download in session['downloads']:
+                total_downloads += 1
+                if download['shasum']:
+                    unique_downloads.add(download['shasum'])
 
             if session['start_time']:
                 try:
@@ -321,11 +344,21 @@ class SessionParser:
         # Sort hourly activity
         sorted_hours = sorted(hourly_activity.items())
 
+        # Sort IP details by session count
+        sorted_ips = sorted(
+            [{'ip': ip, **details} for ip, details in ip_details.items()],
+            key=lambda x: x['count'],
+            reverse=True
+        )
+
         return {
             'total_sessions': len(sessions),
             'unique_ips': len(ips),
             'sessions_with_commands': sessions_with_cmds,
             'total_downloads': total_downloads,
+            'unique_downloads': len(unique_downloads),
+            'ip_list': sorted_ips,
+            'ip_locations': ip_locations,
             'top_countries': country_counter.most_common(10),
             'top_credentials': credential_counter.most_common(10),
             'successful_credentials': successful_credentials,
@@ -635,6 +668,15 @@ def downloads():
     downloads_list = sorted(unique_downloads.values(), key=lambda x: x['timestamp'], reverse=True)
 
     return render_template('downloads.html', downloads=downloads_list, hours=hours, config=CONFIG)
+
+
+@app.route('/ips')
+def ip_list():
+    """IP address listing page."""
+    hours = request.args.get('hours', 168, type=int)
+    stats = session_parser.get_stats(hours=hours)
+
+    return render_template('ips.html', ips=stats['ip_list'], hours=hours, config=CONFIG)
 
 
 @app.template_filter('format_duration')
