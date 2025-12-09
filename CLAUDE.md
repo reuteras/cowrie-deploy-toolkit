@@ -114,6 +114,61 @@ COWRIE_SSH_PORT="22"             # Honeypot listens here
 REAL_SSH_PORT="2222"             # Management SSH
 ```
 
+## Tailscale for Secure Management Access
+
+For enhanced security, you can configure management SSH (port 2222) to be accessible only via Tailscale VPN, completely removing public SSH exposure.
+
+### Benefits
+
+- **Zero Trust Access** - Management SSH only accessible through your private Tailscale network
+- **No Public SSH Exposure** - Port 2222 blocked by firewall for all public IPs
+- **Secure Remote Access** - Access your honeypot from anywhere via Tailscale
+- **Optional Tailscale SSH** - Use Tailscale's built-in SSH with ACLs and session recording
+
+### Configuration
+
+Add to `master-config.toml`:
+
+```toml
+[tailscale]
+enabled = true
+authkey = "tskey-auth-..."  # Or: "op read op://Personal/Tailscale/honeypot_authkey"
+block_public_ssh = true      # Recommended: block public access to port 2222
+use_tailscale_ssh = false    # Optional: use Tailscale's SSH feature
+```
+
+### Generating a Tailscale Auth Key
+
+1. Visit https://login.tailscale.com/admin/settings/keys
+2. Click "Generate auth key"
+3. Settings:
+   - **Reusable**: ✓ (allows multiple devices)
+   - **Ephemeral**: ✓ (auto-cleanup when offline)
+   - **Tags**: Add tags like `tag:honeypot` for ACL control
+4. Copy the key to your `master-config.toml`
+
+### Accessing the Honeypot via Tailscale
+
+Once deployed with Tailscale enabled:
+
+```bash
+# Connect to Tailscale on your local machine first
+tailscale up
+
+# SSH via Tailscale IP (shown in deployment output)
+ssh -p 2222 root@100.x.y.z
+
+# Or use Tailscale SSH (if use_tailscale_ssh = true)
+ssh root@cowrie-honeypot
+```
+
+### Security Notes
+
+- **Recommended**: Always use `block_public_ssh = true` for maximum security
+- The honeypot SSH (port 22) remains publicly accessible - this is intentional
+- Tailscale SSH provides additional features but is experimental - test thoroughly
+- Your Tailscale auth key should be kept secret and rotated periodically
+
 ## Web Dashboard (SSH Session Playback)
 
 The toolkit includes an optional web dashboard for viewing and replaying SSH sessions:
@@ -138,16 +193,21 @@ base_url = ""  # Optional: for links in email reports
 The web dashboard is NOT exposed to the public internet. Access via SSH tunnel:
 
 ```bash
-# Create SSH tunnel
+# If using Tailscale with block_public_ssh enabled
+ssh -p 2222 -L 5000:localhost:5000 root@<TAILSCALE_IP>
+
+# Or if using public SSH access
 ssh -p 2222 -L 5000:localhost:5000 root@<SERVER_IP>
 
 # Then open in browser
 open http://localhost:5000
 ```
 
-For persistent access, use Tailscale (see `web/README.md`).
+**Note**: If you enabled Tailscale with `block_public_ssh = true`, you must use your Tailscale IP address (shown in deployment output).
 
 ## Accessing the Deployed Honeypot
+
+**Note**: Replace `<SERVER_IP>` with `<TAILSCALE_IP>` if you enabled Tailscale with `block_public_ssh = true`.
 
 ```bash
 # Management SSH (real shell)

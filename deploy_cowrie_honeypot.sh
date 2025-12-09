@@ -42,6 +42,9 @@ ENABLE_REPORTING="false"
 ENABLE_WEB_DASHBOARD="false"
 WEB_BASE_URL=""
 TAILSCALE_AUTHKEY=""
+ENABLE_TAILSCALE="false"
+TAILSCALE_BLOCK_PUBLIC_SSH="true"
+TAILSCALE_USE_SSH="false"
 
 if [ -f "$MASTER_CONFIG" ]; then
     echo "[*] Found master-config.toml, reading deployment settings..."
@@ -82,10 +85,36 @@ if [ -f "$MASTER_CONFIG" ]; then
             # Extract base URL
             WEB_BASE_URL=$(sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep "^base_url" | head -1 | sed -E 's/^[^=]*= *"([^"]*)".*/\1/')
 
-            # Extract Tailscale auth key
-            TAILSCALE_AUTHKEY=$(sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep "^tailscale_authkey" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+            # Extract Tailscale auth key (legacy, for backward compatibility)
+            if [ -z "$TAILSCALE_AUTHKEY" ]; then
+                TAILSCALE_AUTHKEY=$(sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep "^tailscale_authkey" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+                if echo "$TAILSCALE_AUTHKEY" | grep -q "^op read"; then
+                    TAILSCALE_AUTHKEY=$(eval "$TAILSCALE_AUTHKEY")
+                fi
+            fi
+        fi
+    fi
+
+    # Check if Tailscale is enabled (for management SSH)
+    if grep -q "\[tailscale\]" "$MASTER_CONFIG" 2>/dev/null; then
+        if sed -n '/\[tailscale\]/,/\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
+            ENABLE_TAILSCALE="true"
+            echo "[*] Tailscale is enabled in master config"
+
+            # Extract auth key
+            TAILSCALE_AUTHKEY=$(sed -n '/\[tailscale\]/,/\[/p' "$MASTER_CONFIG" | grep "^authkey" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
             if echo "$TAILSCALE_AUTHKEY" | grep -q "^op read"; then
                 TAILSCALE_AUTHKEY=$(eval "$TAILSCALE_AUTHKEY")
+            fi
+
+            # Extract block_public_ssh setting
+            if sed -n '/\[tailscale\]/,/\[/p' "$MASTER_CONFIG" | grep -q "block_public_ssh.*=.*false"; then
+                TAILSCALE_BLOCK_PUBLIC_SSH="false"
+            fi
+
+            # Extract use_tailscale_ssh setting
+            if sed -n '/\[tailscale\]/,/\[/p' "$MASTER_CONFIG" | grep -q "use_tailscale_ssh.*=.*true"; then
+                TAILSCALE_USE_SSH="true"
             fi
         fi
     fi
@@ -177,6 +206,74 @@ until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLeve
 done
 echo ""
 echo "[*] SSH confirmed on port $REAL_SSH_PORT."
+
+# ============================================================
+# STEP 3.5 — Set up Tailscale (if enabled)
+# ============================================================
+
+if [ "$ENABLE_TAILSCALE" = "true" ]; then
+    if [ -z "$TAILSCALE_AUTHKEY" ]; then
+        echo "[!] Error: Tailscale is enabled but no auth key provided"
+        echo "[!] Add 'authkey' to the [tailscale] section in master-config.toml"
+        exit 1
+    fi
+
+    echo "[*] Setting up Tailscale for secure management access..."
+
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << TAILSCALEEOF
+set -e
+
+# Install Tailscale
+echo "[*] Installing Tailscale..."
+curl -fsSL https://tailscale.com/install.sh | sh > /dev/null 2>&1
+
+# Start and authenticate Tailscale
+echo "[*] Authenticating with Tailscale..."
+tailscale up --authkey="$TAILSCALE_AUTHKEY" --ssh=${TAILSCALE_USE_SSH} --hostname="cowrie-honeypot" > /dev/null 2>&1
+
+# Get Tailscale IP
+TAILSCALE_IP=\$(tailscale ip -4)
+echo "[*] Tailscale IP: \$TAILSCALE_IP"
+
+# Configure firewall if block_public_ssh is enabled
+if [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
+    echo "[*] Configuring firewall to block public SSH access..."
+
+    # Install UFW if not present
+    DEBIAN_FRONTEND=noninteractive apt-get install -qq -y ufw > /dev/null 2>&1
+
+    # Set default policies
+    ufw --force default deny incoming > /dev/null
+    ufw --force default allow outgoing > /dev/null
+
+    # Allow SSH from Tailscale network only
+    ufw allow in on tailscale0 to any port $REAL_SSH_PORT proto tcp comment 'SSH via Tailscale' > /dev/null
+
+    # Allow honeypot SSH from anywhere (port 22 for Cowrie)
+    ufw allow $COWRIE_SSH_PORT/tcp comment 'Cowrie honeypot' > /dev/null
+
+    # Enable firewall
+    ufw --force enable > /dev/null
+
+    echo "[*] Firewall configured: Port $REAL_SSH_PORT only accessible via Tailscale"
+else
+    echo "[*] Public SSH access remains enabled (block_public_ssh=false)"
+fi
+TAILSCALEEOF
+
+    # Get the Tailscale IP for display
+    TAILSCALE_IP=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale ip -4" 2>/dev/null)
+
+    echo "[*] Tailscale configured successfully"
+    echo "[*] Tailscale IP: $TAILSCALE_IP"
+
+    if [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
+        echo "[!] IMPORTANT: Management SSH is now ONLY accessible via Tailscale"
+        echo "[!] Connect with: ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP"
+    fi
+else
+    echo "[*] Tailscale disabled, management SSH accessible via public IP"
+fi
 
 # ============================================================
 # STEP 4 — Install Docker
@@ -819,6 +916,57 @@ cat << EOFINFO
 
 Server IP:       $SERVER_IP
 Server ID:       $SERVER_ID
+EOFINFO
+
+# Display appropriate SSH access info based on Tailscale configuration
+if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
+cat << TSINFO
+
+Tailscale IP:    $TAILSCALE_IP
+
+SSH Access (TAILSCALE ONLY):
+  Management SSH:  ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP
+  Honeypot SSH:    ssh root@$SERVER_IP (port 22 - public)
+
+IMPORTANT: Management SSH is ONLY accessible via Tailscale!
+Public SSH on port $REAL_SSH_PORT is blocked by firewall.
+
+Monitoring:
+  View logs:       ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.log'
+  JSON logs:       ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'
+  TTY recordings:  ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'ls -la /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty/'
+  Downloads:       ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'file /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads/*'
+  Container logs:  ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'cd /opt/cowrie && docker compose logs -f'
+
+Management:
+  Stop:            ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'cd /opt/cowrie && docker compose stop'
+  Start:           ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'cd /opt/cowrie && docker compose start'
+  Restart:         ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'cd /opt/cowrie && docker compose restart'
+TSINFO
+elif [ "$ENABLE_TAILSCALE" = "true" ]; then
+cat << TSPUBLICINFO
+
+Tailscale IP:    $TAILSCALE_IP
+
+SSH Access (available via both public IP and Tailscale):
+  Management SSH:  ssh -p $REAL_SSH_PORT root@$SERVER_IP
+                   ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP (via Tailscale)
+  Honeypot SSH:    ssh root@$SERVER_IP (port 22)
+
+Monitoring:
+  View logs:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.log'
+  JSON logs:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'
+  TTY recordings:  ssh -p $REAL_SSH_PORT root@$SERVER_IP 'ls -la /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty/'
+  Downloads:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'file /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads/*'
+  Container logs:  ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose logs -f'
+
+Management:
+  Stop:            ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose stop'
+  Start:           ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose start'
+  Restart:         ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose restart'
+TSPUBLICINFO
+else
+cat << PUBLICINFO
 
 SSH Access:
   Management SSH:  ssh -p $REAL_SSH_PORT root@$SERVER_IP
@@ -835,6 +983,10 @@ Management:
   Stop:            ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose stop'
   Start:           ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose start'
   Restart:         ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose restart'
+PUBLICINFO
+fi
+
+cat << EOFINFO2
 
 Destroy server:
   hcloud server delete $SERVER_ID
@@ -846,14 +998,20 @@ Identity used:
   Operating System: $OS_NAME
   Architecture:    $ARCH
   SSH Banner:      $SSH_BANNER
-EOFINFO
+EOFINFO2
 
 # Add web dashboard info if enabled
 if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
+    # Use appropriate IP based on Tailscale configuration
+    DASHBOARD_IP="$SERVER_IP"
+    if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
+        DASHBOARD_IP="$TAILSCALE_IP"
+    fi
+
 cat << WEBINFO
 
 Web Dashboard:
-  SSH Tunnel:      ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP
+  SSH Tunnel:      ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$DASHBOARD_IP
   Then open:       http://localhost:5000
 WEBINFO
 fi

@@ -69,6 +69,29 @@ smtp_tls = true
 alert_threshold_connections = 100
 alert_on_malware = true
 
+[tailscale]
+# Tailscale VPN for secure management access
+# When enabled, management SSH (port 2222) is only accessible via Tailscale
+# This significantly improves security by removing public SSH exposure
+enabled = false
+
+# Tailscale auth key (required if enabled)
+# Generate at: https://login.tailscale.com/admin/settings/keys
+# Recommended: Use an ephemeral, reusable key with appropriate tags
+# authkey = "tskey-auth-..."
+# Or fetch from 1Password: "op read op://Personal/Tailscale/honeypot_authkey"
+
+# Block public access to management SSH port 2222 (recommended)
+# When true, port 2222 is only accessible via Tailscale
+# When false, port 2222 remains publicly accessible (less secure)
+block_public_ssh = true
+
+# Use Tailscale SSH (optional, experimental)
+# When enabled, uses Tailscale's built-in SSH instead of traditional SSH
+# Provides additional features like session recording and ACLs
+# Note: This replaces traditional SSH access entirely
+use_tailscale_ssh = false
+
 [web_dashboard]
 # SSH Session Playback Web Service
 # Provides a web UI for viewing session details and replaying TTY recordings
