@@ -76,26 +76,7 @@ if [ -f "$MASTER_CONFIG" ]; then
         echo "[*] Reporting is enabled in master config"
     fi
 
-    # Check if web dashboard is enabled
-    if grep -q "\[web_dashboard\]" "$MASTER_CONFIG" 2>/dev/null; then
-        if sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
-            ENABLE_WEB_DASHBOARD="true"
-            echo "[*] Web dashboard is enabled in master config"
-
-            # Extract base URL
-            WEB_BASE_URL=$(sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep "^base_url" | head -1 | sed -E 's/^[^=]*= *"([^"]*)".*/\1/')
-
-            # Extract Tailscale auth key (legacy, for backward compatibility)
-            if [ -z "$TAILSCALE_AUTHKEY" ]; then
-                TAILSCALE_AUTHKEY=$(sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep "^tailscale_authkey" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-                if echo "$TAILSCALE_AUTHKEY" | grep -q "^op read"; then
-                    TAILSCALE_AUTHKEY=$(eval "$TAILSCALE_AUTHKEY")
-                fi
-            fi
-        fi
-    fi
-
-    # Check if Tailscale is enabled (for management SSH)
+    # Check if Tailscale is enabled
     if grep -q "\[tailscale\]" "$MASTER_CONFIG" 2>/dev/null; then
         if sed -n '/\[tailscale\]/,/\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
             ENABLE_TAILSCALE="true"
@@ -116,6 +97,17 @@ if [ -f "$MASTER_CONFIG" ]; then
             if sed -n '/\[tailscale\]/,/\[/p' "$MASTER_CONFIG" | grep -q "use_tailscale_ssh.*=.*true"; then
                 TAILSCALE_USE_SSH="true"
             fi
+        fi
+    fi
+
+    # Check if web dashboard is enabled
+    if grep -q "\[web_dashboard\]" "$MASTER_CONFIG" 2>/dev/null; then
+        if sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
+            ENABLE_WEB_DASHBOARD="true"
+            echo "[*] Web dashboard is enabled in master config"
+
+            # Extract base URL
+            WEB_BASE_URL=$(sed -n '/\[web_dashboard\]/,/\[/p' "$MASTER_CONFIG" | grep "^base_url" | head -1 | sed -E 's/^[^=]*= *"([^"]*)".*/\1/')
         fi
     fi
 else

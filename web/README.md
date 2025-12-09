@@ -59,12 +59,18 @@ open http://localhost:5000
 2. Add to your `master-config.toml`:
 
 ```toml
+[tailscale]
+enabled = true
+authkey = "tskey-auth-..."
+
 [web_dashboard]
 enabled = true
-tailscale_authkey = "tskey-auth-..."
+base_url = "https://honeypot-dashboard.your-tailnet.ts.net"
 ```
 
 3. After deployment, access via: `https://honeypot-dashboard.<your-tailnet>.ts.net`
+
+**Note**: Tailscale configuration is now centralized in the `[tailscale]` section and used for both management SSH and web dashboard access.
 
 ## Configuration
 

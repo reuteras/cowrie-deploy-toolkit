@@ -95,17 +95,14 @@ use_tailscale_ssh = false
 [web_dashboard]
 # SSH Session Playback Web Service
 # Provides a web UI for viewing session details and replaying TTY recordings
-# Access is via Tailscale or SSH tunnel only (never exposed to public internet)
+# Access is via SSH tunnel only (never exposed to public internet)
+# If you enable Tailscale with block_public_ssh, use Tailscale IP for the tunnel
 enabled = false
-
-# Tailscale auth key for secure remote access (recommended)
-# Generate at: https://login.tailscale.com/admin/settings/keys
-# Use an ephemeral, reusable key with appropriate tags
-# tailscale_authkey = "op read op://Personal/Tailscale/honeypot_authkey"
 
 # Base URL for session links in email reports
 # Example: "https://honeypot-dashboard.your-tailnet.ts.net"
 # Leave empty to use relative links
+# Note: To use Tailscale for web dashboard access, enable it in [tailscale] section above
 base_url = ""
 
 [advanced]
