@@ -402,12 +402,33 @@ class VirusTotalScanner:
 
             if response.status_code == 200:
                 data = response.json()
+                attributes = data['data']['attributes']
+
                 result = {
                     'sha256': sha256,
-                    'detections': data['data']['attributes']['last_analysis_stats']['malicious'],
-                    'total_engines': sum(data['data']['attributes']['last_analysis_stats'].values()),
+                    'detections': attributes['last_analysis_stats']['malicious'],
+                    'total_engines': sum(attributes['last_analysis_stats'].values()),
                     'link': f"https://www.virustotal.com/gui/file/{sha256}"
                 }
+
+                # Extract threat intelligence fields if available
+                threat_class = attributes.get('popular_threat_classification', {})
+                if threat_class:
+                    if 'suggested_threat_label' in threat_class:
+                        result['threat_label'] = threat_class['suggested_threat_label']
+
+                    if 'popular_threat_category' in threat_class:
+                        # Extract category values and counts
+                        categories = threat_class['popular_threat_category']
+                        if categories:
+                            result['threat_categories'] = [
+                                {'name': cat['value'], 'count': cat['count']}
+                                for cat in categories
+                            ]
+
+                # Extract family labels from tags
+                if 'tags' in attributes and attributes['tags']:
+                    result['family_labels'] = attributes['tags']
 
                 # Cache result
                 self.cache.set_vt_result(sha256, result)
@@ -529,6 +550,16 @@ class ReportGenerator:
                 if file_info.get('vt_result'):
                     vt = file_info['vt_result']
                     lines.append(f"  VirusTotal:  {vt['detections']}/{vt['total_engines']} detections")
+                    if vt.get('threat_label'):
+                        lines.append(f"  Threat:      {vt['threat_label']}")
+                    if vt.get('threat_categories'):
+                        categories = ', '.join([f"{cat['name']} ({cat['count']})" for cat in vt['threat_categories']])
+                        lines.append(f"  Categories:  {categories}")
+                    if vt.get('family_labels'):
+                        families = ', '.join(vt['family_labels'][:5])  # Limit to first 5 tags
+                        if len(vt['family_labels']) > 5:
+                            families += f", +{len(vt['family_labels']) - 5} more"
+                        lines.append(f"  Families:    {families}")
                     lines.append(f"  VT Link:     {vt['link']}")
                 lines.append("")
 
@@ -771,6 +802,34 @@ class ReportGenerator:
                 <td><strong>VirusTotal:</strong></td>
                 <td>{vt['detections']}/{vt['total_engines']} engines detected malware</td>
             </tr>
+"""
+                    if vt.get('threat_label'):
+                        html += f"""
+            <tr>
+                <td><strong>Threat Label:</strong></td>
+                <td><span style="background: #fff3cd; padding: 2px 8px; border-radius: 4px; font-weight: bold;">{vt['threat_label']}</span></td>
+            </tr>
+"""
+                    if vt.get('threat_categories'):
+                        categories_html = ', '.join([f"{cat['name']} <small>({cat['count']})</small>" for cat in vt['threat_categories']])
+                        html += f"""
+            <tr>
+                <td><strong>Threat Categories:</strong></td>
+                <td>{categories_html}</td>
+            </tr>
+"""
+                    if vt.get('family_labels'):
+                        families = vt['family_labels'][:8]  # Show first 8 tags in HTML
+                        families_html = ' '.join([f'<span style="background: #e7f3ff; padding: 2px 6px; border-radius: 3px; margin: 2px; display: inline-block; font-size: 12px;">{tag}</span>' for tag in families])
+                        if len(vt['family_labels']) > 8:
+                            families_html += f' <small>+{len(vt["family_labels"]) - 8} more</small>'
+                        html += f"""
+            <tr>
+                <td><strong>Family Labels:</strong></td>
+                <td>{families_html}</td>
+            </tr>
+"""
+                    html += f"""
             <tr>
                 <td><strong>VT Link:</strong></td>
                 <td><a href="{vt['link']}">{vt['link']}</a></td>
