@@ -384,7 +384,14 @@ class TTYLogParser:
         if not tty_log_name:
             return None
 
-        # Try direct path
+        # Strip common Cowrie path prefixes if present
+        # Sessions may store paths like "var/lib/cowrie/tty/HASH"
+        for prefix in ['var/lib/cowrie/tty/', 'lib/cowrie/tty/', 'tty/']:
+            if tty_log_name.startswith(prefix):
+                tty_log_name = tty_log_name[len(prefix):]
+                break
+
+        # Try direct path (just the hash/filename)
         direct_path = os.path.join(self.tty_path, tty_log_name)
         if os.path.exists(direct_path):
             return direct_path
