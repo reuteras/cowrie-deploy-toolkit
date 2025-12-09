@@ -7,6 +7,7 @@ Provides a web interface for viewing and replaying SSH sessions captured by Cowr
 
 import json
 import os
+import sqlite3
 import struct
 import time
 from collections import Counter, defaultdict
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from flask import Flask, Response, jsonify, render_template, request
+import requests
 
 try:
     import geoip2.database
@@ -30,6 +32,8 @@ CONFIG = {
     'download_path': os.getenv('COWRIE_DOWNLOAD_PATH', '/cowrie-data/lib/cowrie/downloads'),
     'geoip_db_path': os.getenv('GEOIP_DB_PATH', '/cowrie-data/geoip/GeoLite2-City.mmdb'),
     'base_url': os.getenv('BASE_URL', ''),
+    'virustotal_api_key': os.getenv('VIRUSTOTAL_API_KEY', ''),
+    'cache_db_path': os.getenv('CACHE_DB_PATH', '/tmp/vt-cache.db'),
 }
 
 
@@ -57,6 +61,107 @@ class GeoIPLookup:
         except Exception:
             pass
         return result
+
+
+class CacheDB:
+    """Simple SQLite cache for VirusTotal results."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._init_db()
+
+    def _init_db(self):
+        """Initialize database schema."""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS vt_cache (
+                sha256 TEXT PRIMARY KEY,
+                result TEXT,
+                timestamp INTEGER
+            )
+        ''')
+        conn.commit()
+        conn.close()
+
+    def get_vt_result(self, sha256: str) -> Optional[dict]:
+        """Get cached VT result."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute(
+            'SELECT result FROM vt_cache WHERE sha256 = ?',
+            (sha256,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return json.loads(row[0])
+        return None
+
+    def set_vt_result(self, sha256: str, result: dict):
+        """Cache VT result."""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            'INSERT OR REPLACE INTO vt_cache (sha256, result, timestamp) VALUES (?, ?, ?)',
+            (sha256, json.dumps(result), int(time.time()))
+        )
+        conn.commit()
+        conn.close()
+
+
+class VirusTotalScanner:
+    """Scan files using VirusTotal API."""
+
+    def __init__(self, api_key: str, cache: CacheDB):
+        self.api_key = api_key
+        self.cache = cache
+        self.base_url = 'https://www.virustotal.com/api/v3'
+
+    def scan_file(self, sha256: str) -> Optional[dict]:
+        """Scan file and return results."""
+        if not self.api_key:
+            return None
+
+        # Check cache first
+        cached = self.cache.get_vt_result(sha256)
+        if cached:
+            return cached
+
+        # Query VirusTotal
+        headers = {'x-apikey': self.api_key}
+
+        try:
+            response = requests.get(
+                f'{self.base_url}/files/{sha256}',
+                headers=headers,
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                attributes = data['data']['attributes']
+
+                result = {
+                    'sha256': sha256,
+                    'detections': attributes['last_analysis_stats']['malicious'],
+                    'total_engines': sum(attributes['last_analysis_stats'].values()),
+                    'link': f"https://www.virustotal.com/gui/file/{sha256}"
+                }
+
+                # Extract threat label if available
+                threat_class = attributes.get('popular_threat_classification', {})
+                if threat_class and 'suggested_threat_label' in threat_class:
+                    result['threat_label'] = threat_class['suggested_threat_label']
+
+                # Cache result
+                self.cache.set_vt_result(sha256, result)
+                return result
+
+            elif response.status_code == 404:
+                return None
+
+        except Exception as e:
+            print(f"[!] VirusTotal API error: {e}")
+
+        return None
 
 
 class SessionParser:
@@ -346,6 +451,12 @@ class TTYLogParser:
 session_parser = SessionParser(CONFIG['log_path'])
 tty_parser = TTYLogParser(CONFIG['tty_path'])
 
+# Initialize VirusTotal scanner if API key is provided
+vt_scanner = None
+if CONFIG['virustotal_api_key']:
+    cache_db = CacheDB(CONFIG['cache_db_path'])
+    vt_scanner = VirusTotalScanner(CONFIG['virustotal_api_key'], cache_db)
+
 
 @app.route('/')
 def index():
@@ -437,11 +548,19 @@ def session_asciicast(session_id: str):
     """Return asciicast data for a session."""
     session = session_parser.get_session(session_id)
     if not session or not session['tty_log']:
+        print(f"[!] No TTY recording for session {session_id}")
         return jsonify({'error': 'No TTY recording'}), 404
+
+    # Check if TTY file exists
+    tty_file = tty_parser.find_tty_file(session['tty_log'])
+    if not tty_file:
+        print(f"[!] TTY file not found: {session['tty_log']}")
+        return jsonify({'error': 'TTY recording file not found'}), 404
 
     asciicast = tty_parser.get_asciicast_ndjson(session['tty_log'])
     if not asciicast:
-        return jsonify({'error': 'Failed to parse TTY log'}), 500
+        print(f"[!] Failed to parse TTY log: {session['tty_log']}")
+        return jsonify({'error': 'Failed to parse TTY log'}), 404
 
     return Response(asciicast, mimetype='application/x-asciicast')
 
@@ -494,7 +613,7 @@ def downloads():
         else:
             unique_downloads[shasum]['count'] += 1
 
-    # Check which files exist on disk
+    # Check which files exist on disk and get VT scores
     download_path = CONFIG['download_path']
     for shasum, dl in unique_downloads.items():
         file_path = os.path.join(download_path, shasum)
@@ -503,6 +622,15 @@ def downloads():
             dl['size'] = os.path.getsize(file_path)
         else:
             dl['size'] = 0
+
+        # Get VirusTotal score if scanner is available
+        if vt_scanner and shasum:
+            vt_result = vt_scanner.scan_file(shasum)
+            if vt_result:
+                dl['vt_detections'] = vt_result['detections']
+                dl['vt_total'] = vt_result['total_engines']
+                dl['vt_link'] = vt_result['link']
+                dl['vt_threat_label'] = vt_result.get('threat_label', '')
 
     downloads_list = sorted(unique_downloads.values(), key=lambda x: x['timestamp'], reverse=True)
 

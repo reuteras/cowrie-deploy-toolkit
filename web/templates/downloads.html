@@ -27,6 +27,7 @@
                 <th>SHA256</th>
                 <th>URL</th>
                 <th>Size</th>
+                <th>VT Score</th>
                 <th>Downloads</th>
                 <th>First Seen</th>
                 <th>Actions</th>
@@ -53,6 +54,19 @@
                     N/A
                     {% endif %}
                 </td>
+                <td>
+                    {% if dl.vt_detections is defined %}
+                        {% if dl.vt_detections > 0 %}
+                        <span class="badge badge-danger" title="{{ dl.vt_threat_label or 'Malicious' }}">
+                            {{ dl.vt_detections }}/{{ dl.vt_total }}
+                        </span>
+                        {% else %}
+                        <span class="badge badge-success">0/{{ dl.vt_total }}</span>
+                        {% endif %}
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
                 <td>{{ dl.count }}x</td>
                 <td>{{ dl.timestamp | format_timestamp }}</td>
                 <td class="actions">
@@ -67,7 +81,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="6" class="no-data">No downloads recorded</td>
+                <td colspan="7" class="no-data">No downloads recorded</td>
             </tr>
             {% endfor %}
         </tbody>

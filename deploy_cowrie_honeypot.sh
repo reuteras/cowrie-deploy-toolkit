@@ -9,7 +9,7 @@ if [ $# -ne 1 ]; then
     echo "Usage: $0 <output_directory>"
     echo "Example: $0 ./output_20251204_135502"
     echo ""
-    echo "Requires master-config.toml in project root for automated reporting setup"
+    echo "Requires master-config.toml in project root"
     exit 1
 fi
 
@@ -32,8 +32,8 @@ fi
 # Default deployment configuration
 SERVER_TYPE="cpx11"
 SERVER_IMAGE="debian-13"
-SSH_KEY_NAME1="SSH Key - default"
-SSH_KEY_NAME2="ShellFish@iPhone-23112023"
+SSH_KEY_NAME1="SSH Key 1"
+SSH_KEY_NAME2="SSH Key 2"
 COWRIE_SSH_PORT="22"        # Cowrie listens on port 22
 REAL_SSH_PORT="2222"        # Move real SSH to 2222
 
@@ -111,8 +111,8 @@ if [ -f "$MASTER_CONFIG" ]; then
         fi
     fi
 else
-    echo "[!] Warning: master-config.toml not found, using default settings"
-    echo "[!] Copy example-config.toml to master-config.toml and customize for full features"
+    echo "[!] Error: master-config.toml not found, using default settings"
+    exit
 fi
 
 SERVER_NAME="cowrie-honeypot-$(date +%s)"
@@ -154,7 +154,6 @@ sleep 5
 SERVER_IP=$(hcloud server describe "$SERVER_ID" --output json | jq -r '.public_net.ipv4.ip')
 
 echo "[*] Server IP: $SERVER_IP"
-echo "[*] Real SSH will be available on port $REAL_SSH_PORT"
 echo "[*] Cowrie honeypot will run on port $COWRIE_SSH_PORT"
 
 # ============================================================
@@ -261,8 +260,8 @@ TAILSCALEEOF
     echo "[*] Tailscale IP: $TAILSCALE_IP"
 
     if [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
-        echo "[!] IMPORTANT: Management SSH is now ONLY accessible via Tailscale"
-        echo "[!] Connect with: ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP"
+        echo "[*] IMPORTANT: Management SSH is now ONLY accessible via Tailscale"
+        echo "[*]     Connect with: ssh root@$TAILSCALE_IP"
     fi
 else
     echo "[*] Tailscale disabled, management SSH accessible via public IP"
@@ -381,10 +380,8 @@ if [ -f "$IDENTITY_DIR/ps.txt" ]; then
     # Generate cmdoutput.json using the converter script
     if command -v uv &> /dev/null; then
         uv run --quiet scripts/ps-to-cmdoutput.py "$IDENTITY_DIR/ps.txt" /tmp/cmdoutput.json
-    elif command -v python3 &> /dev/null; then
-        python3 scripts/ps-to-cmdoutput.py "$IDENTITY_DIR/ps.txt" /tmp/cmdoutput.json
     else
-        echo "[!] Warning: Neither uv nor python3 found. Cannot generate cmdoutput.json."
+        echo "[!] Warning: uv not found. Cannot generate cmdoutput.json."
         echo "[*] fs.pickle uploaded (cmdoutput.json generation skipped)."
     fi
 
@@ -396,7 +393,8 @@ if [ -f "$IDENTITY_DIR/ps.txt" ]; then
         echo "[*] fs.pickle and cmdoutput.json uploaded."
     fi
 else
-    echo "[*] fs.pickle uploaded (ps.txt not found, using default)."
+    echo "[!] Error ps.txt not found, exiting."
+    exit 1
 fi
 
 # Upload contents directory for real file content
@@ -445,9 +443,9 @@ case "$KERNEL_ARCH" in
     *) ARCH="linux-x64-lsb" ;;
 esac
 
-# Extract VirusTotal API key if available
+# Extract VirusTotal API key if available (needed for reporting and web dashboard)
 VT_API_KEY=""
-if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
+if [ -f "$MASTER_CONFIG" ]; then
     VT_API_KEY=$(grep "virustotal_api_key" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
 
     # Execute command if it looks like "op read" command
@@ -872,6 +870,7 @@ services:
       - COWRIE_DOWNLOAD_PATH=/cowrie-data/lib/cowrie/downloads
       - GEOIP_DB_PATH=/geoip/GeoLite2-City.mmdb
       - BASE_URL=${WEB_BASE_URL:-}
+      - VIRUSTOTAL_API_KEY=${VT_API_KEY:-}
     depends_on:
       - cowrie
     networks:

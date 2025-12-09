@@ -9,5 +9,8 @@ gunicorn>=21.0.0
 # GeoIP lookups (optional, for location enrichment)
 geoip2>=4.8.0
 
+# HTTP requests (for VirusTotal API)
+requests>=2.31.0
+
 # Async support (optional)
 gevent>=23.9.0
