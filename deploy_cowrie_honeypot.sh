@@ -808,7 +808,12 @@ if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
     # Upload web service files
     echo "[*] Uploading web service files..."
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
-        web "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
+        web "root@$SERVER_IP:/opt/cowrie/" || {
+            echo "[!] Error: Failed to upload web service files"
+            echo "[!] This usually means the web/ directory is missing from your local directory"
+            echo "[!] Make sure you're running the script from the cowrie-deploy-toolkit directory"
+            exit 1
+        }
 
     # Set up web dashboard on server
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << WEBEOF
