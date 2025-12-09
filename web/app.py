@@ -281,7 +281,13 @@ class SessionParser:
 
         # Calculate stats
         ips = set()
-        ip_details = defaultdict(lambda: {'count': 0, 'geo': None, 'last_seen': None})
+        ip_details = defaultdict(lambda: {
+            'count': 0,
+            'geo': None,
+            'last_seen': None,
+            'successful_logins': 0,
+            'failed_logins': 0
+        })
         country_counter = Counter()
         credential_counter = Counter()
         successful_credentials = set()
@@ -299,6 +305,12 @@ class SessionParser:
                 ip_details[ip]['count'] += 1
                 ip_details[ip]['geo'] = session.get('geo', {})
                 ip_details[ip]['last_seen'] = session['start_time']
+
+                # Track login attempts for this IP
+                if session.get('login_success'):
+                    ip_details[ip]['successful_logins'] += 1
+                elif session.get('username'):  # Had login attempt but not successful
+                    ip_details[ip]['failed_logins'] += 1
 
                 # Collect IP locations for map
                 geo = session.get('geo', {})

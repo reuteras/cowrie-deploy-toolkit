@@ -28,6 +28,8 @@
                 <th>Country</th>
                 <th>City</th>
                 <th>Sessions</th>
+                <th>Successful Logins</th>
+                <th>Failed Logins</th>
                 <th>Last Seen</th>
             </tr>
         </thead>
@@ -35,7 +37,9 @@
             {% for ip_data in ips %}
             <tr>
                 <td>
-                    <code>{{ ip_data.ip }}</code>
+                    <a href="{{ url_for('sessions', ip=ip_data.ip, hours=hours) }}" class="ip-link">
+                        <code>{{ ip_data.ip }}</code>
+                    </a>
                 </td>
                 <td>
                     {% if ip_data.geo and ip_data.geo.country %}
@@ -52,13 +56,29 @@
                     {% endif %}
                 </td>
                 <td>
-                    <span class="badge badge-success">{{ ip_data.count }}</span>
+                    <a href="{{ url_for('sessions', ip=ip_data.ip, hours=hours) }}" class="badge badge-success">
+                        {{ ip_data.count }}
+                    </a>
+                </td>
+                <td>
+                    {% if ip_data.successful_logins > 0 %}
+                    <span class="badge badge-danger" title="Successful breaches">{{ ip_data.successful_logins }}</span>
+                    {% else %}
+                    <span class="text-muted">0</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if ip_data.failed_logins > 0 %}
+                    <span class="badge badge-warning">{{ ip_data.failed_logins }}</span>
+                    {% else %}
+                    <span class="text-muted">0</span>
+                    {% endif %}
                 </td>
                 <td>{{ ip_data.last_seen | format_timestamp if ip_data.last_seen else 'N/A' }}</td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="5" class="no-data">No IP addresses recorded</td>
+                <td colspan="7" class="no-data">No IP addresses recorded</td>
             </tr>
             {% endfor %}
         </tbody>
