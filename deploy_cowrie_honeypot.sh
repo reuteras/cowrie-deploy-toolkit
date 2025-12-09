@@ -971,7 +971,7 @@ EOFINFO
 if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
     # Get Tailscale hostname for Tailscale SSH (use Tailscale IP since public SSH is blocked)
     if [ "$TAILSCALE_USE_SSH" = "true" ]; then
-        TS_HOSTNAME=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -p "$REAL_SSH_PORT" "root@$TAILSCALE_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo ''" 2>/dev/null)
+        TS_HOSTNAME=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -p "$REAL_SSH_PORT" "root@$TAILSCALE_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo ''" 2>/dev/null) || TS_HOSTNAME=""
     fi
 
     if [ "$TAILSCALE_USE_SSH" = "true" ] && [ -n "$TS_HOSTNAME" ]; then
