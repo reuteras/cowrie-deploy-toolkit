@@ -827,6 +827,9 @@ else
     echo "[*] Cowrie volume not yet created, will be created by docker compose"
 fi
 
+# Ensure GeoIP directory exists (web dashboard needs it even if reporting is disabled)
+mkdir -p /var/lib/GeoIP
+
 # Create web dashboard docker-compose file
 cat > /opt/cowrie/docker-compose.yml << 'DOCKEREOF'
 services:
