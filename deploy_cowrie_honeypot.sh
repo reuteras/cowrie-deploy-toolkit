@@ -425,6 +425,7 @@ services:
       - cowrie-var:/cowrie/cowrie-git/var
       - /opt/cowrie/share:/cowrie/cowrie-git/share:ro
       - /opt/cowrie/share/cowrie/cmdoutput.json:/cowrie/cowrie-git/src/cowrie/data/cmdoutput.json:ro
+      - /opt/cowrie/share/cowrie/contents:/cowrie/cowrie-git/honeyfs:ro
     environment:
       - COWRIE_HOSTNAME=server
     # Security hardening
