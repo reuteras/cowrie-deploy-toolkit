@@ -908,6 +908,11 @@ echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 ro
 if command -v tailscale &> /dev/null; then
     echo "[*] Configuring Tailscale Serve for web dashboard..."
     tailscale serve --bg --https=443 http://localhost:5000
+
+    # Add @reboot cron job to ensure Tailscale Serve persists after reboot
+    (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve" | crontab -
+    (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 http://localhost:5000") | crontab -
+
     echo "[*] Web dashboard available at: https://\$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
 fi
 WEBEOF
