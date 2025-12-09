@@ -897,9 +897,9 @@ DOCKEREOF
 # Build and start web service
 cd /opt/cowrie
 echo "[*] Building web dashboard container (this may take a minute)..."
-docker compose build cowrie-web
+docker compose build cowrie-web > /dev/null
 echo "[*] Starting services..."
-docker compose up -d
+docker compose up -d > /dev/null
 
 echo "[*] Web dashboard deployed on localhost:5000"
 echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@SERVER_IP"
