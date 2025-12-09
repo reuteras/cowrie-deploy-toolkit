@@ -234,17 +234,23 @@ if [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
     # Install UFW if not present
     DEBIAN_FRONTEND=noninteractive apt-get install -qq -y ufw > /dev/null 2>&1
 
+    # Disable UFW first to ensure clean state
+    ufw --force disable > /dev/null 2>&1
+
     # Set default policies
     ufw --force default deny incoming > /dev/null
     ufw --force default allow outgoing > /dev/null
 
-    # Allow SSH from Tailscale network only
+    # CRITICAL: Allow established/related connections to prevent killing current SSH session
+    ufw allow in from any to any state established,related comment 'Allow established connections' > /dev/null
+
+    # Allow SSH from Tailscale network only (for NEW connections)
     ufw allow in on tailscale0 to any port $REAL_SSH_PORT proto tcp comment 'SSH via Tailscale' > /dev/null
 
     # Allow honeypot SSH from anywhere (port 22 for Cowrie)
     ufw allow $COWRIE_SSH_PORT/tcp comment 'Cowrie honeypot' > /dev/null
 
-    # Enable firewall
+    # Enable firewall (current SSH session will stay alive due to established rule)
     ufw --force enable > /dev/null
 
     echo "[*] Firewall configured: Port $REAL_SSH_PORT only accessible via Tailscale"
