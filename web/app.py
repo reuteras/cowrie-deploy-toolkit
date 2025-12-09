@@ -178,6 +178,7 @@ class SessionParser:
         ips = set()
         country_counter = Counter()
         credential_counter = Counter()
+        successful_credentials = set()
         command_counter = Counter()
         sessions_with_cmds = 0
         total_downloads = 0
@@ -192,6 +193,9 @@ class SessionParser:
             if session['username'] and session['password']:
                 cred = f"{session['username']}:{session['password']}"
                 credential_counter[cred] += 1
+                # Track successful logins
+                if session.get('login_success'):
+                    successful_credentials.add(cred)
 
             if session['commands']:
                 sessions_with_cmds += 1
@@ -219,6 +223,7 @@ class SessionParser:
             'total_downloads': total_downloads,
             'top_countries': country_counter.most_common(10),
             'top_credentials': credential_counter.most_common(10),
+            'successful_credentials': successful_credentials,
             'top_commands': command_counter.most_common(20),
             'hourly_activity': sorted_hours[-48:],  # Last 48 hours
         }

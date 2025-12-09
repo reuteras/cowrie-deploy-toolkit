@@ -162,6 +162,7 @@ class LogParser:
         self.total_connections = 0
         self.unique_ips = set()
         self.credentials = Counter()
+        self.successful_credentials = set()  # Track which credentials succeeded
         self.commands = []
         self.command_counts = Counter()  # Track command frequency
         self.sessions = defaultdict(dict)
@@ -217,7 +218,11 @@ class LogParser:
             username = entry.get('username', '')
             password = entry.get('password', '')
             if username and password:
-                self.credentials[f"{username}:{password}"] += 1
+                cred = f"{username}:{password}"
+                self.credentials[cred] += 1
+                # Track successful logins
+                if event_id == 'cowrie.login.success':
+                    self.successful_credentials.add(cred)
 
         # Commands
         elif event_id == 'cowrie.command.input':
@@ -284,6 +289,7 @@ class LogParser:
             'ip_list': self.ip_list,
             'unique_ip_set': self.unique_ips,
             'top_credentials': self.credentials.most_common(10),
+            'successful_credentials': self.successful_credentials,
             'commands': self.commands,
             'top_commands': self.command_counts.most_common(20),  # Top 20 commands with counts
             'sessions_with_commands': len(set(cmd['session'] for cmd in self.commands if cmd['session'])),
@@ -536,7 +542,8 @@ class ReportGenerator:
             lines.append("TOP CREDENTIALS ATTEMPTED")
             lines.append("-" * 70)
             for cred, count in self.stats['top_credentials']:
-                lines.append(f"{cred:40s} ({count} attempts)")
+                success_marker = " ✓ SUCCESS" if cred in self.stats['successful_credentials'] else ""
+                lines.append(f"{cred:40s} ({count} attempts){success_marker}")
             lines.append("")
 
         # Downloaded files
@@ -753,13 +760,17 @@ class ReportGenerator:
             <tr>
                 <th>Username:Password</th>
                 <th>Attempts</th>
+                <th>Status</th>
             </tr>
 """
             for cred, count in self.stats['top_credentials']:
+                success = cred in self.stats['successful_credentials']
+                status_badge = '<span style="background: #28a745; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.85em;">✓ SUCCESS</span>' if success else '<span style="background: #6c757d; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.85em;">Failed</span>'
                 html += f"""
             <tr>
                 <td><code>{cred}</code></td>
                 <td>{count}</td>
+                <td>{status_badge}</td>
             </tr>
 """
             html += """
