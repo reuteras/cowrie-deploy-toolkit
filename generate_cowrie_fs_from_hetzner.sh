@@ -41,8 +41,8 @@ if [ -f "$MASTER_CONFIG" ]; then
         echo "[*] Using config: $SERVER_TYPE, $SERVER_IMAGE, hostname=$HONEYPOT_HOSTNAME"
     fi
 else
-    echo "[*] No master-config.toml found, using default settings"
-    echo "[*] To customize, copy example-config.toml to master-config.toml"
+    echo "[!] Error: No master-config.toml found"
+    exit 1
 fi
 
 SERVER_NAME="cowrie-source-$(date +%s)"
@@ -96,7 +96,7 @@ echo "[*] Server IP: $SERVER_IP"
 # ============================================================
 
 echo -n "[*] Waiting for SSH to become available"
-until ssh $SSH_OPTS -o ConnectTimeout=3 "root@$SERVER_IP" "echo ." 2>/dev/null; do
+until ssh $SSH_OPTS -o ConnectTimeout=3 "root@$SERVER_IP" "echo -n ." 2>/dev/null; do
     printf "."
     sleep 3
 done

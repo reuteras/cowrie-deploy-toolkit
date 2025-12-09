@@ -8,7 +8,6 @@ Generates daily reports from Cowrie JSON logs with:
 - VirusTotal malware analysis
 - YARA rule scanning
 - Email delivery with HTML formatting
-- Real-time webhook alerts (Slack, Discord, Teams)
 """
 
 import argparse
@@ -75,15 +74,6 @@ class Config:
             'sendgrid_api_key': os.getenv('SENDGRID_API_KEY'),
             'mailgun_api_key': os.getenv('MAILGUN_API_KEY'),
             'mailgun_domain': os.getenv('MAILGUN_DOMAIN'),
-
-            # Webhook alerts
-            'slack_webhook': os.getenv('SLACK_WEBHOOK'),
-            'discord_webhook': os.getenv('DISCORD_WEBHOOK'),
-            'teams_webhook': os.getenv('TEAMS_WEBHOOK'),
-
-            # Alert thresholds
-            'alert_threshold_connections': int(os.getenv('ALERT_THRESHOLD_CONNECTIONS', '100')),
-            'alert_on_malware': os.getenv('ALERT_ON_MALWARE', 'true').lower() == 'true',
 
             # Report settings
             'report_hours': int(os.getenv('REPORT_HOURS', '24')),
@@ -1057,104 +1047,6 @@ class EmailSender:
             return False
 
 
-class WebhookAlerter:
-    """Send real-time alerts via webhooks."""
-
-    def __init__(self, config: Config):
-        self.config = config
-
-    def send_alert(self, title: str, message: str, severity: str = 'info'):
-        """Send alert to all configured webhooks."""
-        if self.config.get('slack_webhook'):
-            self._send_slack(title, message, severity)
-
-        if self.config.get('discord_webhook'):
-            self._send_discord(title, message, severity)
-
-        if self.config.get('teams_webhook'):
-            self._send_teams(title, message, severity)
-
-    def _send_slack(self, title: str, message: str, severity: str):
-        """Send Slack notification."""
-        try:
-            color = {'info': '#36a64f', 'warning': '#ff9900', 'critical': '#e74c3c'}.get(severity, '#36a64f')
-
-            payload = {
-                'attachments': [{
-                    'color': color,
-                    'title': title,
-                    'text': message,
-                    'footer': 'Cowrie Honeypot Alert',
-                    'ts': int(datetime.now().timestamp())
-                }]
-            }
-
-            response = requests.post(
-                self.config.get('slack_webhook'),
-                json=payload,
-                timeout=10
-            )
-
-            if response.status_code == 200:
-                print("[*] Slack alert sent")
-
-        except Exception as e:
-            print(f"[!] Slack webhook error: {e}")
-
-    def _send_discord(self, title: str, message: str, severity: str):
-        """Send Discord notification."""
-        try:
-            color_map = {'info': 3447003, 'warning': 16760576, 'critical': 15158332}
-
-            payload = {
-                'embeds': [{
-                    'title': title,
-                    'description': message,
-                    'color': color_map.get(severity, 3447003),
-                    'footer': {'text': 'Cowrie Honeypot Alert'},
-                    'timestamp': datetime.now().isoformat()
-                }]
-            }
-
-            response = requests.post(
-                self.config.get('discord_webhook'),
-                json=payload,
-                timeout=10
-            )
-
-            if response.status_code == 204:
-                print("[*] Discord alert sent")
-
-        except Exception as e:
-            print(f"[!] Discord webhook error: {e}")
-
-    def _send_teams(self, title: str, message: str, severity: str):
-        """Send Microsoft Teams notification."""
-        try:
-            color = {'info': '00ff00', 'warning': 'ff9900', 'critical': 'ff0000'}.get(severity, '00ff00')
-
-            payload = {
-                '@type': 'MessageCard',
-                '@context': 'https://schema.org/extensions',
-                'summary': title,
-                'themeColor': color,
-                'title': title,
-                'text': message
-            }
-
-            response = requests.post(
-                self.config.get('teams_webhook'),
-                json=payload,
-                timeout=10
-            )
-
-            if response.status_code == 200:
-                print("[*] Teams alert sent")
-
-        except Exception as e:
-            print(f"[!] Teams webhook error: {e}")
-
-
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description='Cowrie Honeypot Daily Report Generator')
@@ -1257,26 +1149,6 @@ def main():
 
     email_sender = EmailSender(config)
     email_sender.send(subject, text_report, html_report)
-
-    # Send alerts if thresholds exceeded
-    alerter = WebhookAlerter(config)
-
-    if stats['total_connections'] > config.get('alert_threshold_connections'):
-        alerter.send_alert(
-            '⚠️ High Attack Volume',
-            f"Detected {stats['total_connections']} connection attempts in the last {config.get('report_hours')} hours",
-            'warning'
-        )
-
-    if config.get('alert_on_malware') and file_analysis:
-        for file_info in file_analysis:
-            if file_info.get('vt_result', {}).get('detections', 0) > 0:
-                vt = file_info['vt_result']
-                alerter.send_alert(
-                    '🚨 Malware Downloaded',
-                    f"SHA256: {file_info['sha256'][:16]}...\nVirusTotal: {vt['detections']}/{vt['total_engines']} detections\n{vt['link']}",
-                    'critical'
-                )
 
     print("[*] Daily report completed successfully")
 

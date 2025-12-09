@@ -8,11 +8,9 @@ Automated daily reporting with threat intelligence enrichment for Cowrie honeypo
 - **GeoIP Enrichment**: Country, city, ASN, and organization lookup using MaxMind GeoLite2
 - **VirusTotal Integration**: Malware detection for downloaded files with caching
 - **YARA Scanning**: Local malware classification using YARA rules
-- **Email Delivery**: SMTP, SendGrid, or Mailgun with HTML formatting
-- **Real-time Alerts**: Webhook notifications for Slack, Discord, and Microsoft Teams
-- **Threshold Alerts**: Configurable alerts for high attack volumes and malware downloads
+- **Email Delivery**: Via local Postfix with HTML formatting
 
-## Quick Setup (Recommended)
+## Quick Setup
 
 **✨ NEW: Fully automated deployment using `master-config.toml`**
 
@@ -29,233 +27,12 @@ The deployment script automatically:
 
 **That's it!** No manual configuration needed. See `example-config.toml` for all options.
 
----
-
-## Manual Installation (Advanced)
-
-> **Note:** The sections below are for manual setup or troubleshooting. If you use `master-config.toml` with the deployment script, these steps are handled automatically.
-
-### 1. Install Dependencies
-
-On your Cowrie honeypot server:
-
-```bash
-# Install uv (modern Python package manager)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Clone or upload the cowrie-deploy-toolkit to /opt/cowrie
-cd /opt/cowrie
-
-# Install Python dependencies using uv
-uv sync
-
-# Install YARA system package (Debian/Ubuntu)
-apt-get install -y yara
-
-# Or install from source for latest version
-# See: https://yara.readthedocs.io/en/stable/gettingstarted.html
-```
-
-### 2. Download MaxMind GeoLite2 Databases
-
-Sign up for a free MaxMind account: https://www.maxmind.com/en/geolite2/signup
-
-Download the databases:
-
-```bash
-# GeoIP databases are stored in Debian default location: /var/lib/GeoIP
-
-# Install geoipupdate
-apt-get install -y geoipupdate
-
-# Configure /etc/GeoIP.conf with your MaxMind account ID and license key
-# Then run:
-geoipupdate
-
-# Databases are automatically downloaded to /var/lib/GeoIP/
-# (Debian default location - no need to copy)
-```
-
-### 3. Download YARA Rules
-
-Download YARA rules from YARA Forge (curated, high-quality ruleset):
-
-```bash
-# Create rules directory
-mkdir -p /opt/cowrie/yara-rules
-
-# Download YARA Forge full ruleset
-cd /tmp
-curl -sSL -o yara-rules.zip https://github.com/YARAHQ/yara-forge/releases/latest/download/yara-forge-rules-full.zip
-unzip -q yara-rules.zip
-find . -name "*.yar" -o -name "*.yara" | xargs -I{} cp {} /opt/cowrie/yara-rules/
-
-# Cleanup
-rm -rf /tmp/yara-rules.zip
-
-# Test rules
-yara -r /opt/cowrie/yara-rules/ /bin/ls
-
-# Optional: Set up daily automatic updates
-cat > /opt/cowrie/scripts/update-yara-rules.sh << 'EOF'
-#!/usr/bin/env bash
-curl -sSL -o /tmp/yara-rules.zip https://github.com/YARAHQ/yara-forge/releases/latest/download/yara-forge-rules-full.zip
-cd /tmp && unzip -q yara-rules.zip
-rm -f /opt/cowrie/yara-rules/*.yar
-find . -name "*.yar" | xargs -I{} cp {} /opt/cowrie/yara-rules/
-rm -rf /tmp/yara-rules.zip
-EOF
-chmod +x /opt/cowrie/scripts/update-yara-rules.sh
-(crontab -l 2>/dev/null; echo "0 2 * * * /opt/cowrie/scripts/update-yara-rules.sh") | crontab -
-```
-
-**Note:** YARA Forge provides curated, quality-controlled rules from multiple sources. The full ruleset is updated regularly and available at https://yarahq.github.io
-
-### 4. Configure Environment Variables
-
-Create `/opt/cowrie/etc/report.env`:
-
-```bash
-# Paths
-export COWRIE_LOG_PATH="/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json"
-export COWRIE_DOWNLOAD_PATH="/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
-export GEOIP_DB_PATH="/var/lib/GeoIP/GeoLite2-City.mmdb"
-export GEOIP_ASN_PATH="/var/lib/GeoIP/GeoLite2-ASN.mmdb"
-export YARA_RULES_PATH="/opt/cowrie/yara-rules"
-export CACHE_DB_PATH="/opt/cowrie/var/report-cache.db"
-
-# VirusTotal (get free API key from https://www.virustotal.com/)
-export VT_API_KEY="your_virustotal_api_key_here"
-export VT_ENABLED="true"
-
-# Email Configuration
-export EMAIL_ENABLED="true"
-export EMAIL_FROM="honeypot@yourdomain.com"
-export EMAIL_TO="admin@yourdomain.com"
-export EMAIL_SUBJECT_PREFIX="[Honeypot]"
-
-# SMTP Settings (for direct SMTP)
-export SMTP_HOST="smtp.gmail.com"
-export SMTP_PORT="587"
-export SMTP_USER="your_email@gmail.com"
-export SMTP_PASSWORD="your_app_password"
-export SMTP_TLS="true"
-
-# OR use SendGrid (recommended for reliability)
-# export SENDGRID_API_KEY="your_sendgrid_api_key"
-
-# OR use Mailgun
-# export MAILGUN_API_KEY="your_mailgun_api_key"
-# export MAILGUN_DOMAIN="mg.yourdomain.com"
-
-# Webhook Alerts (optional)
-# Get webhook URLs from Slack/Discord/Teams channel settings
-export SLACK_WEBHOOK="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
-# export DISCORD_WEBHOOK="https://discord.com/api/webhooks/YOUR/WEBHOOK/URL"
-# export TEAMS_WEBHOOK="https://outlook.office.com/webhook/YOUR/WEBHOOK/URL"
-
-# Alert Thresholds
-export ALERT_THRESHOLD_CONNECTIONS="100"
-export ALERT_ON_MALWARE="true"
-
-# Report Settings
-export REPORT_HOURS="24"
-```
-
-Make the file readable only by root:
-
-```bash
-chmod 600 /opt/cowrie/etc/report.env
-```
-
-### 5. Set Up Cron Job
-
-Add to root's crontab:
-
-```bash
-# Edit crontab
-crontab -e
-
-# Add this line to run daily at 6 AM
-0 6 * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && /root/.cargo/bin/uv run scripts/daily-report.py 2>&1 | logger -t cowrie-report
-```
-
-For testing, you can run it every hour during setup:
-
-```bash
-# Run every hour (for testing)
-0 * * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && /root/.cargo/bin/uv run scripts/daily-report.py 2>&1 | logger -t cowrie-report
-```
-
-## Usage
-
-### Manual Execution
-
-```bash
-# Source environment variables
-source /opt/cowrie/etc/report.env
-cd /opt/cowrie
-
-# Run report for last 24 hours (sends email)
-uv run scripts/daily-report.py
-
-# Run report for last 6 hours
-uv run scripts/daily-report.py --hours 6
-
-# Test mode: print to stdout instead of sending email
-uv run scripts/daily-report.py --test
-
-# Save to file instead of sending email
-uv run scripts/daily-report.py --output /tmp/report.html
-```
-
-### Configuration File
-
-Instead of environment variables, you can use a JSON configuration file:
-
-Create `/opt/cowrie/etc/report-config.json`:
-
-```json
-{
-  "log_path": "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json",
-  "download_path": "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads",
-  "geoip_db_path": "/var/lib/GeoIP/GeoLite2-City.mmdb",
-  "geoip_asn_path": "/var/lib/GeoIP/GeoLite2-ASN.mmdb",
-  "yara_rules_path": "/opt/cowrie/yara-rules",
-  "cache_db_path": "/opt/cowrie/var/report-cache.db",
-
-  "virustotal_api_key": "your_api_key",
-  "virustotal_enabled": true,
-
-  "email_enabled": true,
-  "email_from": "honeypot@yourdomain.com",
-  "email_to": "admin@yourdomain.com",
-  "email_subject_prefix": "[Honeypot]",
-
-  "smtp_host": "smtp.gmail.com",
-  "smtp_port": 587,
-  "smtp_user": "your_email@gmail.com",
-  "smtp_password": "your_password",
-  "smtp_tls": true,
-
-  "slack_webhook": "https://hooks.slack.com/services/YOUR/WEBHOOK",
-  "alert_threshold_connections": 100,
-  "alert_on_malware": true,
-  "report_hours": 24
-}
-```
-
-Then run with:
-
-```bash
-python3 /opt/cowrie/scripts/daily-report.py --config /opt/cowrie/etc/report-config.json
-```
-
 ## Report Example
 
 The daily report includes:
 
 ### Summary Statistics
+
 - Total connections
 - Unique IP addresses
 - Sessions with commands executed
@@ -263,16 +40,21 @@ The daily report includes:
 - Average session duration
 
 ### Top Attacking Countries
+
 Geographic distribution of attacks with:
+
 - Country name
 - Number of connections
 - Percentage of total attacks
 
 ### Top Credentials
+
 Most frequently attempted username:password combinations
 
 ### Downloaded Files (Malware Analysis)
+
 For each downloaded file:
+
 - SHA256 hash
 - File size
 - YARA rule matches (malware family, packer, etc.)
@@ -280,38 +62,17 @@ For each downloaded file:
 - Link to full VirusTotal report
 
 ### Notable Commands
+
 Commands executed by attackers, including:
+
 - Source IP address
 - Full command line
 - Timestamp
 
-## Real-time Alerts
-
-Alerts are sent via webhooks when:
-
-1. **High Attack Volume**: Connection attempts exceed threshold (default: 100/24hr)
-2. **Malware Downloaded**: Any file with VirusTotal detections
-
-### Setting Up Webhooks
-
-**Slack:**
-1. Go to https://api.slack.com/messaging/webhooks
-2. Create an incoming webhook
-3. Copy the webhook URL to `SLACK_WEBHOOK`
-
-**Discord:**
-1. Edit channel → Integrations → Webhooks
-2. Create webhook
-3. Copy webhook URL to `DISCORD_WEBHOOK`
-
-**Microsoft Teams:**
-1. Team channel → Connectors → Incoming Webhook
-2. Configure and create
-3. Copy webhook URL to `TEAMS_WEBHOOK`
-
 ## Troubleshooting
 
 ### No logs found
+
 ```bash
 # Verify log path
 ls -la /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json
@@ -324,6 +85,7 @@ docker logs cowrie
 ```
 
 ### GeoIP errors
+
 ```bash
 # Verify database files exist (Debian default location)
 ls -la /var/lib/GeoIP/
@@ -333,6 +95,7 @@ ls -la /var/lib/GeoIP/
 ```
 
 ### YARA errors
+
 ```bash
 # Test YARA installation
 yara --version
@@ -347,23 +110,12 @@ for rule in /opt/cowrie/yara-rules/*.yar; do
 done
 ```
 
-### Email not sending
-```bash
-# Test SMTP connectivity
-telnet smtp.gmail.com 587
-
-# Check authentication
-# For Gmail: Use App Passwords, not regular password
-# https://support.google.com/accounts/answer/185833
-
-# Test with Python
-python3 -c "import smtplib; print('SMTP OK')"
-
 # Check logs
 journalctl -t cowrie-report
 ```
 
 ### VirusTotal API limits
+
 The free tier allows 4 requests per minute. The script caches results in SQLite to avoid re-querying:
 
 ```bash
@@ -432,8 +184,6 @@ python3 daily-report.py --config /etc/cowrie/honeypot-2-config.json
 1. **Protect API Keys**: Never commit `report.env` or `report-config.json` to version control
 2. **Secure Permissions**: `chmod 600` on configuration files
 3. **VirusTotal Rate Limits**: Free tier is 4 req/min. Caching prevents excessive queries.
-4. **Email Security**: Use TLS for SMTP. Consider PGP encryption for sensitive reports.
-5. **Webhook Security**: Webhook URLs are secrets. Rotate if exposed.
 
 ## License
 

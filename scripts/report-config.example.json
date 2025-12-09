@@ -16,23 +16,6 @@
   "email_to": "admin@yourdomain.com",
   "email_subject_prefix": "[Honeypot]",
 
-  "smtp_host": "smtp.gmail.com",
-  "smtp_port": 587,
-  "smtp_user": "your_email@gmail.com",
-  "smtp_password": "your_app_password_here",
-  "smtp_tls": true,
-
-  "sendgrid_api_key": null,
-  "mailgun_api_key": null,
-  "mailgun_domain": null,
-
-  "slack_webhook": null,
-  "discord_webhook": null,
-  "teams_webhook": null,
-
-  "alert_threshold_connections": 100,
-  "alert_on_malware": true,
-
   "report_hours": 24,
   "include_map": true
 }

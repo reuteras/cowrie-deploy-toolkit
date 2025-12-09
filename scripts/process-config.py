@@ -137,22 +137,6 @@ def generate_env_file(config: dict) -> str:
             lines.append(f'export MAILGUN_DOMAIN="{e["mailgun_domain"]}"')
         lines.append("")
 
-    # Webhooks
-    if 'alerts' in config:
-        lines.append("# Webhook Alerts")
-        a = config['alerts']
-        if 'slack_webhook' in a:
-            lines.append(f'export SLACK_WEBHOOK="{a["slack_webhook"]}"')
-        if 'discord_webhook' in a:
-            lines.append(f'export DISCORD_WEBHOOK="{a["discord_webhook"]}"')
-        if 'teams_webhook' in a:
-            lines.append(f'export TEAMS_WEBHOOK="{a["teams_webhook"]}"')
-        if 'alert_threshold_connections' in a:
-            lines.append(f'export ALERT_THRESHOLD_CONNECTIONS="{a["alert_threshold_connections"]}"')
-        if 'alert_on_malware' in a:
-            lines.append(f'export ALERT_ON_MALWARE="{"true" if a["alert_on_malware"] else "false"}"')
-        lines.append("")
-
     # Report settings
     if 'advanced' in config and 'report_hours' in config['advanced']:
         lines.append("# Report Settings")

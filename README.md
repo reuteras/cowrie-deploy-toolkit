@@ -105,6 +105,8 @@ See `example-config.toml` for all available options.
 ```bash
 # Management access
 ssh -p 2222 root@<SERVER_IP>
+# or via Tailscale
+ssh root@<TAILSCALE_SERVER_IP>
 
 # View attack logs
 ssh -p 2222 root@<SERVER_IP> 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'
@@ -173,10 +175,6 @@ See [scripts/README.md](scripts/README.md) for detailed configuration options.
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for planned features:
-- ✅ **Phase 1 COMPLETE:** Daily email reports with GeoIP, VirusTotal, and YARA integration
-- Phase 2: Dashboard visualization (Grafana + Loki)
-- Phase 3: Log management and extended threat intelligence
-- Future: Multi-honeypot fleet deployment, IoC sharing, IaC
 
 ## License
 

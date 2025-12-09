@@ -28,7 +28,7 @@ fi
 # STEP 1 — Install system dependencies
 # ============================================================
 
-echo "[*] Installing system dependencies..."
+echo -n "[*] Installing system dependencies..."
 
 apt-get update -qq
 apt-get install -y \
@@ -40,7 +40,7 @@ apt-get install -y \
     curl \
     > /dev/null 2>&1
 
-echo "[*] System dependencies installed"
+echo " - Done"
 
 # ============================================================
 # STEP 2 — Install uv (modern Python package manager)
@@ -68,7 +68,7 @@ fi
 # STEP 3 — Install Python dependencies using uv
 # ============================================================
 
-echo "[*] Installing Python dependencies with uv..."
+echo -n "[*] Installing Python dependencies with uv..."
 
 # Assume the toolkit is already in /opt/cowrie
 if [ ! -f "/opt/cowrie/pyproject.toml" ]; then
@@ -78,20 +78,20 @@ fi
 
 cd /opt/cowrie
 uv sync --quiet
-echo "[*] Python dependencies installed"
+echo " - Done"
 
 # ============================================================
 # STEP 4 — Create directory structure
 # ============================================================
 
-echo "[*] Creating directory structure..."
+echo -n "[*] Creating directory structure..."
 
 mkdir -p /opt/cowrie/scripts
 mkdir -p /opt/cowrie/etc
 mkdir -p /opt/cowrie/yara-rules
 mkdir -p /opt/cowrie/var
 
-echo "[*] Directory structure created"
+echo " - Done"
 
 # Check if databases already exist (Debian default location)
 if [ -f "/var/lib/GeoIP/GeoLite2-City.mmdb" ] && [ -f "/var/lib/GeoIP/GeoLite2-ASN.mmdb" ]; then
@@ -167,12 +167,12 @@ echo "[*] Running initial YARA rules download..."
 # Set up daily cron job (runs at 2 AM daily)
 echo "[*] Setting up daily YARA rules update cron job..."
 (crontab -l 2>/dev/null || echo "") | grep -v "update-yara-rules.sh" | crontab -
-(crontab -l; echo "0 2 * * * /opt/cowrie/scripts/update-yara-rules.sh >> /var/log/yara-update.log 2>&1") | crontab -
+(crontab -l; echo "0 4 * * * /opt/cowrie/scripts/update-yara-rules.sh >> /var/log/yara-update.log 2>&1") | crontab -
 
 # Count rules
 RULE_COUNT=$(find /opt/cowrie/yara-rules -name "*.yar" -o -name "*.yara" 2>/dev/null | wc -l)
 echo "[*] Downloaded $RULE_COUNT YARA rule files from YARA Forge"
-echo "[*] Daily automatic updates configured (runs at 2 AM)"
+echo "[*] Daily automatic updates configured (runs at 4 AM)"
 
 # ============================================================
 # STEP 7 — Create example configuration
@@ -203,17 +203,6 @@ export EMAIL_FROM="honeypot@yourdomain.com"
 export EMAIL_TO="admin@yourdomain.com"
 export EMAIL_SUBJECT_PREFIX="[Honeypot]"
 
-# SMTP Settings
-export SMTP_HOST="smtp.gmail.com"
-export SMTP_PORT="587"
-export SMTP_USER="your_email@gmail.com"
-export SMTP_PASSWORD="your_app_password_here"
-export SMTP_TLS="true"
-
-# Alert Thresholds
-export ALERT_THRESHOLD_CONNECTIONS="100"
-export ALERT_ON_MALWARE="true"
-
 # Report Settings
 export REPORT_HOURS="24"
 EOF
@@ -233,7 +222,7 @@ echo "[*] Setting up cron job..."
 
 # Use full path to uv for cron reliability
 UV_PATH="$HOME/.local/bin/uv"
-CRON_ENTRY="0 6 * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && $UV_PATH run scripts/daily-report.py 2>&1 | logger -t cowrie-report"
+CRON_ENTRY="0 5 * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && $UV_PATH run scripts/daily-report.py 2>&1 | logger -t cowrie-report"
 
 # Check if cron job already exists
 if crontab -l 2>/dev/null | grep -q "daily-report.py"; then
@@ -241,7 +230,7 @@ if crontab -l 2>/dev/null | grep -q "daily-report.py"; then
 else
     # Add cron job
     (crontab -l 2>/dev/null; echo "$CRON_ENTRY") | crontab -
-    echo "[*] Cron job added (runs daily at 6 AM)"
+    echo "[*] Cron job added (runs daily at 5 AM)"
 fi
 
 # ============================================================
