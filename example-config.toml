@@ -69,6 +69,22 @@ smtp_tls = true
 alert_threshold_connections = 100
 alert_on_malware = true
 
+[web_dashboard]
+# SSH Session Playback Web Service
+# Provides a web UI for viewing session details and replaying TTY recordings
+# Access is via Tailscale or SSH tunnel only (never exposed to public internet)
+enabled = false
+
+# Tailscale auth key for secure remote access (recommended)
+# Generate at: https://login.tailscale.com/admin/settings/keys
+# Use an ephemeral, reusable key with appropriate tags
+# tailscale_authkey = "op read op://Personal/Tailscale/honeypot_authkey"
+
+# Base URL for session links in email reports
+# Example: "https://honeypot-dashboard.your-tailnet.ts.net"
+# Leave empty to use relative links
+base_url = ""
+
 [advanced]
 # Report generation interval (hours)
 report_hours = 24
@@ -76,6 +92,7 @@ report_hours = 24
 # Paths (usually don't need to change these)
 log_path = "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json"
 download_path = "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
+tty_path = "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty"
 geoip_db_path = "/var/lib/GeoIP/GeoLite2-City.mmdb"
 geoip_asn_path = "/var/lib/GeoIP/GeoLite2-ASN.mmdb"
 yara_rules_path = "/opt/cowrie/yara-rules"

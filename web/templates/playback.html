@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Playback - Session {{ session.id | truncate_hash }} - Cowrie Honeypot{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.6.3/dist/bundle/asciinema-player.css" />
+<style>
+    .player-container {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    .player-wrapper {
+        background: #1e1e1e;
+        border-radius: 8px;
+        overflow: hidden;
+        margin: 20px 0;
+    }
+    #player {
+        width: 100%;
+    }
+    .player-controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+    }
+    .speed-control {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .session-meta {
+        background: var(--bg-secondary);
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+    .session-meta dl {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 10px;
+    }
+    .session-meta dt {
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+    .session-meta dd {
+        margin: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="player-container">
+    <div class="page-header">
+        <h1>Session Playback</h1>
+        <a href="{{ url_for('session_detail', session_id=session.id) }}" class="btn">View Details</a>
+    </div>
+
+    <div class="session-meta">
+        <dl>
+            <div>
+                <dt>Session ID</dt>
+                <dd><code>{{ session.id | truncate_hash }}</code></dd>
+            </div>
+            <div>
+                <dt>Source IP</dt>
+                <dd>{{ session.src_ip }}</dd>
+            </div>
+            <div>
+                <dt>Location</dt>
+                <dd>{{ session.geo.country if session.geo else 'Unknown' }}</dd>
+            </div>
+            <div>
+                <dt>Duration</dt>
+                <dd>{{ session.duration | format_duration }}</dd>
+            </div>
+            <div>
+                <dt>Commands</dt>
+                <dd>{{ session.commands | length }}</dd>
+            </div>
+            <div>
+                <dt>Credentials</dt>
+                <dd><code>{{ session.username }}:{{ session.password or '***' }}</code></dd>
+            </div>
+        </dl>
+    </div>
+
+    <div class="player-controls">
+        <div class="speed-control">
+            <label for="speed">Playback Speed:</label>
+            <select id="speed" onchange="updateSpeed(this.value)">
+                <option value="0.5">0.5x</option>
+                <option value="1" selected>1x</option>
+                <option value="2">2x</option>
+                <option value="5">5x</option>
+                <option value="10">10x</option>
+            </select>
+        </div>
+        <button class="btn" onclick="player.play()">Play</button>
+        <button class="btn" onclick="player.pause()">Pause</button>
+        <button class="btn" onclick="player.seek(0)">Restart</button>
+    </div>
+
+    <div class="player-wrapper">
+        <div id="player"></div>
+    </div>
+
+    <div class="playback-note">
+        <p><strong>Note:</strong> This is a recording of the attacker's SSH session.
+        Commands shown were executed within the honeypot sandbox.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.6.3/dist/bundle/asciinema-player.min.js"></script>
+<script>
+    var player = AsciinemaPlayer.create(
+        '{{ url_for("session_asciicast", session_id=session.id) }}',
+        document.getElementById('player'),
+        {
+            cols: 120,
+            rows: 30,
+            autoPlay: false,
+            loop: false,
+            speed: 1,
+            idleTimeLimit: 2,
+            theme: 'monokai',
+            fit: 'width',
+            controls: true,
+            pauseOnMarkers: false,
+            terminalFontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace",
+        }
+    );
+
+    function updateSpeed(speed) {
+        player.setSpeed(parseFloat(speed));
+    }
+</script>
+{% endblock %}

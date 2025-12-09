@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Downloads - Cowrie Honeypot{% endblock %}
+
+{% block content %}
+<div class="downloads-page">
+    <div class="page-header">
+        <h1>Downloaded Files</h1>
+        <div class="time-filter">
+            <label>Time range:</label>
+            <select onchange="window.location.href='?hours=' + this.value">
+                <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
+                <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
+                <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
+                <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="downloads-info">
+        <p>{{ downloads | length }} unique files downloaded</p>
+    </div>
+
+    <table class="data-table downloads-table">
+        <thead>
+            <tr>
+                <th>SHA256</th>
+                <th>URL</th>
+                <th>Size</th>
+                <th>Downloads</th>
+                <th>First Seen</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for dl in downloads %}
+            <tr>
+                <td>
+                    <code title="{{ dl.shasum }}">{{ dl.shasum | truncate_hash(20) }}</code>
+                    {% if not dl.exists %}
+                    <span class="badge badge-warning" title="File not found on disk">Missing</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <code class="url-text" title="{{ dl.url }}">
+                        {{ dl.url[:60] }}{% if dl.url | length > 60 %}...{% endif %}
+                    </code>
+                </td>
+                <td>
+                    {% if dl.size %}
+                    {{ (dl.size / 1024) | round(1) }} KB
+                    {% else %}
+                    N/A
+                    {% endif %}
+                </td>
+                <td>{{ dl.count }}x</td>
+                <td>{{ dl.timestamp | format_timestamp }}</td>
+                <td class="actions">
+                    <a href="https://www.virustotal.com/gui/file/{{ dl.shasum }}"
+                       target="_blank"
+                       class="btn btn-sm"
+                       title="View on VirusTotal">VT</a>
+                    <a href="{{ url_for('session_detail', session_id=dl.session_id) }}"
+                       class="btn btn-sm"
+                       title="View session">Session</a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="no-data">No downloads recorded</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

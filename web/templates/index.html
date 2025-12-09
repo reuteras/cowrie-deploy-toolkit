@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Cowrie Honeypot{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="page-header">
+        <h1>Honeypot Dashboard</h1>
+        <div class="time-filter">
+            <label>Time range:</label>
+            <select onchange="window.location.href='?hours=' + this.value">
+                <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
+                <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
+                <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
+                <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.total_sessions }}</div>
+            <div class="stat-label">Total Sessions</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.unique_ips }}</div>
+            <div class="stat-label">Unique IPs</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.sessions_with_commands }}</div>
+            <div class="stat-label">Sessions with Commands</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.total_downloads }}</div>
+            <div class="stat-label">Files Downloaded</div>
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+        <!-- Top Countries -->
+        <div class="dashboard-card">
+            <h2>Top Attacking Countries</h2>
+            {% if stats.top_countries %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Country</th>
+                        <th>Sessions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for country, count in stats.top_countries %}
+                    <tr>
+                        <td>{{ country }}</td>
+                        <td>{{ count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="no-data">No data available</p>
+            {% endif %}
+        </div>
+
+        <!-- Top Credentials -->
+        <div class="dashboard-card">
+            <h2>Top Credentials Attempted</h2>
+            {% if stats.top_credentials %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Username:Password</th>
+                        <th>Attempts</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cred, count in stats.top_credentials %}
+                    <tr>
+                        <td><code>{{ cred }}</code></td>
+                        <td>{{ count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="no-data">No data available</p>
+            {% endif %}
+        </div>
+
+        <!-- Top Commands -->
+        <div class="dashboard-card full-width">
+            <h2>Top Commands Executed</h2>
+            {% if stats.top_commands %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Count</th>
+                        <th>Command</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for command, count in stats.top_commands %}
+                    <tr>
+                        <td>{{ count }}</td>
+                        <td><code class="command-text">{{ command }}</code></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="no-data">No commands recorded</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Activity Chart -->
+    {% if stats.hourly_activity %}
+    <div class="dashboard-card full-width">
+        <h2>Activity Over Time</h2>
+        <div class="activity-chart">
+            {% set max_activity = stats.hourly_activity | map(attribute=1) | max %}
+            {% for hour, count in stats.hourly_activity %}
+            <div class="activity-bar"
+                 style="height: {{ (count / max_activity * 100) if max_activity > 0 else 0 }}%"
+                 title="{{ hour }}: {{ count }} sessions">
+            </div>
+            {% endfor %}
+        </div>
+        <div class="chart-labels">
+            <span>{{ stats.hourly_activity[0][0] if stats.hourly_activity else '' }}</span>
+            <span>{{ stats.hourly_activity[-1][0] if stats.hourly_activity else '' }}</span>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

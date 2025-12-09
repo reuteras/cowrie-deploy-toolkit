@@ -114,6 +114,39 @@ COWRIE_SSH_PORT="22"             # Honeypot listens here
 REAL_SSH_PORT="2222"             # Management SSH
 ```
 
+## Web Dashboard (SSH Session Playback)
+
+The toolkit includes an optional web dashboard for viewing and replaying SSH sessions:
+
+- **Dashboard** - Overview of attack statistics, top countries, credentials, and commands
+- **Session Browser** - List all sessions with filtering and search
+- **TTY Playback** - Watch recorded SSH sessions with asciinema-player
+- **Downloads Viewer** - Browse captured malware with VirusTotal links
+
+### Enabling the Web Dashboard
+
+Add to `master-config.toml`:
+
+```toml
+[web_dashboard]
+enabled = true
+base_url = ""  # Optional: for links in email reports
+```
+
+### Accessing the Web Dashboard
+
+The web dashboard is NOT exposed to the public internet. Access via SSH tunnel:
+
+```bash
+# Create SSH tunnel
+ssh -p 2222 -L 5000:localhost:5000 root@<SERVER_IP>
+
+# Then open in browser
+open http://localhost:5000
+```
+
+For persistent access, use Tailscale (see `web/README.md`).
+
 ## Accessing the Deployed Honeypot
 
 ```bash
@@ -125,6 +158,9 @@ ssh -p 2222 root@<SERVER_IP> 'tail -f /var/lib/docker/volumes/cowrie-var/_data/l
 
 # View JSON logs (for parsing)
 ssh -p 2222 root@<SERVER_IP> 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'
+
+# View TTY session recordings
+ssh -p 2222 root@<SERVER_IP> 'ls -la /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty/'
 
 # View downloaded malware
 ssh -p 2222 root@<SERVER_IP> 'ls -la /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads/'

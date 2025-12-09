@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Session {{ session.id | truncate_hash }} - Cowrie Honeypot{% endblock %}
+
+{% block content %}
+<div class="session-detail">
+    <div class="page-header">
+        <h1>Session Details</h1>
+        <div class="header-actions">
+            {% if has_tty %}
+            <a href="{{ url_for('session_playback', session_id=session.id) }}" class="btn btn-primary">
+                Play Session Recording
+            </a>
+            {% endif %}
+            <a href="{{ url_for('sessions') }}" class="btn">Back to Sessions</a>
+        </div>
+    </div>
+
+    <!-- Session Info -->
+    <div class="detail-grid">
+        <div class="detail-card">
+            <h2>Connection Info</h2>
+            <dl class="detail-list">
+                <dt>Session ID</dt>
+                <dd><code>{{ session.id }}</code></dd>
+
+                <dt>Source IP</dt>
+                <dd>
+                    <a href="{{ url_for('sessions', ip=session.src_ip) }}">{{ session.src_ip }}</a>
+                </dd>
+
+                <dt>Location</dt>
+                <dd>
+                    {% if session.geo %}
+                    {{ session.geo.city }}, {{ session.geo.country }} ({{ session.geo.country_code }})
+                    {% else %}
+                    Unknown
+                    {% endif %}
+                </dd>
+
+                <dt>Client Version</dt>
+                <dd><code>{{ session.client_version or 'Unknown' }}</code></dd>
+
+                <dt>Start Time</dt>
+                <dd>{{ session.start_time | format_timestamp }}</dd>
+
+                <dt>End Time</dt>
+                <dd>{{ session.end_time | format_timestamp }}</dd>
+
+                <dt>Duration</dt>
+                <dd>{{ session.duration | format_duration }}</dd>
+            </dl>
+        </div>
+
+        <div class="detail-card">
+            <h2>Authentication</h2>
+            <dl class="detail-list">
+                <dt>Login Status</dt>
+                <dd>
+                    {% if session.login_success %}
+                    <span class="badge badge-success">Successful</span>
+                    {% else %}
+                    <span class="badge badge-danger">Failed</span>
+                    {% endif %}
+                </dd>
+
+                <dt>Username</dt>
+                <dd><code>{{ session.username or 'N/A' }}</code></dd>
+
+                <dt>Password</dt>
+                <dd><code>{{ session.password or 'N/A' }}</code></dd>
+            </dl>
+
+            {% if has_tty %}
+            <div class="tty-info">
+                <h3>TTY Recording Available</h3>
+                <p>This session has a terminal recording.</p>
+                <a href="{{ url_for('session_playback', session_id=session.id) }}" class="btn btn-primary">
+                    Watch Recording
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Commands -->
+    <div class="detail-card full-width">
+        <h2>Commands Executed ({{ session.commands | length }})</h2>
+        {% if session.commands %}
+        <div class="command-list">
+            {% for cmd in session.commands %}
+            <div class="command-entry">
+                <span class="command-time">{{ cmd.timestamp | format_timestamp }}</span>
+                <code class="command-text">{{ cmd.command }}</code>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="no-data">No commands recorded for this session</p>
+        {% endif %}
+    </div>
+
+    <!-- Downloads -->
+    {% if session.downloads %}
+    <div class="detail-card full-width">
+        <h2>Downloaded Files ({{ session.downloads | length }})</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>URL</th>
+                    <th>SHA256</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for dl in session.downloads %}
+                <tr>
+                    <td>{{ dl.timestamp | format_timestamp }}</td>
+                    <td><code class="url-text">{{ dl.url }}</code></td>
+                    <td>
+                        <code>{{ dl.shasum | truncate_hash(24) }}</code>
+                        <a href="https://www.virustotal.com/gui/file/{{ dl.shasum }}"
+                           target="_blank"
+                           class="external-link"
+                           title="View on VirusTotal">VT</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
