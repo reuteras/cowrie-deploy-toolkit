@@ -280,7 +280,8 @@ DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
 DEBIAN_FRONTEND=noninteractive apt-get install -qq -y \
     ca-certificates \
     curl \
-    gnupg > /dev/null
+    gnupg \
+    jq > /dev/null
 
 # Add Docker's official GPG key
 install -m 0755 -d /etc/apt/keyrings
@@ -807,7 +808,7 @@ if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
 
     # Upload web service files
     echo "[*] Uploading web service files..."
-    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
+    scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
         web "root@$SERVER_IP:/opt/cowrie/" || {
             echo "[!] Error: Failed to upload web service files"
             echo "[!] This usually means the web/ directory is missing from your local directory"
@@ -897,9 +898,9 @@ DOCKEREOF
 # Build and start web service
 cd /opt/cowrie
 echo "[*] Building web dashboard container (this may take a minute)..."
-docker compose build cowrie-web > /dev/null
+docker compose build --quiet cowrie-web 2>&1 | grep -E "ERROR|WARN" || true
 echo "[*] Starting services..."
-docker compose up -d > /dev/null
+docker compose up -d --quiet-pull > /dev/null 2>&1
 
 echo "[*] Web dashboard deployed on localhost:5000"
 echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@SERVER_IP"
@@ -907,11 +908,11 @@ echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 ro
 # Configure Tailscale Serve if Tailscale is enabled
 if command -v tailscale &> /dev/null; then
     echo "[*] Configuring Tailscale Serve for web dashboard..."
-    tailscale serve --bg --https=443 http://localhost:5000
+    tailscale serve --bg --https=443 http://localhost:5000 > /dev/null 2>&1
 
     # Add @reboot cron job to ensure Tailscale Serve persists after reboot
     (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve" | crontab -
-    (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 http://localhost:5000") | crontab -
+    (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 http://localhost:5000 > /dev/null 2>&1") | crontab -
 
     echo "[*] Web dashboard available at: https://\$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
 fi
