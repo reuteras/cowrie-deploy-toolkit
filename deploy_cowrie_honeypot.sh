@@ -864,12 +864,12 @@ services:
       - "127.0.0.1:5000:5000"
     volumes:
       - cowrie-var:/cowrie-data:ro
-      - /var/lib/GeoIP:/cowrie-data/geoip:ro
+      - /var/lib/GeoIP:/geoip:ro
     environment:
       - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
       - COWRIE_DOWNLOAD_PATH=/cowrie-data/lib/cowrie/downloads
-      - GEOIP_DB_PATH=/cowrie-data/geoip/GeoLite2-City.mmdb
+      - GEOIP_DB_PATH=/geoip/GeoLite2-City.mmdb
       - BASE_URL=${WEB_BASE_URL:-}
     depends_on:
       - cowrie
