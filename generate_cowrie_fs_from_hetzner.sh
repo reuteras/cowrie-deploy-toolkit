@@ -242,7 +242,6 @@ tar --no-xattrs -czf /tmp/contents.tar.gz \
     etc/hosts \
     etc/inittab \
     etc/issue \
-    etc/issue.net \
     etc/lsb-release \
     etc/motd \
     etc/os-release \
@@ -271,6 +270,7 @@ if [ -f "$CONTENTS_DIR/contents.tar.gz" ]; then
     cd "$CONTENTS_DIR"
     tar xzf contents.tar.gz 2>/dev/null || true
     rm contents.tar.gz
+    touch etc/issue.net
     echo "[*] File contents collected ($(find . -type f | wc -l) files)"
     cd ../..
 else
@@ -287,7 +287,7 @@ cp -r txtcmds $OUTPUT_DIR
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOFTXTCMDS'
 cd /root
 tar --no-xattrs -czf /tmp/txtcmds.tar.gz \
-    txtcmds/* \
+    txtcmds \
     2>/dev/null || true
 EOFTXTCMDS
 
@@ -295,7 +295,7 @@ EOFTXTCMDS
 scp $SSH_OPTS "root@$SERVER_IP:/tmp/txtcmds.tar.gz" "$OUTPUT_DIR/" > /dev/null 2>&1 || true
 if [ -f "$OUTPUT_DIR/txtcmds.tar.gz" ]; then
     cd "$OUTPUT_DIR"
-    tar --overwrite xzf txtcmds.tar.gz 2>/dev/null || true
+    tar xzf txtcmds.tar.gz 2>/dev/null || true
     rm txtcmds.tar.gz
     echo "[*] Command output contents collected ($(find txtcmds -type f | wc -l) files)"
     cd ..
