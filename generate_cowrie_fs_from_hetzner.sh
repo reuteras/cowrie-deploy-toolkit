@@ -327,6 +327,8 @@ echo "[*] Temporary server deleted."
 # DONE
 # ============================================================
 
+CLEAN_OUTPUT_DIR=$(echo $OUTPUT_DIR | tr -d "./")
+
 echo ""
 echo "==========================================================="
 echo "  COMPLETED SUCCESSFULLY"
@@ -334,5 +336,5 @@ echo "  Pickle + identity metadata stored in:"
 echo "     $OUTPUT_DIR"
 echo ""
 echo "  You can deploy a honeypot with the command:"
-echo "    ./deploy_cowrie_honeypot.sh $OUTPUT_DIR"
+echo "    ./deploy_cowrie_honeypot.sh $CLEAN_OUTPUT_DIR"
 echo "==========================================================="
