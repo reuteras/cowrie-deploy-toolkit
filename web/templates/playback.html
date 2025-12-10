@@ -120,8 +120,8 @@
         '{{ url_for("session_asciicast", session_id=session.id) }}',
         document.getElementById('player'),
         {
-            cols: 120,
-            rows: 30,
+            cols: {{ asciicast.width | default(120) }},
+            rows: {{ asciicast.height | default(30) }},
             autoPlay: false,
             loop: false,
             speed: 1,

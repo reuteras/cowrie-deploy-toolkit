@@ -407,6 +407,11 @@ class TTYLogParser:
     OP_WRITE = 3
     OP_EXEC = 4
 
+    # Cowrie TTY stream types
+    TYPE_INPUT = 1
+    TYPE_OUTPUT = 2
+    TYPE_INTERACT = 3
+
     def __init__(self, tty_path: str):
         self.tty_path = tty_path
 
@@ -415,6 +420,7 @@ class TTYLogParser:
         if not tty_log_name:
             return None
 
+        original_tty_log_name = tty_log_name
         # Strip common Cowrie path prefixes if present
         # Sessions may store paths like "var/lib/cowrie/tty/HASH"
         for prefix in ['var/lib/cowrie/tty/', 'lib/cowrie/tty/', 'tty/']:
@@ -432,66 +438,118 @@ class TTYLogParser:
             if tty_log_name in files:
                 return os.path.join(root, tty_log_name)
 
+        print(f"[!] TTY file lookup failed. Searched for '{tty_log_name}' (from '{original_tty_log_name}') in '{self.tty_path}' but it was not found.")
         return None
 
     def parse_tty_log(self, tty_log_name: str) -> Optional[dict]:
-        """Parse a Cowrie TTY log file and return asciicast v2 format."""
+        """Parse a Cowrie TTY log file and return asciicast v1 format."""
         file_path = self.find_tty_file(tty_log_name)
         if not file_path:
+            # Error is logged in find_tty_file
             return None
 
-        events = []
-        start_time = None
+        stdout = []
         width = 80
         height = 24
+        duration = 0.0
+        currtty = 0
+        prevtime = 0
+        prefdir = 0  # Preferred direction (first stream seen)
+
+        # Cowrie ttylog format: <iLiiLL = op, tty, length, direction, sec, usec
+        record_size = struct.calcsize("<iLiiLL")
 
         try:
             with open(file_path, 'rb') as f:
                 while True:
-                    # Read header: opcode (4 bytes), time (4 bytes), size (4 bytes)
-                    header = f.read(12)
-                    if len(header) < 12:
+                    # Read record header
+                    record_data = f.read(record_size)
+                    if not record_data:
+                        break  # End of file
+
+                    if len(record_data) < record_size:
+                        print(f"[!] Incomplete record in TTY log, stopping parse: {file_path}")
                         break
 
-                    opcode, ts, size = struct.unpack('<III', header)
-                    data = f.read(size)
+                    try:
+                        op, tty, length, direction, sec, usec = struct.unpack('<iLiiLL', record_data)
+                    except struct.error as e:
+                        print(f"[!] Corrupt record in TTY log, stopping parse: {file_path} - {e}")
+                        break
 
-                    if opcode == self.OP_OPEN:
-                        start_time = ts / 1000000.0  # Convert to seconds
-                        # Try to parse terminal size from data
-                        try:
-                            if len(data) >= 8:
-                                width, height = struct.unpack('<II', data[:8])
-                        except Exception:
-                            pass
+                    if length > 10 * 1024 * 1024:  # 10MB limit
+                        print(f"[!] Unreasonable TTY record size ({length} bytes), stopping parse: {file_path}")
+                        break
 
-                    elif opcode == self.OP_WRITE:
-                        if start_time is not None:
-                            relative_time = (ts / 1000000.0) - start_time
-                            # Decode data, replacing invalid bytes
+                    # Read data payload
+                    data = f.read(length)
+                    if len(data) < length:
+                        print(f"[!] Truncated data record in TTY log (expected {length}, got {len(data)}), stopping parse: {file_path}")
+                        break
+
+                    # Track the first TTY we see
+                    if currtty == 0:
+                        currtty = tty
+
+                    # Only process events for the primary TTY
+                    if tty == currtty:
+                        if op == self.OP_OPEN:
+                            # Try to extract terminal dimensions
                             try:
-                                text = data.decode('utf-8', errors='replace')
-                            except Exception:
-                                text = data.decode('latin-1', errors='replace')
-                            events.append([relative_time, 'o', text])
+                                if len(data) >= 8:
+                                    width, height = struct.unpack('<II', data[:8])
+                            except struct.error:
+                                # Ignore if terminal size parsing fails
+                                pass
 
-                    elif opcode == self.OP_CLOSE:
-                        break
+                        elif op == self.OP_WRITE:
+                            # The first stream seen is considered 'output' (prefdir)
+                            if prefdir == 0:
+                                prefdir = direction
 
+                            # Only include events matching the preferred direction
+                            if direction == prefdir:
+                                # Calculate timestamp
+                                curtime = float(sec) + float(usec) / 1000000.0
+                                if prevtime != 0:
+                                    sleeptime = curtime - prevtime
+                                else:
+                                    sleeptime = 0.0
+                                prevtime = curtime
+
+                                # Convert newlines to carriage return + newline
+                                # This prevents upload mangling in asciinema
+                                data = data.replace(b"\n", b"\r\n")
+
+                                try:
+                                    text = data.decode('utf-8', errors='replace')
+                                except Exception:
+                                    text = data.decode('latin-1', errors='replace')
+
+                                # Add to stdout (v1 format uses [time, data])
+                                stdout.append([sleeptime, text])
+                                duration += sleeptime
+
+                        elif op == self.OP_CLOSE:
+                            break
+
+        except (IOError, OSError) as e:
+            print(f"[!] I/O error reading TTY log '{file_path}': {e}")
+            return None
         except Exception as e:
+            print(f"[!] Unexpected exception in parse_tty_log for '{file_path}': {e}")
             return None
 
-        if not events:
-            return None
-
-        # Return asciicast v2 format
+        # Return asciicast v1 format (matches Cowrie's asciinema.py)
         return {
-            'version': 2,
+            'version': 1,
             'width': min(width, 200),
             'height': min(height, 50),
-            'timestamp': int(start_time) if start_time else int(time.time()),
-            'env': {'SHELL': '/bin/bash', 'TERM': 'xterm-256color'},
-            'events': events
+            'duration': duration,
+            'command': '/bin/bash',
+            'title': 'Cowrie Recording',
+            'env': {'SHELL': '/bin/bash', 'TERM': 'xterm256-color'},
+            'stdout': stdout
         }
 
 
@@ -588,7 +646,13 @@ def session_playback(session_id: str):
     if not session['tty_log']:
         return render_template('404.html', message='No TTY recording for this session'), 404
 
-    return render_template('playback.html', session=session, config=CONFIG)
+    # Parse TTY log for width and height
+    asciicast = tty_parser.parse_tty_log(session['tty_log'])
+    if not asciicast:
+        print(f"[!] Failed to parse TTY log for playback: {session['tty_log']}")
+        return render_template('404.html', message='Failed to parse TTY log for playback'), 404
+
+    return render_template('playback.html', session=session, asciicast=asciicast, config=CONFIG)
 
 
 @app.route('/api/session/<session_id>/asciicast')

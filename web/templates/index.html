@@ -27,7 +27,7 @@
             <div class="stat-value">{{ stats.unique_ips }}</div>
             <div class="stat-label">Unique IPs</div>
         </a>
-        <a href="{{ url_for('sessions', hours=hours) }}" class="stat-card stat-card-link">
+        <a href="{{ url_for('sessions', hours=hours, has_commands='1') }}" class="stat-card stat-card-link">
             <div class="stat-value">{{ stats.sessions_with_commands }}</div>
             <div class="stat-label">Sessions with Commands</div>
         </a>
