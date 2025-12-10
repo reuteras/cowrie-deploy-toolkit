@@ -982,21 +982,6 @@ Tailscale Hostname:  $TS_HOSTNAME
 SSH Access (TAILSCALE SSH):
   Management SSH:  ssh root@$TS_HOSTNAME
   Honeypot SSH:    ssh root@$SERVER_IP (port 22 - public)
-
-IMPORTANT: Using Tailscale SSH (connects via port 22 over Tailscale network).
-Public SSH on port $REAL_SSH_PORT is blocked by firewall.
-
-Monitoring:
-  View logs:       ssh root@$TS_HOSTNAME 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.log'
-  JSON logs:       ssh root@$TS_HOSTNAME 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'
-  TTY recordings:  ssh root@$TS_HOSTNAME 'ls -la /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty/'
-  Downloads:       ssh root@$TS_HOSTNAME 'file /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads/*'
-  Container logs:  ssh root@$TS_HOSTNAME 'cd /opt/cowrie && docker compose logs -f'
-
-Management:
-  Stop:            ssh root@$TS_HOSTNAME 'cd /opt/cowrie && docker compose stop'
-  Start:           ssh root@$TS_HOSTNAME 'cd /opt/cowrie && docker compose start'
-  Restart:         ssh root@$TS_HOSTNAME 'cd /opt/cowrie && docker compose restart'
 TSINFO
     else
 cat << TSINFO
@@ -1006,21 +991,6 @@ Tailscale IP:    $TAILSCALE_IP
 SSH Access (TAILSCALE ONLY):
   Management SSH:  ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP
   Honeypot SSH:    ssh root@$SERVER_IP (port 22 - public)
-
-IMPORTANT: Management SSH is ONLY accessible via Tailscale!
-Public SSH on port $REAL_SSH_PORT is blocked by firewall.
-
-Monitoring:
-  View logs:       ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.log'
-  JSON logs:       ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'
-  TTY recordings:  ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'ls -la /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty/'
-  Downloads:       ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'file /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads/*'
-  Container logs:  ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'cd /opt/cowrie && docker compose logs -f'
-
-Management:
-  Stop:            ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'cd /opt/cowrie && docker compose stop'
-  Start:           ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'cd /opt/cowrie && docker compose start'
-  Restart:         ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP 'cd /opt/cowrie && docker compose restart'
 TSINFO
     fi
 elif [ "$ENABLE_TAILSCALE" = "true" ]; then
@@ -1032,18 +1002,6 @@ SSH Access (available via both public IP and Tailscale):
   Management SSH:  ssh -p $REAL_SSH_PORT root@$SERVER_IP
                    ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP (via Tailscale)
   Honeypot SSH:    ssh root@$SERVER_IP (port 22)
-
-Monitoring:
-  View logs:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.log'
-  JSON logs:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'
-  TTY recordings:  ssh -p $REAL_SSH_PORT root@$SERVER_IP 'ls -la /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty/'
-  Downloads:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'file /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads/*'
-  Container logs:  ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose logs -f'
-
-Management:
-  Stop:            ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose stop'
-  Start:           ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose start'
-  Restart:         ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose restart'
 TSPUBLICINFO
 else
 cat << PUBLICINFO
@@ -1051,18 +1009,6 @@ cat << PUBLICINFO
 SSH Access:
   Management SSH:  ssh -p $REAL_SSH_PORT root@$SERVER_IP
   Honeypot SSH:    ssh root@$SERVER_IP (port 22)
-
-Monitoring:
-  View logs:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.log'
-  JSON logs:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json'
-  TTY recordings:  ssh -p $REAL_SSH_PORT root@$SERVER_IP 'ls -la /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty/'
-  Downloads:       ssh -p $REAL_SSH_PORT root@$SERVER_IP 'file /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads/*'
-  Container logs:  ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose logs -f'
-
-Management:
-  Stop:            ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose stop'
-  Start:           ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose start'
-  Restart:         ssh -p $REAL_SSH_PORT root@$SERVER_IP 'cd /opt/cowrie && docker compose restart'
 PUBLICINFO
 fi
 
@@ -1087,13 +1033,7 @@ if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
     if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
         DASHBOARD_IP="$TAILSCALE_IP"
     fi
-
-cat << WEBINFO
-
-Web Dashboard:
-  SSH Tunnel:      ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$DASHBOARD_IP
-  Then open:       http://localhost:5000
-WEBINFO
 fi
 
 echo "============================================"
+
