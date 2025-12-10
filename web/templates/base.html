@@ -5,6 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Cowrie Honeypot{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* Sortable table styles */
+        .sortable th[aria-sort] {
+            cursor: pointer;
+            position: relative;
+        }
+        .sortable th[aria-sort]::after {
+            content: '';
+            position: absolute;
+            right: 0.5em;
+            top: 50%;
+            border: 5px solid transparent;
+            opacity: 0.5;
+            transform: translateY(-50%);
+        }
+        .sortable th[aria-sort="ascending"]::after {
+            border-bottom-color: currentColor;
+            opacity: 1;
+        }
+        .sortable th[aria-sort="descending"]::after {
+            border-top-color: currentColor;
+            opacity: 1;
+        }
+    </style>
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -17,6 +41,7 @@
             <a href="{{ url_for('sessions') }}" class="{% if request.endpoint == 'sessions' %}active{% endif %}">Sessions</a>
             <a href="{{ url_for('ip_list') }}" class="{% if request.endpoint == 'ip_list' %}active{% endif %}">IPs</a>
             <a href="{{ url_for('downloads') }}" class="{% if request.endpoint == 'downloads' %}active{% endif %}">Downloads</a>
+            <a href="{{ url_for('commands') }}" class="{% if request.endpoint == 'commands' %}active{% endif %}">Commands</a>
         </div>
     </nav>
 
@@ -28,6 +53,61 @@
         <p>Cowrie Honeypot Session Viewer &bull; Accessible via Tailscale only</p>
     </footer>
 
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Make all tables with the 'sortable' class interactive
+            const tables = document.querySelectorAll('table.sortable');
+            tables.forEach(table => {
+                Array.from(table.querySelectorAll('th')).forEach((th, columnIndex) => {
+                    th.addEventListener('click', () => {
+                        const isAsc = th.getAttribute('aria-sort') === 'ascending';
+                        sortTable(table, columnIndex, !isAsc);
+                    });
+                });
+            });
+
+            function sortTable(table, columnIndex, asc = true) {
+                const tbody = table.tBodies[0];
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+
+                // Reset other columns sort state
+                table.querySelectorAll('th').forEach(th => th.removeAttribute('aria-sort'));
+
+                rows.sort((a, b) => {
+                    let aText = a.children[columnIndex].innerText.trim();
+                    let bText = b.children[columnIndex].innerText.trim();
+
+                    // Attempt to convert to number for sorting
+                    const aNum = parseFloat(aText.replace(/,/g, ''));
+                    const bNum = parseFloat(bText.replace(/,/g, ''));
+
+                    if (!isNaN(aNum) && !isNaN(bNum)) {
+                        return asc ? aNum - bNum : bNum - aNum;
+                    }
+                    
+                    // Handle file sizes like "1.2 MB"
+                    const sizeRegex = /(\d+(\.\d+)?)\s*(KB|MB|GB|TB)/i;
+                    const aMatch = aText.match(sizeRegex);
+                    const bMatch = bText.match(sizeRegex);
+
+                    if (aMatch && bMatch) {
+                        const units = { 'KB': 1, 'MB': 2, 'GB': 3, 'TB': 4 };
+                        const aSize = parseFloat(aMatch[1]) * Math.pow(1024, units[aMatch[3].toUpperCase()]);
+                        const bSize = parseFloat(bMatch[1]) * Math.pow(1024, units[bMatch[3].toUpperCase()]);
+                        return asc ? aSize - bSize : bSize - aSize;
+                    }
+
+
+                    return asc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+                });
+
+                rows.forEach(row => tbody.appendChild(row));
+
+                table.querySelector(`th:nth-child(${columnIndex + 1})`).setAttribute('aria-sort', asc ? 'ascending' : 'descending');
+            }
+        });
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

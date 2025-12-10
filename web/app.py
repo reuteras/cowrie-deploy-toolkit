@@ -58,6 +58,8 @@ class GeoIPLookup:
             result['country'] = response.country.name or 'Unknown'
             result['country_code'] = response.country.iso_code or 'XX'
             result['city'] = response.city.name or 'Unknown'
+            result['latitude'] = response.location.latitude
+            result['longitude'] = response.location.longitude
         except Exception:
             pass
         return result
@@ -378,6 +380,23 @@ class SessionParser:
             'hourly_activity': sorted_hours[-48:],  # Last 48 hours
         }
 
+    def get_all_commands(self, hours: int = 168) -> list:
+        """Get a flat list of all commands from all sessions."""
+        sessions = self.parse_all(hours=hours)
+        all_commands = []
+        for session in sessions.values():
+            if session['commands']:
+                for cmd in session['commands']:
+                    all_commands.append({
+                        'timestamp': cmd['timestamp'],
+                        'command': cmd['command'],
+                        'src_ip': session['src_ip'],
+                        'session_id': session['id']
+                    })
+        
+        # Sort by timestamp, most recent first
+        return sorted(all_commands, key=lambda x: x['timestamp'], reverse=True)
+
 
 class TTYLogParser:
     """Parse Cowrie TTY log files and convert to asciicast format."""
@@ -474,29 +493,6 @@ class TTYLogParser:
             'env': {'SHELL': '/bin/bash', 'TERM': 'xterm-256color'},
             'events': events
         }
-
-    def get_asciicast_ndjson(self, tty_log_name: str) -> Optional[str]:
-        """Get TTY log as asciicast v2 NDJSON format."""
-        data = self.parse_tty_log(tty_log_name)
-        if not data:
-            return None
-
-        lines = []
-        # Header line
-        header = {
-            'version': data['version'],
-            'width': data['width'],
-            'height': data['height'],
-            'timestamp': data['timestamp'],
-            'env': data['env']
-        }
-        lines.append(json.dumps(header))
-
-        # Event lines
-        for event in data['events']:
-            lines.append(json.dumps(event))
-
-        return '\n'.join(lines)
 
 
 # Initialize parsers
@@ -609,12 +605,12 @@ def session_asciicast(session_id: str):
         print(f"[!] TTY file not found: {session['tty_log']}")
         return jsonify({'error': 'TTY recording file not found'}), 404
 
-    asciicast = tty_parser.get_asciicast_ndjson(session['tty_log'])
+    asciicast = tty_parser.parse_tty_log(session['tty_log'])
     if not asciicast:
         print(f"[!] Failed to parse TTY log: {session['tty_log']}")
         return jsonify({'error': 'Failed to parse TTY log'}), 404
 
-    return Response(asciicast, mimetype='application/x-asciicast')
+    return jsonify(asciicast)
 
 
 @app.route('/api/stats')
@@ -687,6 +683,14 @@ def downloads():
     downloads_list = sorted(unique_downloads.values(), key=lambda x: x['timestamp'], reverse=True)
 
     return render_template('downloads.html', downloads=downloads_list, hours=hours, config=CONFIG)
+
+
+@app.route('/commands')
+def commands():
+    """Commands listing page."""
+    hours = request.args.get('hours', 168, type=int)
+    all_commands = session_parser.get_all_commands(hours=hours)
+    return render_template('commands.html', commands=all_commands, hours=hours, config=CONFIG)
 
 
 @app.route('/ips')

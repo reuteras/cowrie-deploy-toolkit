@@ -48,7 +48,7 @@
         <div class="dashboard-card">
             <h2>Top Attacking Countries</h2>
             {% if stats.top_countries %}
-            <table class="data-table">
+            <table class="data-table sortable">
                 <thead>
                     <tr>
                         <th>Country</th>
@@ -73,7 +73,7 @@
         <div class="dashboard-card">
             <h2>Top Credentials Attempted</h2>
             {% if stats.top_credentials %}
-            <table class="data-table">
+            <table class="data-table sortable">
                 <thead>
                     <tr>
                         <th>Username:Password</th>
@@ -106,7 +106,7 @@
         <div class="dashboard-card full-width">
             <h2>Top Commands Executed</h2>
             {% if stats.top_commands %}
-            <table class="data-table">
+            <table class="data-table sortable">
                 <thead>
                     <tr>
                         <th>Count</th>
