@@ -181,6 +181,22 @@ rm -rf /tmp/.venv /tmp/createfs.py
 # Use 'ps aux' format for easier parsing into cmdoutput.json
 ps aux > /root/ps.txt
 
+# /bin
+mkdir -p /root/txtcmds/bin
+df > /root/txtcmds/bin/df 2>&1
+dmesg > /root/txtcmds/bin/dmesg 2>&1
+enable > /root/txtcmds/bin/enable 2>&1
+stty > /root/txtcmds/bin/stty 2>&1
+sync > /root/txtcmds/bin/sync 2>&1
+ulimit > /root/txtcmds/bin/ulimit 2>&1
+
+mkdir -p /root/txtcmds/usr/bin
+locate > /root/txtcmds/usr/bin/locate 2>&1
+lscpu > /root/txtcmds/usr/bin/lscpu 2>&1
+make > /root/txtcmds/usr/bin/make 2>&1
+mount > /root/txtcmds/usr/bin/mount 2>&1
+ssh -V > /root/txtcmds/usr/bin/ssh 2>&1
+
 EOF
 
 echo "[*] Filesystem pickle created (Cowrie directories excluded)."
@@ -237,11 +253,13 @@ tar --no-xattrs -czf /tmp/contents.tar.gz \
     etc/timezone \
     etc/nginx/nginx.conf \
     etc/nginx/sites-available/default \
+    proc/1/mounts \
     proc/cpuinfo \
     proc/meminfo \
     proc/mounts \
     proc/modules \
     proc/net/arp \
+    proc/uptime \
     proc/version \
     var/www/html/index.nginx-debian.html \
     2>/dev/null || true
@@ -259,6 +277,34 @@ else
     echo "[!] Warning: Could not collect file contents"
 fi
 
+
+echo "[*] Collecting cmd output for Cowrie txtcmds directory..."
+
+# Copy defaults
+cp -r txtcmds $OUTPUT_DIR
+
+# Create tarball of txtcmd output
+ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOFTXTCMDS'
+cd /root
+tar --no-xattrs -czf /tmp/txtcmds.tar.gz \
+    txtcmds/* \
+    2>/dev/null || true
+EOFTXTCMDS
+
+# Download and extract txtcmd outputs
+scp $SSH_OPTS "root@$SERVER_IP:/tmp/txtcmds.tar.gz" "$OUTPUT_DIR/" > /dev/null 2>&1 || true
+if [ -f "$OUTPUT_DIR/txtcmds.tar.gz" ]; then
+    cd "$OUTPUT_DIR"
+    tar --overwrite xzf txtcmds.tar.gz 2>/dev/null || true
+    rm txtcmds.tar.gz
+    echo "[*] Command output contents collected ($(find . -type f | wc -l) files)"
+    cd ../..
+else
+    echo "[!] Warning: Could not collect command output contents for txtcmds"
+fi
+
+# ============================================================
+# STEP 7 — Download fs.pickle
 # ============================================================
 # STEP 7 — Download fs.pickle
 # ============================================================
