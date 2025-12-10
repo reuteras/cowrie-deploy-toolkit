@@ -167,6 +167,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add markers for attack origins
     const locations = {{ stats.ip_locations | tojson }};
     const markerCounts = {};
+    const hours = {{ hours }};
 
     // Count occurrences of each location
     locations.forEach(loc => {
@@ -188,7 +189,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         marker.bindPopup(`
             <strong>${loc.city}, ${loc.country}</strong><br>
-            IP: ${loc.ip}<br>
+            IP: <a href="/sessions?ip=${loc.ip}&hours=${hours}" target="_blank">${loc.ip}</a><br>
             Sessions: ${loc.count}
         `);
     });
