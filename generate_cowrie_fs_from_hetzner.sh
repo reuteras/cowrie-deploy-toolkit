@@ -297,8 +297,8 @@ if [ -f "$OUTPUT_DIR/txtcmds.tar.gz" ]; then
     cd "$OUTPUT_DIR"
     tar --overwrite xzf txtcmds.tar.gz 2>/dev/null || true
     rm txtcmds.tar.gz
-    echo "[*] Command output contents collected ($(find . -type f | wc -l) files)"
-    cd ../..
+    echo "[*] Command output contents collected ($(find txtcmds -type f | wc -l) files)"
+    cd ..
 else
     echo "[!] Warning: Could not collect command output contents for txtcmds"
 fi
