@@ -233,7 +233,7 @@ mkdir -p "$CONTENTS_DIR"
 # Create tarball of important files on remote server
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOFCONTENTS'
 cd /
-tar --no-xattrs -czf /tmp/contents.tar.gz \
+tar --no-xattrs -cf /tmp/contents.tar \
     etc/debian_version \
     etc/fstab \
     etc/group \
@@ -252,15 +252,24 @@ tar --no-xattrs -czf /tmp/contents.tar.gz \
     etc/timezone \
     etc/nginx/nginx.conf \
     etc/nginx/sites-available/default \
-    proc/1/mounts \
-    proc/cpuinfo \
-    proc/meminfo \
-    proc/mounts \
-    proc/modules \
-    proc/net/arp \
-    proc/uptime \
-    proc/version \
     var/www/html/index.nginx-debian.html \
+    2>/dev/null || true
+
+mkdir -p tmp/proc/1 proc/net
+
+cp /proc/cpuinfo \
+    /proc/meminfo \
+    /proc/mounts \
+    /proc/modules \
+    /proc/uptime \
+    /proc/version \
+    tmp/proc
+
+cp /proc/1/mounts tmp/proc/1
+cp /proc/net/arp tmp/proc/net
+
+tar --no-xattrs -rf /tmp/contents.tar \
+    tmp/proc \
     2>/dev/null || true
 EOFCONTENTS
 
