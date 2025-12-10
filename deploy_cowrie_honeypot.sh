@@ -418,6 +418,28 @@ else
     echo "[!] Warning: No contents directory found, files will have no content"
 fi
 
+# Upload txtcmds directory for real command output
+CONTENTS_DIR="$OUTPUT_DIR/txtcmds"
+if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A $CONTENTS_DIR 2>/dev/null)" ]; then
+    echo "[*] Uploading txtcmds contents..."
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+        "mkdir -p /opt/cowrie/share/cowrie/txtcmds"
+
+    # Upload txtcmds as tarball for efficiency (--no-xattrs to avoid macOS extended attributes)
+    tar --no-xattrs -czf /tmp/txtcmds.tar.gz -C "$CONTENTS_DIR" . 2>/dev/null
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+        /tmp/txtcmds.tar.gz "root@$SERVER_IP:/tmp/txtcmds.tar.gz" > /dev/null
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+        "cd /opt/cowrie/share/cowrie/txtcmds && tar xzf /tmp/txtcmds.tar.gz && rm /tmp/txtcmds.tar.gz"
+    rm /tmp/txtcmds.tar.gz
+
+    FILE_COUNT=$(find "$CONTENTS_DIR" -type f | wc -l | tr -d ' ')
+    echo "[*] Uploaded $FILE_COUNT files with txtcmds content"
+else
+    echo "[!] Warning: No txtcmds directory found"
+fi
+
+# ============================================================
 # ============================================================
 # STEP 7 — Generate cowrie.cfg
 # ============================================================
@@ -763,11 +785,9 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     echo "[*] Processing master-config.toml..."
     if command -v uv &> /dev/null; then
         uv run --quiet scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env
-    elif command -v python3 &> /dev/null; then
-        python3 scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env
     else
         echo "[!] Error: Neither uv nor python3 found. Cannot process config."
-        echo "[!] Skipping automated reporting setup."
+        exit 1
     fi
 
     if [ -f /tmp/server-report.env ]; then
@@ -791,7 +811,8 @@ REPORTEOF
         echo "[*] Reporting configured successfully"
         rm -f /tmp/server-report.env
     else
-        echo "[!] Failed to process config. Skipping automated reporting setup."
+        echo "[!] Error: Failed to process config. Skipping automated reporting setup."
+        exit 1
     fi
 else
     echo "[*] Reporting disabled or master-config.toml not found, skipping reporting setup"
