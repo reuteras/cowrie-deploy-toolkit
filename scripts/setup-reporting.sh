@@ -267,7 +267,7 @@ fi
 
 # Test YARA rules
 echo -n "[*] Testing YARA rules... "
-RULE_COUNT=$(find /opt/cowrie/yara-rules -name "*.yar" -o -name "*.yara" 2>/dev/null | wc -l)
+RULE_COUNT=$(find /opt/cowrie/yara-rules -name "*.yar" -exec grep -E "^rule" {} \; 2>/dev/null | wc -l)
 if [ "$RULE_COUNT" -gt 0 ]; then
     echo "OK ($RULE_COUNT rules)"
 else
