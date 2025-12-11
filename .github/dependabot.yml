@@ -16,7 +16,7 @@ updates:
       default-days: 4
 
   - package-ecosystem: "docker"
-    directory: "/"
+    directory: "/web"
     schedule:
       interval: "weekly"
     cooldown:
