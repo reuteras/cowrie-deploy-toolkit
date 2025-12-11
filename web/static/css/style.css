@@ -64,6 +64,19 @@ body {
     transition: all 0.2s;
 }
 
+.data-table a {
+    color: var(--accent-primary);
+    text-decoration: none;
+}
+
+.data-table a:hover {
+    text-decoration: underline;
+}
+
+.nav-brand a:hover {
+    color: var(--accent-primary);
+}
+
 .nav-links a:hover {
     background-color: var(--bg-tertiary);
     color: var(--text-primary);
@@ -205,19 +218,6 @@ body {
 
 .data-table tr:hover {
     background-color: var(--bg-tertiary);
-}
-
-.data-table a {
-    color: var(--accent-primary);
-    text-decoration: none;
-}
-
-.data-table a:hover {
-    text-decoration: underline;
-}
-
-.nav-brand a:hover {
-    color: var(--accent-primary);
 }
 
 /* Code and command styling */
