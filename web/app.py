@@ -34,6 +34,7 @@ CONFIG = {
     'base_url': os.getenv('BASE_URL', ''),
     'virustotal_api_key': os.getenv('VIRUSTOTAL_API_KEY', ''),
     'cache_db_path': os.getenv('CACHE_DB_PATH', '/tmp/vt-cache.db'),
+    'yara_cache_db_path': os.getenv('YARA_CACHE_DB_PATH', '/cowrie-data/var/yara-cache.db'),
 }
 
 
@@ -107,6 +108,37 @@ class CacheDB:
         )
         conn.commit()
         conn.close()
+
+
+class YARACache:
+    """SQLite cache for YARA scan results (read-only for web app)."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+
+    def get_result(self, sha256: str) -> Optional[dict]:
+        """Get cached YARA scan result."""
+        if not os.path.exists(self.db_path):
+            return None
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.execute(
+                'SELECT matches, scan_timestamp FROM yara_cache WHERE sha256 = ?',
+                (sha256,)
+            )
+            row = cursor.fetchone()
+            conn.close()
+
+            if row:
+                return {
+                    'sha256': sha256,
+                    'matches': json.loads(row[0]),
+                    'scan_timestamp': row[1]
+                }
+        except Exception:
+            pass
+        return None
 
 
 class VirusTotalScanner:
@@ -563,6 +595,9 @@ if CONFIG['virustotal_api_key']:
     cache_db = CacheDB(CONFIG['cache_db_path'])
     vt_scanner = VirusTotalScanner(CONFIG['virustotal_api_key'], cache_db)
 
+# Initialize YARA cache (reads results from yara-scanner-daemon)
+yara_cache = YARACache(CONFIG['yara_cache_db_path'])
+
 
 @app.route('/')
 def index():
@@ -725,7 +760,7 @@ def downloads():
         else:
             unique_downloads[shasum]['count'] += 1
 
-    # Check which files exist on disk and get VT scores
+    # Check which files exist on disk and get VT/YARA scores
     download_path = CONFIG['download_path']
     for shasum, dl in unique_downloads.items():
         file_path = os.path.join(download_path, shasum)
@@ -734,6 +769,11 @@ def downloads():
             dl['size'] = os.path.getsize(file_path)
         else:
             dl['size'] = 0
+
+        # Get YARA matches from cache
+        yara_result = yara_cache.get_result(shasum)
+        if yara_result and yara_result['matches']:
+            dl['yara_matches'] = yara_result['matches']
 
         # Get VirusTotal score if scanner is available
         if vt_scanner and shasum:

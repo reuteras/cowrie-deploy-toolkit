@@ -27,6 +27,7 @@
                 <th>SHA256</th>
                 <th>URL</th>
                 <th>Size</th>
+                <th>YARA</th>
                 <th>VT Score</th>
                 <th>Downloads</th>
                 <th>First Seen</th>
@@ -52,6 +53,18 @@
                     {{ (dl.size / 1024) | round(1) }} KB
                     {% else %}
                     N/A
+                    {% endif %}
+                </td>
+                <td>
+                    {% if dl.yara_matches is defined and dl.yara_matches %}
+                        <span class="badge badge-warning" title="{{ dl.yara_matches | join(', ') }}">
+                            {{ dl.yara_matches | length }} match{% if dl.yara_matches | length > 1 %}es{% endif %}
+                        </span>
+                        <div class="yara-matches-tooltip" style="font-size: 0.75em; color: #666; margin-top: 2px;">
+                            {{ dl.yara_matches[:3] | join(', ') }}{% if dl.yara_matches | length > 3 %}...{% endif %}
+                        </div>
+                    {% else %}
+                    <span class="text-muted">—</span>
                     {% endif %}
                 </td>
                 <td>
@@ -81,7 +94,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="7" class="no-data">No downloads recorded</td>
+                <td colspan="8" class="no-data">No downloads recorded</td>
             </tr>
             {% endfor %}
         </tbody>

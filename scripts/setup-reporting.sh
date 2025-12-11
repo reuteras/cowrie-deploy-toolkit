@@ -175,6 +175,55 @@ echo "[*] Downloaded $RULE_COUNT YARA rule files from YARA Forge"
 echo "[*] Daily automatic updates configured (runs at 4 AM)"
 
 # ============================================================
+# STEP 6b — Set up YARA scanner daemon (real-time scanning)
+# ============================================================
+
+echo "[*] Setting up YARA scanner daemon..."
+
+# Create systemd service for YARA scanner
+cat > /etc/systemd/system/yara-scanner.service << 'YARASERVICE'
+[Unit]
+Description=Cowrie YARA Scanner Daemon
+Documentation=https://github.com/reuteras/cowrie-deploy-toolkit
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+Environment="COWRIE_DOWNLOAD_PATH=/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
+Environment="YARA_RULES_PATH=/opt/cowrie/yara-rules"
+Environment="YARA_CACHE_DB_PATH=/opt/cowrie/var/yara-cache.db"
+WorkingDirectory=/opt/cowrie
+ExecStart=/root/.local/bin/uv run scripts/yara-scanner-daemon.py
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/cowrie/var /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+YARASERVICE
+
+# Reload systemd and enable service
+systemctl daemon-reload
+systemctl enable yara-scanner.service
+
+# Scan existing files before starting daemon
+echo "[*] Scanning existing downloads with YARA..."
+cd /opt/cowrie
+uv run scripts/yara-scanner-daemon.py --scan-existing 2>/dev/null || true
+
+# Start the daemon
+systemctl start yara-scanner.service
+echo "[*] YARA scanner daemon started"
+
+# ============================================================
 # STEP 7 — Create example configuration
 # ============================================================
 
@@ -192,6 +241,7 @@ export GEOIP_DB_PATH="/var/lib/GeoIP/GeoLite2-City.mmdb"
 export GEOIP_ASN_PATH="/var/lib/GeoIP/GeoLite2-ASN.mmdb"
 export YARA_RULES_PATH="/opt/cowrie/yara-rules"
 export CACHE_DB_PATH="/opt/cowrie/var/report-cache.db"
+export YARA_CACHE_DB_PATH="/opt/cowrie/var/yara-cache.db"
 
 # VirusTotal (get free API key from https://www.virustotal.com/)
 export VT_API_KEY="YOUR_VIRUSTOTAL_API_KEY_HERE"
@@ -274,3 +324,38 @@ else
     echo "NO RULES FOUND"
 fi
 
+# Test YARA scanner daemon
+echo -n "[*] Testing YARA scanner daemon... "
+if systemctl is-active --quiet yara-scanner.service; then
+    echo "OK (running)"
+else
+    echo "NOT RUNNING"
+fi
+
+# ============================================================
+# DONE — Summary
+# ============================================================
+
+echo ""
+echo "============================================================"
+echo "  Cowrie Daily Report System - Setup Complete"
+echo "============================================================"
+echo ""
+echo "Services installed:"
+echo "  - Daily report generator (cron: 5 AM daily)"
+echo "  - YARA rules updater (cron: 4 AM daily)"
+echo "  - YARA scanner daemon (systemd: yara-scanner.service)"
+echo ""
+echo "Key files:"
+echo "  - Config:      /opt/cowrie/etc/report.env"
+echo "  - YARA rules:  /opt/cowrie/yara-rules/"
+echo "  - YARA cache:  /opt/cowrie/var/yara-cache.db"
+echo "  - VT cache:    /opt/cowrie/var/report-cache.db"
+echo ""
+echo "Commands:"
+echo "  - View YARA daemon logs:  journalctl -u yara-scanner -f"
+echo "  - Restart YARA daemon:    systemctl restart yara-scanner"
+echo "  - Test daily report:      cd /opt/cowrie && uv run scripts/daily-report.py --test"
+echo "  - View YARA cache stats:  cd /opt/cowrie && uv run scripts/yara-scanner-daemon.py --stats"
+echo ""
+echo "[*] Setup completed successfully!"
