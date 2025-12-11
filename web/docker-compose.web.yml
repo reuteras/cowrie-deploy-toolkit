@@ -74,37 +74,11 @@ services:
     tmpfs:
       - /tmp:size=10M,mode=1777
 
-  # Optional: Tailscale sidecar for secure remote access
-  # Uncomment this section if you want to use Tailscale
-  # tailscale:
-  #   image: tailscale/tailscale:stable
-  #   container_name: tailscale
-  #   hostname: honeypot-dashboard
-  #   restart: unless-stopped
-  #   environment:
-  #     - TS_AUTHKEY=${TS_AUTHKEY}
-  #     - TS_STATE_DIR=/var/lib/tailscale
-  #     - TS_SERVE_CONFIG=/config/serve.json
-  #   volumes:
-  #     - tailscale-state:/var/lib/tailscale
-  #     - /opt/cowrie/tailscale:/config:ro
-  #   cap_add:
-  #     - NET_ADMIN
-  #     - NET_RAW
-  #   devices:
-  #     - /dev/net/tun:/dev/net/tun
-  #   networks:
-  #     - cowrie-internal
-  #   depends_on:
-  #     - cowrie-web
-
 volumes:
   cowrie-etc:
     name: cowrie-etc
   cowrie-var:
     name: cowrie-var
-  # tailscale-state:
-  #   name: tailscale-state
 
 networks:
   cowrie-internal:
