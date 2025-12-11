@@ -52,6 +52,7 @@ class Config:
             'geoip_asn_path': os.getenv('GEOIP_ASN_PATH', '/var/lib/GeoIP/GeoLite2-ASN.mmdb'),
             'yara_rules_path': os.getenv('YARA_RULES_PATH', '/opt/cowrie/yara-rules'),
             'cache_db_path': os.getenv('CACHE_DB_PATH', '/opt/cowrie/var/report-cache.db'),
+            'yara_cache_db_path': os.getenv('YARA_CACHE_DB_PATH', '/opt/cowrie/var/yara-cache.db'),
 
             # VirusTotal
             'virustotal_api_key': os.getenv('VT_API_KEY'),
@@ -135,6 +136,64 @@ class CacheDB:
         conn.execute(
             'INSERT OR REPLACE INTO vt_cache (sha256, result, timestamp) VALUES (?, ?, ?)',
             (sha256, json.dumps(result), int(datetime.now().timestamp()))
+        )
+        conn.commit()
+        conn.close()
+
+
+class YARACache:
+    """SQLite cache for YARA scan results."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._init_db()
+
+    def _init_db(self):
+        """Initialize cache database."""
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS yara_cache (
+                sha256 TEXT PRIMARY KEY,
+                matches TEXT NOT NULL,
+                scan_timestamp INTEGER NOT NULL,
+                rules_version TEXT
+            )
+        ''')
+        conn.execute('''
+            CREATE INDEX IF NOT EXISTS idx_yara_timestamp
+            ON yara_cache(scan_timestamp)
+        ''')
+        conn.commit()
+        conn.close()
+
+    def get_result(self, sha256: str) -> Optional[dict]:
+        """Get cached YARA scan result."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute(
+            'SELECT matches, scan_timestamp, rules_version FROM yara_cache WHERE sha256 = ?',
+            (sha256,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return {
+                'sha256': sha256,
+                'matches': json.loads(row[0]),
+                'scan_timestamp': row[1],
+                'rules_version': row[2]
+            }
+        return None
+
+    def set_result(self, sha256: str, matches: List[str], rules_version: str = None):
+        """Cache YARA scan result."""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            '''INSERT OR REPLACE INTO yara_cache
+               (sha256, matches, scan_timestamp, rules_version)
+               VALUES (?, ?, ?, ?)''',
+            (sha256, json.dumps(matches), int(datetime.now().timestamp()), rules_version)
         )
         conn.commit()
         conn.close()
@@ -444,11 +503,13 @@ class VirusTotalScanner:
 
 
 class YARAScanner:
-    """Scan files using YARA rules."""
+    """Scan files using YARA rules with caching support."""
 
-    def __init__(self, rules_path: str):
+    def __init__(self, rules_path: str, cache: Optional[YARACache] = None):
         self.rules_path = rules_path
+        self.cache = cache
         self.rules = None
+        self.rules_version = None
         self._load_rules()
 
     def _load_rules(self):
@@ -468,18 +529,45 @@ class YARAScanner:
         if rule_files:
             try:
                 self.rules = yara.compile(filepaths=rule_files)
+                # Use modification time of rules directory as version
+                self.rules_version = str(int(os.path.getmtime(self.rules_path)))
                 print(f"[*] Loaded {len(rule_files)} YARA rule files")
             except Exception as e:
                 print(f"[!] Error loading YARA rules: {e}")
 
-    def scan_file(self, file_path: str) -> List[str]:
-        """Scan file and return matched rule names."""
-        if not self.rules or not os.path.exists(file_path):
+    def scan_file(self, file_path: str, sha256: str = None) -> List[str]:
+        """Scan file and return matched rule names.
+
+        Args:
+            file_path: Path to the file to scan
+            sha256: Optional SHA256 hash for cache lookup (derived from filename if not provided)
+        """
+        if not os.path.exists(file_path):
+            return []
+
+        # Get SHA256 from filename if not provided (Cowrie stores files by hash)
+        if sha256 is None:
+            sha256 = os.path.basename(file_path)
+
+        # Check cache first
+        if self.cache:
+            cached = self.cache.get_result(sha256)
+            if cached:
+                print(f"[*] Using cached YARA result for {sha256[:16]}...")
+                return cached['matches']
+
+        if not self.rules:
             return []
 
         try:
             matches = self.rules.match(file_path)
-            return [match.rule for match in matches]
+            match_names = [match.rule for match in matches]
+
+            # Cache the result
+            if self.cache:
+                self.cache.set_result(sha256, match_names, self.rules_version)
+
+            return match_names
         except Exception as e:
             print(f"[!] YARA scan error: {e}")
             return []
@@ -1095,7 +1183,8 @@ def main():
         if config.get('virustotal_enabled') and config.get('virustotal_api_key'):
             vt_scanner = VirusTotalScanner(config.get('virustotal_api_key'), cache)
 
-        yara_scanner = YARAScanner(config.get('yara_rules_path'))
+        yara_cache = YARACache(config.get('yara_cache_db_path'))
+        yara_scanner = YARAScanner(config.get('yara_rules_path'), yara_cache)
 
         download_path = config.get('download_path')
 
@@ -1111,8 +1200,8 @@ def main():
             if file_path and os.path.exists(file_path):
                 file_info['size'] = os.path.getsize(file_path)
 
-                # YARA scan
-                yara_matches = yara_scanner.scan_file(file_path)
+                # YARA scan (with caching)
+                yara_matches = yara_scanner.scan_file(file_path, sha256)
                 if yara_matches:
                     file_info['yara_matches'] = yara_matches
 
