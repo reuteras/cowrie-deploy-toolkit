@@ -77,7 +77,7 @@ base_url = "https://honeypot-dashboard.your-tailnet.ts.net"
 ### Environment Variables
 
 | Variable               | Default                                 | Description                   |
-|------------------------|-----------------------------------------|-------------------------------|
+| ---------------------- | --------------------------------------- | ----------------------------- |
 | `COWRIE_LOG_PATH`      | `/cowrie-data/log/cowrie/cowrie.json`   | Path to Cowrie JSON log       |
 | `COWRIE_TTY_PATH`      | `/cowrie-data/lib/cowrie/tty`           | Path to TTY recordings        |
 | `COWRIE_DOWNLOAD_PATH` | `/cowrie-data/lib/cowrie/downloads`     | Path to downloaded files      |
@@ -98,7 +98,7 @@ logfile = var/lib/cowrie/tty/{session}_{timestamp}.log
 ## API Endpoints
 
 | Endpoint                          | Description               |
-|-----------------------------------|---------------------------|
+| --------------------------------- | ------------------------- |
 | `GET /`                           | Dashboard with statistics |
 | `GET /sessions`                   | Session list with filters |
 | `GET /session/<id>`               | Session details           |
