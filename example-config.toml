@@ -64,6 +64,16 @@ enabled = false
 # authkey = "tskey-auth-..."
 # Or fetch from 1Password: "op read op://Personal/Tailscale/honeypot_authkey"
 
+# Tailscale hostname for this honeypot (used in tailscale up --hostname)
+# This is the name shown in your Tailscale admin console
+tailscale_name = "cowrie-honeypot"
+
+# Your Tailscale domain (tailnet name)
+# Find this at: https://login.tailscale.com/admin/dns
+# Example: "your-tailnet.ts.net" or "tail12345.ts.net"
+# Used to build the web dashboard URL: https://<tailscale_name>.<tailscale_domain>
+tailscale_domain = ""
+
 # Block public access to management SSH port 2222 (recommended)
 # When true, port 2222 is only accessible via Tailscale
 # When false, port 2222 remains publicly accessible (less secure)
@@ -81,12 +91,9 @@ use_tailscale_ssh = false
 # Access is via SSH tunnel only (never exposed to public internet)
 # If you enable Tailscale with block_public_ssh, use Tailscale IP for the tunnel
 enabled = false
-
-# Base URL for session links in email reports
-# Example: "https://honeypot-dashboard.your-tailnet.ts.net"
-# Leave empty to use relative links
-# Note: To use Tailscale for web dashboard access, enable it in the tailscale section above
-base_url = ""
+# Note: The base URL for session links in email reports is automatically
+# built from tailscale_name and tailscale_domain when Tailscale is enabled.
+# Example: https://<tailscale_name>.<tailscale_domain>
 
 [advanced]
 # Report generation interval (hours)

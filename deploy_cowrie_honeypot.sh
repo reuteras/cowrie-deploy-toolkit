@@ -40,11 +40,12 @@ REAL_SSH_PORT="2222"        # Move real SSH to 2222
 # Check if master config exists and read settings
 ENABLE_REPORTING="false"
 ENABLE_WEB_DASHBOARD="false"
-WEB_BASE_URL=""
 TAILSCALE_AUTHKEY=""
 ENABLE_TAILSCALE="false"
 TAILSCALE_BLOCK_PUBLIC_SSH="true"
 TAILSCALE_USE_SSH="false"
+TAILSCALE_NAME="cowrie-honeypot"
+TAILSCALE_DOMAIN=""
 
 if [ -f "$MASTER_CONFIG" ]; then
     echo "[*] Found master-config.toml, reading deployment settings..."
@@ -88,6 +89,13 @@ if [ -f "$MASTER_CONFIG" ]; then
                 TAILSCALE_AUTHKEY=$(eval "$TAILSCALE_AUTHKEY")
             fi
 
+            # Extract tailscale_name (hostname for Tailscale)
+            CONFIG_TAILSCALE_NAME=$(sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep "^tailscale_name" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+            [ -n "$CONFIG_TAILSCALE_NAME" ] && TAILSCALE_NAME="$CONFIG_TAILSCALE_NAME"
+
+            # Extract tailscale_domain (tailnet domain)
+            TAILSCALE_DOMAIN=$(sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep "^tailscale_domain" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+
             # Extract block_public_ssh setting
             if sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep -q "block_public_ssh.*=.*false"; then
                 TAILSCALE_BLOCK_PUBLIC_SSH="false"
@@ -105,9 +113,6 @@ if [ -f "$MASTER_CONFIG" ]; then
         if sed -n '/\[web_dashboard\]/,/^\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
             ENABLE_WEB_DASHBOARD="true"
             echo "[*] Web dashboard is enabled in master config"
-
-            # Extract base URL
-            WEB_BASE_URL=$(sed -n '/\[web_dashboard\]/,/^\[/p' "$MASTER_CONFIG" | grep "^base_url" | head -1 | sed -E 's/^[^=]*= *"([^"]*)".*/\1/')
         fi
     fi
 else
@@ -220,7 +225,7 @@ curl -fsSL https://tailscale.com/install.sh | sh > /dev/null 2>&1
 
 # Start and authenticate Tailscale
 echo "[*] Authenticating with Tailscale..."
-tailscale up --authkey="$TAILSCALE_AUTHKEY" --ssh=${TAILSCALE_USE_SSH} --hostname="cowrie-honeypot" > /dev/null 2>&1
+tailscale up --authkey="$TAILSCALE_AUTHKEY" --ssh=${TAILSCALE_USE_SSH} --hostname="$TAILSCALE_NAME" > /dev/null 2>&1
 
 # Get Tailscale IP
 TAILSCALE_IP=\$(tailscale ip -4)
@@ -796,6 +801,13 @@ fi
 if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
     echo "[*] Setting up SSH Session Playback Web Dashboard..."
 
+    # Build WEB_BASE_URL from Tailscale settings if available
+    WEB_BASE_URL=""
+    if [ "$ENABLE_TAILSCALE" = "true" ] && [ -n "$TAILSCALE_NAME" ] && [ -n "$TAILSCALE_DOMAIN" ]; then
+        WEB_BASE_URL="https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
+        echo "[*] Web dashboard base URL: $WEB_BASE_URL"
+    fi
+
     # Upload web service files
     echo "[*] Uploading web service files..."
     scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
@@ -822,7 +834,7 @@ fi
 mkdir -p /var/lib/GeoIP
 
 # Create web dashboard docker-compose file
-cat > /opt/cowrie/docker-compose.yml << 'DOCKEREOF'
+cat > /opt/cowrie/docker-compose.yml << DOCKEREOF
 services:
   cowrie:
     image: cowrie/cowrie:latest
@@ -864,8 +876,8 @@ services:
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
       - COWRIE_DOWNLOAD_PATH=/cowrie-data/lib/cowrie/downloads
       - GEOIP_DB_PATH=/geoip/GeoLite2-City.mmdb
-      - BASE_URL=${WEB_BASE_URL:-}
-      - VIRUSTOTAL_API_KEY=${VT_API_KEY:-}
+      - BASE_URL=$WEB_BASE_URL
+      - VIRUSTOTAL_API_KEY=$VT_API_KEY
     depends_on:
       - cowrie
     networks:
@@ -913,10 +925,14 @@ fi
 WEBEOF
 
     echo "[*] Web dashboard configured successfully"
-    if [ "$ENABLE_TAILSCALE" = "true" ]; then
-        # Get Tailscale hostname
-        TAILSCALE_HOSTNAME=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo 'cowrie-honeypot'")
-        echo "[*] Web dashboard available at: https://$TAILSCALE_HOSTNAME"
+    if [ "$ENABLE_TAILSCALE" = "true" ] && [ -n "$TAILSCALE_DOMAIN" ]; then
+        # Use configured Tailscale name and domain
+        echo "[*] Web dashboard available at: https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
+        echo "[*] Also via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
+    elif [ "$ENABLE_TAILSCALE" = "true" ]; then
+        # Tailscale enabled but no domain configured - query from Tailscale
+        TAILSCALE_FQDN=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo '${TAILSCALE_NAME}'")
+        echo "[*] Web dashboard available at: https://$TAILSCALE_FQDN"
         echo "[*] Also via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
     else
         echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
