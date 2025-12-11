@@ -142,7 +142,7 @@ class CacheDB:
 
 
 class YARACache:
-    """SQLite cache for YARA scan results."""
+    """SQLite cache for YARA scan results and file type info."""
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -152,14 +152,33 @@ class YARACache:
         """Initialize cache database."""
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         conn = sqlite3.connect(self.db_path)
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS yara_cache (
-                sha256 TEXT PRIMARY KEY,
-                matches TEXT NOT NULL,
-                scan_timestamp INTEGER NOT NULL,
-                rules_version TEXT
-            )
-        ''')
+
+        # Check if we need to migrate the schema
+        cursor = conn.execute("PRAGMA table_info(yara_cache)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        if 'file_type' not in columns:
+            if 'yara_cache' in [row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()]:
+                conn.execute('ALTER TABLE yara_cache ADD COLUMN file_type TEXT')
+                conn.execute('ALTER TABLE yara_cache ADD COLUMN file_mime TEXT')
+                conn.execute('ALTER TABLE yara_cache ADD COLUMN file_category TEXT')
+                conn.execute('ALTER TABLE yara_cache ADD COLUMN is_previewable INTEGER DEFAULT 0')
+            else:
+                conn.execute('''
+                    CREATE TABLE IF NOT EXISTS yara_cache (
+                        sha256 TEXT PRIMARY KEY,
+                        matches TEXT NOT NULL,
+                        scan_timestamp INTEGER NOT NULL,
+                        rules_version TEXT,
+                        file_type TEXT,
+                        file_mime TEXT,
+                        file_category TEXT,
+                        is_previewable INTEGER DEFAULT 0
+                    )
+                ''')
+
         conn.execute('''
             CREATE INDEX IF NOT EXISTS idx_yara_timestamp
             ON yara_cache(scan_timestamp)
@@ -168,10 +187,12 @@ class YARACache:
         conn.close()
 
     def get_result(self, sha256: str) -> Optional[dict]:
-        """Get cached YARA scan result."""
+        """Get cached scan result including file type."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.execute(
-            'SELECT matches, scan_timestamp, rules_version FROM yara_cache WHERE sha256 = ?',
+            '''SELECT matches, scan_timestamp, rules_version,
+                      file_type, file_mime, file_category
+               FROM yara_cache WHERE sha256 = ?''',
             (sha256,)
         )
         row = cursor.fetchone()
@@ -180,20 +201,25 @@ class YARACache:
         if row:
             return {
                 'sha256': sha256,
-                'matches': json.loads(row[0]),
+                'matches': json.loads(row[0]) if row[0] else [],
                 'scan_timestamp': row[1],
-                'rules_version': row[2]
+                'rules_version': row[2],
+                'file_type': row[3],
+                'file_mime': row[4],
+                'file_category': row[5]
             }
         return None
 
-    def set_result(self, sha256: str, matches: List[str], rules_version: str = None):
-        """Cache YARA scan result."""
+    def set_result(self, sha256: str, matches: List[str], rules_version: str = None,
+                   file_type: str = None, file_mime: str = None, file_category: str = None):
+        """Cache scan result with optional file type info."""
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             '''INSERT OR REPLACE INTO yara_cache
-               (sha256, matches, scan_timestamp, rules_version)
-               VALUES (?, ?, ?, ?)''',
-            (sha256, json.dumps(matches), int(datetime.now().timestamp()), rules_version)
+               (sha256, matches, scan_timestamp, rules_version, file_type, file_mime, file_category)
+               VALUES (?, ?, ?, ?, ?, ?, ?)''',
+            (sha256, json.dumps(matches), int(datetime.now().timestamp()),
+             rules_version, file_type, file_mime, file_category)
         )
         conn.commit()
         conn.close()
@@ -634,6 +660,13 @@ class ReportGenerator:
                 lines.append(f"SHA256: {sha256}")
                 lines.append(f"  Downloads:   {download_count}x")
                 lines.append(f"  Size:        {file_info['size']} bytes")
+                if file_info.get('file_type'):
+                    file_type = file_info['file_type']
+                    if len(file_type) > 60:
+                        file_type = file_type[:60] + '...'
+                    lines.append(f"  Type:        {file_type}")
+                if file_info.get('file_category'):
+                    lines.append(f"  Category:    {file_info['file_category']}")
                 if file_info.get('yara_matches'):
                     lines.append(f"  YARA:        {', '.join(file_info['yara_matches'])}")
                 if file_info.get('vt_result'):
@@ -873,6 +906,17 @@ class ReportGenerator:
                 sha256 = file_info['sha256']
                 download_count = self.stats['download_counts'].get(sha256, 1)
 
+                # File type badge colors
+                category_colors = {
+                    'executable': '#dc3545',
+                    'script': '#ffc107',
+                    'archive': '#17a2b8',
+                    'document': '#007bff',
+                    'data': '#6c757d'
+                }
+                file_category = file_info.get('file_category', 'unknown')
+                category_color = category_colors.get(file_category, '#6c757d')
+
                 html += f"""
         <table>
             <tr>
@@ -886,6 +930,19 @@ class ReportGenerator:
             <tr>
                 <td><strong>Size:</strong></td>
                 <td>{file_info['size']} bytes</td>
+            </tr>
+"""
+                if file_info.get('file_type'):
+                    file_type = file_info['file_type']
+                    if len(file_type) > 80:
+                        file_type = file_type[:80] + '...'
+                    html += f"""
+            <tr>
+                <td><strong>File Type:</strong></td>
+                <td>
+                    <span style="background: {category_color}; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.85em; margin-right: 8px;">{file_category}</span>
+                    {file_type}
+                </td>
             </tr>
 """
 
@@ -1200,10 +1257,18 @@ def main():
             if file_path and os.path.exists(file_path):
                 file_info['size'] = os.path.getsize(file_path)
 
-                # YARA scan (with caching)
+                # YARA scan (with caching) - also gets file type if available
                 yara_matches = yara_scanner.scan_file(file_path, sha256)
                 if yara_matches:
                     file_info['yara_matches'] = yara_matches
+
+                # Get file type from YARA cache (populated by yara-scanner-daemon)
+                yara_cached = yara_cache.get_result(sha256)
+                if yara_cached:
+                    if yara_cached.get('file_type'):
+                        file_info['file_type'] = yara_cached['file_type']
+                    if yara_cached.get('file_category'):
+                        file_info['file_category'] = yara_cached['file_category']
 
                 # VirusTotal scan
                 if vt_scanner:

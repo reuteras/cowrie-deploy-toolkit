@@ -111,20 +111,25 @@ class CacheDB:
 
 
 class YARACache:
-    """SQLite cache for YARA scan results (read-only for web app)."""
+    """SQLite cache for YARA scan results and file type info (read-only for web app)."""
+
+    # Maximum file size for preview (1MB)
+    MAX_PREVIEW_SIZE = 1024 * 1024
 
     def __init__(self, db_path: str):
         self.db_path = db_path
 
     def get_result(self, sha256: str) -> Optional[dict]:
-        """Get cached YARA scan result."""
+        """Get cached scan result including file type."""
         if not os.path.exists(self.db_path):
             return None
 
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.execute(
-                'SELECT matches, scan_timestamp FROM yara_cache WHERE sha256 = ?',
+                '''SELECT matches, scan_timestamp, file_type, file_mime,
+                          file_category, is_previewable
+                   FROM yara_cache WHERE sha256 = ?''',
                 (sha256,)
             )
             row = cursor.fetchone()
@@ -133,8 +138,12 @@ class YARACache:
             if row:
                 return {
                     'sha256': sha256,
-                    'matches': json.loads(row[0]),
-                    'scan_timestamp': row[1]
+                    'matches': json.loads(row[0]) if row[0] else [],
+                    'scan_timestamp': row[1],
+                    'file_type': row[2],
+                    'file_mime': row[3],
+                    'file_category': row[4],
+                    'is_previewable': bool(row[5]) if row[5] is not None else False
                 }
         except Exception:
             pass
@@ -770,10 +779,16 @@ def downloads():
         else:
             dl['size'] = 0
 
-        # Get YARA matches from cache
+        # Get YARA matches and file type from cache
         yara_result = yara_cache.get_result(shasum)
-        if yara_result and yara_result['matches']:
-            dl['yara_matches'] = yara_result['matches']
+        if yara_result:
+            if yara_result.get('matches'):
+                dl['yara_matches'] = yara_result['matches']
+            if yara_result.get('file_type'):
+                dl['file_type'] = yara_result['file_type']
+                dl['file_mime'] = yara_result.get('file_mime')
+                dl['file_category'] = yara_result.get('file_category')
+                dl['is_previewable'] = yara_result.get('is_previewable', False)
 
         # Get VirusTotal score if scanner is available
         if vt_scanner and shasum:
@@ -787,6 +802,125 @@ def downloads():
     downloads_list = sorted(unique_downloads.values(), key=lambda x: x['timestamp'], reverse=True)
 
     return render_template('downloads.html', downloads=downloads_list, hours=hours, config=CONFIG)
+
+
+@app.route('/download/<shasum>/preview')
+def download_preview(shasum: str):
+    """Preview a downloaded file (text files only)."""
+    # Get file info from cache
+    file_info = yara_cache.get_result(shasum)
+
+    if not file_info:
+        return render_template('404.html', message='File not found in cache'), 404
+
+    if not file_info.get('is_previewable'):
+        return render_template('404.html', message='File type not previewable'), 400
+
+    # Check if file exists
+    download_path = CONFIG['download_path']
+    file_path = os.path.join(download_path, shasum)
+
+    if not os.path.exists(file_path):
+        return render_template('404.html', message='File not found on disk'), 404
+
+    # Check file size
+    file_size = os.path.getsize(file_path)
+    max_size = 1024 * 1024  # 1MB limit
+
+    if file_size > max_size:
+        return render_template('404.html',
+            message=f'File too large for preview ({file_size} bytes, max {max_size})'), 400
+
+    # Read file content
+    try:
+        with open(file_path, 'rb') as f:
+            content = f.read()
+
+        # Try to decode as UTF-8, fall back to latin-1
+        try:
+            text_content = content.decode('utf-8')
+        except UnicodeDecodeError:
+            text_content = content.decode('latin-1')
+
+        # Determine language for syntax highlighting based on file type
+        file_type = file_info.get('file_type', '').lower()
+        file_mime = file_info.get('file_mime', '').lower()
+
+        language = 'plaintext'
+        if 'python' in file_type or 'python' in file_mime:
+            language = 'python'
+        elif 'shell' in file_type or 'bash' in file_type or file_mime == 'text/x-shellscript':
+            language = 'bash'
+        elif 'perl' in file_type or 'perl' in file_mime:
+            language = 'perl'
+        elif 'ruby' in file_type or 'ruby' in file_mime:
+            language = 'ruby'
+        elif 'php' in file_type or 'php' in file_mime:
+            language = 'php'
+        elif 'javascript' in file_type or 'javascript' in file_mime:
+            language = 'javascript'
+        elif 'json' in file_type or file_mime == 'application/json':
+            language = 'json'
+        elif 'xml' in file_type or 'xml' in file_mime:
+            language = 'xml'
+        elif 'html' in file_type or 'html' in file_mime:
+            language = 'html'
+        elif 'c source' in file_type or 'c++' in file_type:
+            language = 'c'
+
+        return render_template('preview.html',
+            shasum=shasum,
+            file_info=file_info,
+            content=text_content,
+            language=language,
+            file_size=file_size,
+            config=CONFIG
+        )
+
+    except Exception as e:
+        return render_template('404.html', message=f'Error reading file: {e}'), 500
+
+
+@app.route('/api/download/<shasum>/content')
+def api_download_content(shasum: str):
+    """API endpoint to get raw file content (text files only)."""
+    # Get file info from cache
+    file_info = yara_cache.get_result(shasum)
+
+    if not file_info:
+        return jsonify({'error': 'File not found in cache'}), 404
+
+    if not file_info.get('is_previewable'):
+        return jsonify({'error': 'File type not previewable'}), 400
+
+    # Check if file exists
+    download_path = CONFIG['download_path']
+    file_path = os.path.join(download_path, shasum)
+
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found on disk'}), 404
+
+    # Check file size
+    file_size = os.path.getsize(file_path)
+    max_size = 1024 * 1024  # 1MB limit
+
+    if file_size > max_size:
+        return jsonify({'error': f'File too large ({file_size} bytes)'}), 400
+
+    # Read and return content
+    try:
+        with open(file_path, 'rb') as f:
+            content = f.read()
+
+        try:
+            text_content = content.decode('utf-8')
+        except UnicodeDecodeError:
+            text_content = content.decode('latin-1')
+
+        return Response(text_content, mimetype='text/plain')
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/commands')

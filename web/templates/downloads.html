@@ -25,7 +25,7 @@
         <thead>
             <tr>
                 <th>SHA256</th>
-                <th>URL</th>
+                <th>Type</th>
                 <th>Size</th>
                 <th>YARA</th>
                 <th>VT Score</th>
@@ -44,9 +44,27 @@
                     {% endif %}
                 </td>
                 <td>
-                    <code class="url-text" title="{{ dl.url }}">
-                        {{ dl.url[:60] }}{% if dl.url | length > 60 %}...{% endif %}
-                    </code>
+                    {% if dl.file_category %}
+                        {% set category_colors = {
+                            'executable': 'badge-danger',
+                            'script': 'badge-warning',
+                            'archive': 'badge-info',
+                            'document': 'badge-primary',
+                            'data': 'badge-secondary'
+                        } %}
+                        <span class="badge {{ category_colors.get(dl.file_category, 'badge-secondary') }}"
+                              title="{{ dl.file_type or 'Unknown' }}">
+                            {{ dl.file_category }}
+                        </span>
+                        {% if dl.file_type %}
+                        <div style="font-size: 0.7em; color: #666; margin-top: 2px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                             title="{{ dl.file_type }}">
+                            {{ dl.file_type[:40] }}{% if dl.file_type | length > 40 %}...{% endif %}
+                        </div>
+                        {% endif %}
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
                 </td>
                 <td>
                     {% if dl.size %}
@@ -83,6 +101,11 @@
                 <td>{{ dl.count }}x</td>
                 <td>{{ dl.timestamp | format_timestamp }}</td>
                 <td class="actions">
+                    {% if dl.is_previewable and dl.exists %}
+                    <a href="{{ url_for('download_preview', shasum=dl.shasum) }}"
+                       class="btn btn-sm btn-preview"
+                       title="Preview file content">Preview</a>
+                    {% endif %}
                     <a href="https://www.virustotal.com/gui/file/{{ dl.shasum }}"
                        target="_blank"
                        class="btn btn-sm"
