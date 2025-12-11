@@ -64,7 +64,7 @@ The first milestone combines daily reporting with essential threat intelligence 
 - [x] Configurable reporting intervals and thresholds
 
 ### Report Format
-```
+```text
 Subject: [Honeypot] Daily Report - 2024-12-06 - 847 attacks from 124 IPs
 
 SUMMARY

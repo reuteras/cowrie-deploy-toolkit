@@ -6,7 +6,7 @@ This project provides scripts to deploy realistic Cowrie SSH honeypots on Hetzne
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Honeypot Deployment Flow                      │
 ├─────────────────────────────────────────────────────────────────┤
@@ -125,7 +125,7 @@ For enhanced security, you can configure management SSH (port 2222) to be access
 - **Secure Remote Access** - Access your honeypot from anywhere via Tailscale
 - **Optional Tailscale SSH** - Use Tailscale's built-in SSH with ACLs and session recording
 
-### Configuration
+### Configuration for Tailscale
 
 Add to `master-config.toml`:
 
@@ -141,7 +141,7 @@ use_tailscale_ssh = false    # Optional: use Tailscale's SSH feature
 
 ### Generating a Tailscale Auth Key
 
-1. Visit https://login.tailscale.com/admin/settings/keys
+1. Visit <https://login.tailscale.com/admin/settings/keys>
 2. Click "Generate auth key"
 3. Settings:
    - **Reusable**: ✓ (allows multiple devices)

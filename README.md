@@ -120,7 +120,7 @@ hcloud server delete <SERVER_ID>
 
 ## How It Works
 
-```
+```text
 generate_cowrie_fs_from_hetzner.sh
 ├── Creates temporary Debian server
 ├── Sets realistic hostname, installs nginx

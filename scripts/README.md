@@ -110,6 +110,7 @@ for rule in /opt/cowrie/yara-rules/*.yar; do
 done
 ```
 
+```bash
 # Check logs
 journalctl -t cowrie-report
 ```

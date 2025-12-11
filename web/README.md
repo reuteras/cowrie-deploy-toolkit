@@ -12,7 +12,7 @@ A Flask-based web application for viewing and replaying SSH sessions captured by
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Web Service Architecture                      │
 ├─────────────────────────────────────────────────────────────────┤
@@ -55,7 +55,7 @@ open http://localhost:5000
 
 ### Tailscale Access
 
-1. Create a Tailscale auth key at https://login.tailscale.com/admin/settings/keys
+1. Create a Tailscale auth key at <https://login.tailscale.com/admin/settings/keys>
 2. Add to your `master-config.toml`:
 
 ```toml
@@ -141,7 +141,7 @@ docker run -d \
 
 When web dashboard is enabled, daily email reports include links to session details:
 
-```
+```text
 Most Active Sessions:
 - Session abc123... (45 commands) → https://honeypot-dashboard.ts.net/session/abc123
 - Session def456... (32 commands) → https://honeypot-dashboard.ts.net/session/def456
