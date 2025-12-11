@@ -91,6 +91,7 @@ use_tailscale_ssh = false
 # Access is via SSH tunnel only (never exposed to public internet)
 # If you enable Tailscale with block_public_ssh, use Tailscale IP for the tunnel
 enabled = false
+
 # Note: The base URL for session links in email reports is automatically
 # built from tailscale_name and tailscale_domain when Tailscale is enabled.
 # Example: https://<tailscale_name>.<tailscale_domain>
