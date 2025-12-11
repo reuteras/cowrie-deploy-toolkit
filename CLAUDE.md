@@ -133,6 +133,8 @@ Add to `master-config.toml`:
 [tailscale]
 enabled = true
 authkey = "tskey-auth-..."  # Or: "op read op://Personal/Tailscale/honeypot_authkey"
+tailscale_name = "cowrie-honeypot"  # Hostname shown in Tailscale admin console
+tailscale_domain = "your-tailnet.ts.net"  # Your tailnet domain (for web dashboard URL)
 block_public_ssh = true      # Recommended: block public access to port 2222
 use_tailscale_ssh = false    # Optional: use Tailscale's SSH feature
 ```
@@ -188,12 +190,16 @@ Add to `master-config.toml`:
 ```toml
 [web_dashboard]
 enabled = true
-base_url = ""  # Optional: for links in email reports
+# Note: The base URL for session links in email reports is automatically
+# built from tailscale_name and tailscale_domain when Tailscale is enabled.
 ```
 
 ### Accessing the Web Dashboard
 
-The web dashboard is NOT exposed to the public internet. Access via SSH tunnel:
+When Tailscale is enabled with `tailscale_domain` configured, the web dashboard is available at:
+- `https://<tailscale_name>.<tailscale_domain>` (via Tailscale Serve)
+
+The web dashboard is NOT exposed to the public internet. You can also access via SSH tunnel:
 
 ```bash
 # If using Tailscale with block_public_ssh enabled
