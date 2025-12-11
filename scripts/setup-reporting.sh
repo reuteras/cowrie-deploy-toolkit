@@ -202,7 +202,7 @@ RestartSec=10
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=read-only
 ReadWritePaths=/opt/cowrie/var /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads
 PrivateTmp=true
 
