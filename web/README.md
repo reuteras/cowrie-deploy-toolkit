@@ -76,13 +76,13 @@ base_url = "https://honeypot-dashboard.your-tailnet.ts.net"
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `COWRIE_LOG_PATH` | `/cowrie-data/log/cowrie/cowrie.json` | Path to Cowrie JSON log |
-| `COWRIE_TTY_PATH` | `/cowrie-data/lib/cowrie/tty` | Path to TTY recordings |
-| `COWRIE_DOWNLOAD_PATH` | `/cowrie-data/lib/cowrie/downloads` | Path to downloaded files |
-| `GEOIP_DB_PATH` | `/cowrie-data/geoip/GeoLite2-City.mmdb` | Path to GeoIP database |
-| `BASE_URL` | `` | Base URL for links in reports |
+| Variable               | Default                                 | Description                   |
+|------------------------|-----------------------------------------|-------------------------------|
+| `COWRIE_LOG_PATH`      | `/cowrie-data/log/cowrie/cowrie.json`   | Path to Cowrie JSON log       |
+| `COWRIE_TTY_PATH`      | `/cowrie-data/lib/cowrie/tty`           | Path to TTY recordings        |
+| `COWRIE_DOWNLOAD_PATH` | `/cowrie-data/lib/cowrie/downloads`     | Path to downloaded files      |
+| `GEOIP_DB_PATH`        | `/cowrie-data/geoip/GeoLite2-City.mmdb` | Path to GeoIP database        |
+| `BASE_URL`             | ``                                      | Base URL for links in reports |
 
 ### Enabling TTY Recording
 
@@ -97,15 +97,15 @@ logfile = var/lib/cowrie/tty/{session}_{timestamp}.log
 
 ## API Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /` | Dashboard with statistics |
-| `GET /sessions` | Session list with filters |
-| `GET /session/<id>` | Session details |
-| `GET /session/<id>/playback` | TTY playback page |
-| `GET /downloads` | Downloaded files list |
-| `GET /api/stats` | JSON stats for dashboard |
-| `GET /api/sessions` | JSON session list |
+| Endpoint                          | Description               |
+|-----------------------------------|---------------------------|
+| `GET /`                           | Dashboard with statistics |
+| `GET /sessions`                   | Session list with filters |
+| `GET /session/<id>`               | Session details           |
+| `GET /session/<id>/playback`      | TTY playback page         |
+| `GET /downloads`                  | Downloaded files list     |
+| `GET /api/stats`                  | JSON stats for dashboard  |
+| `GET /api/sessions`               | JSON session list         |
 | `GET /api/session/<id>/asciicast` | Asciicast data for player |
 
 ## Local Development

@@ -6,11 +6,11 @@ Reads master-config.toml, executes any shell commands in values
 (like "op read op://..."), and outputs a server-ready config.
 """
 
-import sys
 import subprocess
-import re
-import tomllib
+import sys
 from pathlib import Path
+
+import tomllib
 
 
 def execute_command(value: str) -> str:
@@ -25,7 +25,7 @@ def execute_command(value: str) -> str:
     value = value.strip()
 
     # List of known secret management CLIs
-    command_prefixes = ['op read', 'pass', 'vault', 'aws secretsmanager']
+    command_prefixes = ["op read", "pass", "vault", "aws secretsmanager"]
 
     # Check if this looks like a command
     is_command = any(value.startswith(prefix) for prefix in command_prefixes)
@@ -35,13 +35,7 @@ def execute_command(value: str) -> str:
 
     # Execute command and return output
     try:
-        result = subprocess.run(
-            value,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        result = subprocess.run(value, shell=True, capture_output=True, text=True, timeout=10)
 
         if result.returncode == 0:
             return result.stdout.strip()
@@ -60,7 +54,7 @@ def execute_command(value: str) -> str:
 
 def process_config(config_path: str) -> dict:
     """Process config file and execute any commands."""
-    with open(config_path, 'rb') as f:
+    with open(config_path, "rb") as f:
         config = tomllib.load(f)
 
     # Recursively process all string values
@@ -79,66 +73,61 @@ def process_config(config_path: str) -> dict:
 
 def generate_env_file(config: dict) -> str:
     """Generate environment variable file for server."""
-    lines = [
-        "#!/bin/bash",
-        "# Cowrie Daily Report Configuration",
-        "# Generated from master-config.toml",
-        ""
-    ]
+    lines = ["#!/bin/bash", "# Cowrie Daily Report Configuration", "# Generated from master-config.toml", ""]
 
     # Paths
-    if 'advanced' in config:
+    if "advanced" in config:
         lines.append("# Paths")
-        for key, value in config['advanced'].items():
+        for key, value in config["advanced"].items():
             env_var = key.upper()
             lines.append(f'export {env_var}="{value}"')
         lines.append("")
 
     # VirusTotal
-    if 'reporting' in config and 'virustotal_api_key' in config['reporting']:
+    if "reporting" in config and "virustotal_api_key" in config["reporting"]:
         lines.append("# VirusTotal")
         lines.append(f'export VT_API_KEY="{config["reporting"]["virustotal_api_key"]}"')
         lines.append('export VT_ENABLED="true"')
         lines.append("")
 
     # Email settings
-    if 'reporting' in config:
+    if "reporting" in config:
         lines.append("# Email Configuration")
-        r = config['reporting']
-        if 'email_from' in r:
+        r = config["reporting"]
+        if "email_from" in r:
             lines.append(f'export EMAIL_FROM="{r["email_from"]}"')
-        if 'email_to' in r:
+        if "email_to" in r:
             lines.append(f'export EMAIL_TO="{r["email_to"]}"')
-        if 'email_subject_prefix' in r:
+        if "email_subject_prefix" in r:
             lines.append(f'export EMAIL_SUBJECT_PREFIX="{r["email_subject_prefix"]}"')
-        if 'max_commands_per_session' in r:
+        if "max_commands_per_session" in r:
             lines.append(f'export MAX_COMMANDS_PER_SESSION="{r["max_commands_per_session"]}"')
         lines.append("")
 
     # SMTP settings
-    if 'email' in config:
+    if "email" in config:
         lines.append("# SMTP Settings")
-        e = config['email']
-        if 'smtp_host' in e:
+        e = config["email"]
+        if "smtp_host" in e:
             lines.append(f'export SMTP_HOST="{e["smtp_host"]}"')
-        if 'smtp_port' in e:
+        if "smtp_port" in e:
             lines.append(f'export SMTP_PORT="{e["smtp_port"]}"')
-        if 'smtp_user' in e:
+        if "smtp_user" in e:
             lines.append(f'export SMTP_USER="{e["smtp_user"]}"')
-        if 'smtp_password' in e:
+        if "smtp_password" in e:
             lines.append(f'export SMTP_PASSWORD="{e["smtp_password"]}"')
-        if 'smtp_tls' in e:
+        if "smtp_tls" in e:
             lines.append(f'export SMTP_TLS="{"true" if e["smtp_tls"] else "false"}"')
-        if 'sendgrid_api_key' in e:
+        if "sendgrid_api_key" in e:
             lines.append(f'export SENDGRID_API_KEY="{e["sendgrid_api_key"]}"')
-        if 'mailgun_api_key' in e:
+        if "mailgun_api_key" in e:
             lines.append(f'export MAILGUN_API_KEY="{e["mailgun_api_key"]}"')
-        if 'mailgun_domain' in e:
+        if "mailgun_domain" in e:
             lines.append(f'export MAILGUN_DOMAIN="{e["mailgun_domain"]}"')
         lines.append("")
 
     # Report settings
-    if 'advanced' in config and 'report_hours' in config['advanced']:
+    if "advanced" in config and "report_hours" in config["advanced"]:
         lines.append("# Report Settings")
         lines.append(f'export REPORT_HOURS="{config["advanced"]["report_hours"]}"')
 
@@ -151,9 +140,9 @@ def main():
         sys.exit(1)
 
     config_path = sys.argv[1]
-    output_format = 'env'
+    output_format = "env"
 
-    if len(sys.argv) > 3 and sys.argv[2] == '--output':
+    if len(sys.argv) > 3 and sys.argv[2] == "--output":
         output_format = sys.argv[3]
 
     if not Path(config_path).exists():
@@ -165,15 +154,16 @@ def main():
     config = process_config(config_path)
 
     # Output in requested format
-    if output_format == 'env':
+    if output_format == "env":
         print(generate_env_file(config))
-    elif output_format == 'json':
+    elif output_format == "json":
         import json
+
         print(json.dumps(config, indent=2))
     else:
         print(f"Error: Unknown output format: {output_format}", file=sys.stderr)
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

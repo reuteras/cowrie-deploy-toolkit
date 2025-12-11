@@ -19,12 +19,11 @@ import sqlite3
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 try:
-    import yara
     import magic
+    import yara
     from inotify_simple import INotify, flags
 except ImportError as e:
     print(f"Error: Missing required dependency: {e}")
@@ -34,9 +33,9 @@ except ImportError as e:
 
 # Configuration from environment variables
 CONFIG = {
-    'download_path': os.getenv('COWRIE_DOWNLOAD_PATH', '/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads'),
-    'yara_rules_path': os.getenv('YARA_RULES_PATH', '/opt/cowrie/yara-rules'),
-    'cache_db_path': os.getenv('YARA_CACHE_DB_PATH', '/opt/cowrie/var/yara-cache.db'),
+    "download_path": os.getenv("COWRIE_DOWNLOAD_PATH", "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"),
+    "yara_rules_path": os.getenv("YARA_RULES_PATH", "/opt/cowrie/yara-rules"),
+    "cache_db_path": os.getenv("YARA_CACHE_DB_PATH", "/opt/cowrie/var/yara-cache.db"),
 }
 
 
@@ -44,26 +43,53 @@ class FileAnalysisCache:
     """SQLite cache for YARA scan results and file type detection."""
 
     # File categories for quick filtering
-    CATEGORY_EXECUTABLE = 'executable'
-    CATEGORY_SCRIPT = 'script'
-    CATEGORY_DOCUMENT = 'document'
-    CATEGORY_ARCHIVE = 'archive'
-    CATEGORY_DATA = 'data'
-    CATEGORY_UNKNOWN = 'unknown'
+    CATEGORY_EXECUTABLE = "executable"
+    CATEGORY_SCRIPT = "script"
+    CATEGORY_DOCUMENT = "document"
+    CATEGORY_ARCHIVE = "archive"
+    CATEGORY_DATA = "data"
+    CATEGORY_UNKNOWN = "unknown"
 
     # MIME types that are safe to preview (text-based)
     PREVIEWABLE_MIMES = {
-        'text/plain', 'text/x-shellscript', 'text/x-python', 'text/x-perl',
-        'text/x-ruby', 'text/x-php', 'text/x-c', 'text/x-c++', 'text/html',
-        'text/xml', 'text/css', 'text/javascript', 'application/json',
-        'application/xml', 'application/x-sh', 'application/x-csh',
-        'application/javascript', 'application/x-perl', 'application/x-python',
+        "text/plain",
+        "text/x-shellscript",
+        "text/x-python",
+        "text/x-perl",
+        "text/x-ruby",
+        "text/x-php",
+        "text/x-c",
+        "text/x-c++",
+        "text/html",
+        "text/xml",
+        "text/css",
+        "text/javascript",
+        "application/json",
+        "application/xml",
+        "application/x-sh",
+        "application/x-csh",
+        "application/javascript",
+        "application/x-perl",
+        "application/x-python",
     }
 
     # File type descriptions that indicate text/script content
     TEXT_INDICATORS = [
-        'text', 'script', 'ASCII', 'UTF-8', 'Unicode', 'JSON', 'XML', 'HTML',
-        'shell', 'Python', 'Perl', 'Ruby', 'PHP', 'source', 'program text',
+        "text",
+        "script",
+        "ASCII",
+        "UTF-8",
+        "Unicode",
+        "JSON",
+        "XML",
+        "HTML",
+        "shell",
+        "Python",
+        "Perl",
+        "Ruby",
+        "PHP",
+        "source",
+        "program text",
     ]
 
     def __init__(self, db_path: str):
@@ -79,19 +105,19 @@ class FileAnalysisCache:
         cursor = conn.execute("PRAGMA table_info(yara_cache)")
         columns = {row[1] for row in cursor.fetchall()}
 
-        if 'file_type' not in columns:
+        if "file_type" not in columns:
             # Add new columns for file type info
-            if 'yara_cache' in [row[0] for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()]:
-                conn.execute('ALTER TABLE yara_cache ADD COLUMN file_type TEXT')
-                conn.execute('ALTER TABLE yara_cache ADD COLUMN file_mime TEXT')
-                conn.execute('ALTER TABLE yara_cache ADD COLUMN file_category TEXT')
-                conn.execute('ALTER TABLE yara_cache ADD COLUMN is_previewable INTEGER DEFAULT 0')
+            if "yara_cache" in [
+                row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            ]:
+                conn.execute("ALTER TABLE yara_cache ADD COLUMN file_type TEXT")
+                conn.execute("ALTER TABLE yara_cache ADD COLUMN file_mime TEXT")
+                conn.execute("ALTER TABLE yara_cache ADD COLUMN file_category TEXT")
+                conn.execute("ALTER TABLE yara_cache ADD COLUMN is_previewable INTEGER DEFAULT 0")
                 print("[*] Migrated database schema to include file type columns")
             else:
                 # Create new table with all columns
-                conn.execute('''
+                conn.execute("""
                     CREATE TABLE IF NOT EXISTS yara_cache (
                         sha256 TEXT PRIMARY KEY,
                         matches TEXT NOT NULL,
@@ -102,16 +128,16 @@ class FileAnalysisCache:
                         file_category TEXT,
                         is_previewable INTEGER DEFAULT 0
                     )
-                ''')
+                """)
 
-        conn.execute('''
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_yara_timestamp
             ON yara_cache(scan_timestamp)
-        ''')
-        conn.execute('''
+        """)
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_file_category
             ON yara_cache(file_category)
-        ''')
+        """)
         conn.commit()
         conn.close()
 
@@ -119,29 +145,30 @@ class FileAnalysisCache:
         """Get cached scan result including file type."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.execute(
-            '''SELECT matches, scan_timestamp, rules_version,
+            """SELECT matches, scan_timestamp, rules_version,
                       file_type, file_mime, file_category, is_previewable
-               FROM yara_cache WHERE sha256 = ?''',
-            (sha256,)
+               FROM yara_cache WHERE sha256 = ?""",
+            (sha256,),
         )
         row = cursor.fetchone()
         conn.close()
 
         if row:
             return {
-                'sha256': sha256,
-                'matches': json.loads(row[0]) if row[0] else [],
-                'scan_timestamp': row[1],
-                'rules_version': row[2],
-                'file_type': row[3],
-                'file_mime': row[4],
-                'file_category': row[5],
-                'is_previewable': bool(row[6]) if row[6] is not None else False
+                "sha256": sha256,
+                "matches": json.loads(row[0]) if row[0] else [],
+                "scan_timestamp": row[1],
+                "rules_version": row[2],
+                "file_type": row[3],
+                "file_mime": row[4],
+                "file_category": row[5],
+                "is_previewable": bool(row[6]) if row[6] is not None else False,
             }
         return None
 
-    def set_result(self, sha256: str, matches: List[str], rules_version: str = None,
-                   file_type: str = None, file_mime: str = None):
+    def set_result(
+        self, sha256: str, matches: List[str], rules_version: str = None, file_type: str = None, file_mime: str = None
+    ):
         """Cache scan result with file type information."""
         # Determine category and previewability
         file_category = self._categorize_file(file_type, file_mime)
@@ -149,12 +176,20 @@ class FileAnalysisCache:
 
         conn = sqlite3.connect(self.db_path)
         conn.execute(
-            '''INSERT OR REPLACE INTO yara_cache
+            """INSERT OR REPLACE INTO yara_cache
                (sha256, matches, scan_timestamp, rules_version,
                 file_type, file_mime, file_category, is_previewable)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-            (sha256, json.dumps(matches), int(time.time()), rules_version,
-             file_type, file_mime, file_category, int(is_previewable))
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                sha256,
+                json.dumps(matches),
+                int(time.time()),
+                rules_version,
+                file_type,
+                file_mime,
+                file_category,
+                int(is_previewable),
+            ),
         )
         conn.commit()
         conn.close()
@@ -164,36 +199,40 @@ class FileAnalysisCache:
         if not file_type and not file_mime:
             return self.CATEGORY_UNKNOWN
 
-        file_type_lower = (file_type or '').lower()
-        file_mime_lower = (file_mime or '').lower()
+        file_type_lower = (file_type or "").lower()
+        file_mime_lower = (file_mime or "").lower()
 
         # Executables
-        if any(x in file_type_lower for x in ['elf', 'executable', 'mach-o', 'pe32']):
+        if any(x in file_type_lower for x in ["elf", "executable", "mach-o", "pe32"]):
             return self.CATEGORY_EXECUTABLE
-        if file_mime_lower in ['application/x-executable', 'application/x-mach-binary',
-                                'application/x-dosexec', 'application/x-elf']:
+        if file_mime_lower in [
+            "application/x-executable",
+            "application/x-mach-binary",
+            "application/x-dosexec",
+            "application/x-elf",
+        ]:
             return self.CATEGORY_EXECUTABLE
 
         # Scripts
-        if any(x in file_type_lower for x in ['script', 'python', 'perl', 'ruby', 'php', 'shell']):
+        if any(x in file_type_lower for x in ["script", "python", "perl", "ruby", "php", "shell"]):
             return self.CATEGORY_SCRIPT
-        if 'script' in file_mime_lower or file_mime_lower.startswith('text/x-'):
+        if "script" in file_mime_lower or file_mime_lower.startswith("text/x-"):
             return self.CATEGORY_SCRIPT
 
         # Archives
-        if any(x in file_type_lower for x in ['archive', 'compressed', 'zip', 'tar', 'gzip', 'bzip']):
+        if any(x in file_type_lower for x in ["archive", "compressed", "zip", "tar", "gzip", "bzip"]):
             return self.CATEGORY_ARCHIVE
-        if any(x in file_mime_lower for x in ['zip', 'tar', 'gzip', 'compress', 'archive']):
+        if any(x in file_mime_lower for x in ["zip", "tar", "gzip", "compress", "archive"]):
             return self.CATEGORY_ARCHIVE
 
         # Documents
-        if any(x in file_type_lower for x in ['document', 'pdf', 'word', 'office']):
+        if any(x in file_type_lower for x in ["document", "pdf", "word", "office"]):
             return self.CATEGORY_DOCUMENT
 
         # Data/text files
-        if 'text' in file_type_lower or 'ascii' in file_type_lower:
+        if "text" in file_type_lower or "ascii" in file_type_lower:
             return self.CATEGORY_DATA
-        if file_mime_lower.startswith('text/'):
+        if file_mime_lower.startswith("text/"):
             return self.CATEGORY_DATA
 
         return self.CATEGORY_DATA
@@ -204,18 +243,14 @@ class FileAnalysisCache:
             return True
 
         if file_type:
-            return any(indicator.lower() in file_type.lower()
-                      for indicator in self.TEXT_INDICATORS)
+            return any(indicator.lower() in file_type.lower() for indicator in self.TEXT_INDICATORS)
 
         return False
 
     def has_result(self, sha256: str) -> bool:
         """Check if we have a cached result for this hash."""
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute(
-            'SELECT 1 FROM yara_cache WHERE sha256 = ?',
-            (sha256,)
-        )
+        cursor = conn.execute("SELECT 1 FROM yara_cache WHERE sha256 = ?", (sha256,))
         result = cursor.fetchone() is not None
         conn.close()
         return result
@@ -223,34 +258,30 @@ class FileAnalysisCache:
     def get_stats(self) -> dict:
         """Get cache statistics including file type breakdown."""
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute('SELECT COUNT(*) FROM yara_cache')
+        cursor = conn.execute("SELECT COUNT(*) FROM yara_cache")
         total = cursor.fetchone()[0]
 
-        cursor = conn.execute(
-            "SELECT COUNT(*) FROM yara_cache WHERE matches != '[]'"
-        )
+        cursor = conn.execute("SELECT COUNT(*) FROM yara_cache WHERE matches != '[]'")
         with_matches = cursor.fetchone()[0]
 
         # File category breakdown
         cursor = conn.execute(
-            '''SELECT file_category, COUNT(*) FROM yara_cache
-               GROUP BY file_category ORDER BY COUNT(*) DESC'''
+            """SELECT file_category, COUNT(*) FROM yara_cache
+               GROUP BY file_category ORDER BY COUNT(*) DESC"""
         )
-        categories = {row[0] or 'unknown': row[1] for row in cursor.fetchall()}
+        categories = {row[0] or "unknown": row[1] for row in cursor.fetchall()}
 
         # Previewable count
-        cursor = conn.execute(
-            'SELECT COUNT(*) FROM yara_cache WHERE is_previewable = 1'
-        )
+        cursor = conn.execute("SELECT COUNT(*) FROM yara_cache WHERE is_previewable = 1")
         previewable = cursor.fetchone()[0]
 
         conn.close()
         return {
-            'total_scanned': total,
-            'with_matches': with_matches,
-            'clean': total - with_matches,
-            'categories': categories,
-            'previewable': previewable
+            "total_scanned": total,
+            "with_matches": with_matches,
+            "clean": total - with_matches,
+            "categories": categories,
+            "previewable": previewable,
         }
 
 
@@ -300,7 +331,7 @@ class FileAnalyzer:
         rule_files = {}
         for root, dirs, files in os.walk(self.rules_path):
             for file in files:
-                if file.endswith('.yar') or file.endswith('.yara'):
+                if file.endswith(".yar") or file.endswith(".yara"):
                     rule_path = os.path.join(root, file)
                     namespace = os.path.splitext(file)[0]
                     rule_files[namespace] = rule_path
@@ -331,11 +362,11 @@ class FileAnalyzer:
         # Check cache first
         if use_cache:
             cached = self.cache.get_result(sha256)
-            if cached and cached.get('file_type'):
+            if cached and cached.get("file_type"):
                 return cached
 
         if not os.path.exists(file_path):
-            return {'matches': [], 'file_type': None, 'file_mime': None}
+            return {"matches": [], "file_type": None, "file_mime": None}
 
         # Detect file type
         file_type, file_mime = self.file_detector.detect(file_path)
@@ -350,8 +381,7 @@ class FileAnalyzer:
                 print(f"[!] YARA scan error for {file_path}: {e}")
 
         # Cache the result
-        self.cache.set_result(sha256, match_names, self.rules_version,
-                             file_type, file_mime)
+        self.cache.set_result(sha256, match_names, self.rules_version, file_type, file_mime)
 
         # Return full result
         return self.cache.get_result(sha256)
@@ -359,7 +389,7 @@ class FileAnalyzer:
     def scan_file(self, file_path: str, use_cache: bool = True) -> List[str]:
         """Scan a file and return matched rule names (backward compatible)."""
         result = self.analyze_file(file_path, use_cache)
-        return result.get('matches', [])
+        return result.get("matches", [])
 
 
 # Alias for backward compatibility
@@ -425,15 +455,15 @@ class DownloadWatcher:
         scan_time = time.time() - start_time
 
         sha256 = os.path.basename(file_path)
-        matches = result.get('matches', [])
-        file_type = result.get('file_type', 'unknown')
-        file_category = result.get('file_category', 'unknown')
+        matches = result.get("matches", [])
+        file_type = result.get("file_type", "unknown")
+        file_category = result.get("file_category", "unknown")
 
         # Truncate file type for display
         if file_type and len(file_type) > 50:
-            file_type_display = file_type[:50] + '...'
+            file_type_display = file_type[:50] + "..."
         else:
-            file_type_display = file_type or 'unknown'
+            file_type_display = file_type or "unknown"
 
         if matches:
             print(f"[!] YARA MATCH: {sha256[:16]}...")
@@ -473,21 +503,21 @@ class DownloadWatcher:
 
             # Check if already cached with file type info
             cached = self.analyzer.cache.get_result(filename)
-            if cached and cached.get('file_type'):
+            if cached and cached.get("file_type"):
                 analyzed += 1
-                cat = cached.get('file_category', 'unknown')
+                cat = cached.get("file_category", "unknown")
                 categories[cat] = categories.get(cat, 0) + 1
-                if cached.get('matches'):
+                if cached.get("matches"):
                     matched += 1
                 continue
 
             result = self.analyzer.analyze_file(file_path, use_cache=False)
             analyzed += 1
 
-            cat = result.get('file_category', 'unknown')
+            cat = result.get("file_category", "unknown")
             categories[cat] = categories.get(cat, 0) + 1
 
-            if result.get('matches'):
+            if result.get("matches"):
                 matched += 1
                 print(f"[!] MATCH: {filename[:16]}... [{cat}] -> {', '.join(result['matches'][:3])}")
 
@@ -500,39 +530,13 @@ class DownloadWatcher:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Cowrie YARA Scanner Daemon - Real-time malware scanning'
-    )
-    parser.add_argument(
-        '--daemon', '-d',
-        action='store_true',
-        help='Run as daemon (background)'
-    )
-    parser.add_argument(
-        '--scan-existing', '-s',
-        action='store_true',
-        help='Scan all existing files before watching'
-    )
-    parser.add_argument(
-        '--download-path',
-        default=CONFIG['download_path'],
-        help='Path to downloads directory'
-    )
-    parser.add_argument(
-        '--rules-path',
-        default=CONFIG['yara_rules_path'],
-        help='Path to YARA rules directory'
-    )
-    parser.add_argument(
-        '--cache-db',
-        default=CONFIG['cache_db_path'],
-        help='Path to SQLite cache database'
-    )
-    parser.add_argument(
-        '--stats',
-        action='store_true',
-        help='Show cache statistics and exit'
-    )
+    parser = argparse.ArgumentParser(description="Cowrie YARA Scanner Daemon - Real-time malware scanning")
+    parser.add_argument("--daemon", "-d", action="store_true", help="Run as daemon (background)")
+    parser.add_argument("--scan-existing", "-s", action="store_true", help="Scan all existing files before watching")
+    parser.add_argument("--download-path", default=CONFIG["download_path"], help="Path to downloads directory")
+    parser.add_argument("--rules-path", default=CONFIG["yara_rules_path"], help="Path to YARA rules directory")
+    parser.add_argument("--cache-db", default=CONFIG["cache_db_path"], help="Path to SQLite cache database")
+    parser.add_argument("--stats", action="store_true", help="Show cache statistics and exit")
 
     args = parser.parse_args()
 
@@ -542,14 +546,14 @@ def main():
     # Stats mode
     if args.stats:
         stats = cache.get_stats()
-        print(f"File Analysis Cache Statistics:")
+        print("File Analysis Cache Statistics:")
         print(f"  Total scanned:  {stats['total_scanned']}")
         print(f"  With matches:   {stats['with_matches']}")
         print(f"  Clean:          {stats['clean']}")
         print(f"  Previewable:    {stats.get('previewable', 0)}")
-        if stats.get('categories'):
-            print(f"\nFile Categories:")
-            for cat, count in sorted(stats['categories'].items(), key=lambda x: -x[1]):
+        if stats.get("categories"):
+            print("\nFile Categories:")
+            for cat, count in sorted(stats["categories"].items(), key=lambda x: -x[1]):
                 print(f"  {cat:12s}  {count}")
         return
 
@@ -581,16 +585,16 @@ def main():
 
         # Child process
         os.setsid()
-        os.chdir('/')
+        os.chdir("/")
 
         # Redirect stdout/stderr to log file
-        log_path = '/var/log/yara-scanner.log'
-        sys.stdout = open(log_path, 'a', buffering=1)
+        log_path = "/var/log/yara-scanner.log"
+        sys.stdout = open(log_path, "a", buffering=1)
         sys.stderr = sys.stdout
         print(f"\n[*] YARA Scanner Daemon started at {datetime.now().isoformat()}")
 
     watcher.run()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

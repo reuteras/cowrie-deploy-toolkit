@@ -85,7 +85,7 @@
                     if (!isNaN(aNum) && !isNaN(bNum)) {
                         return asc ? aNum - bNum : bNum - aNum;
                     }
-                    
+
                     // Handle file sizes like "1.2 MB"
                     const sizeRegex = /(\d+(\.\d+)?)\s*(KB|MB|GB|TB)/i;
                     const aMatch = aText.match(sizeRegex);

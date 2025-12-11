@@ -7,7 +7,6 @@ compatible with Cowrie's command output system.
 """
 
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -37,7 +36,7 @@ def parse_ps_line(line: str) -> dict | None:
             "STAT": parts[7],
             "START": parts[8],
             "TIME": parse_time(parts[9]),
-            "COMMAND": parts[10].strip()
+            "COMMAND": parts[10].strip(),
         }
     except (ValueError, IndexError):
         return None
@@ -66,7 +65,7 @@ def convert_ps_to_cmdoutput(ps_file: Path) -> dict:
     """Convert ps.txt file to cmdoutput.json structure."""
     processes = []
 
-    with open(ps_file, 'r') as f:
+    with open(ps_file) as f:
         lines = f.readlines()
 
     # Skip header line (first line of ps aux output)
@@ -79,11 +78,7 @@ def convert_ps_to_cmdoutput(ps_file: Path) -> dict:
         if process:
             processes.append(process)
 
-    return {
-        "command": {
-            "ps": processes
-        }
-    }
+    return {"command": {"ps": processes}}
 
 
 def main():
@@ -104,12 +99,12 @@ def main():
     cmdoutput = convert_ps_to_cmdoutput(ps_file)
 
     # Write JSON output
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         json.dump(cmdoutput, f, indent=2)
 
     process_count = len(cmdoutput["command"]["ps"])
     print(f"[*] Converted {process_count} processes to {output_file}", file=sys.stderr)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

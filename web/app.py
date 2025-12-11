@@ -12,11 +12,10 @@ import struct
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Optional
 
-from flask import Flask, Response, jsonify, render_template, request
 import requests
+from flask import Flask, Response, jsonify, render_template, request
 
 try:
     import geoip2.database
@@ -27,14 +26,14 @@ app = Flask(__name__)
 
 # Configuration from environment variables
 CONFIG = {
-    'log_path': os.getenv('COWRIE_LOG_PATH', '/cowrie-data/log/cowrie/cowrie.json'),
-    'tty_path': os.getenv('COWRIE_TTY_PATH', '/cowrie-data/lib/cowrie/tty'),
-    'download_path': os.getenv('COWRIE_DOWNLOAD_PATH', '/cowrie-data/lib/cowrie/downloads'),
-    'geoip_db_path': os.getenv('GEOIP_DB_PATH', '/cowrie-data/geoip/GeoLite2-City.mmdb'),
-    'base_url': os.getenv('BASE_URL', ''),
-    'virustotal_api_key': os.getenv('VIRUSTOTAL_API_KEY', ''),
-    'cache_db_path': os.getenv('CACHE_DB_PATH', '/tmp/vt-cache.db'),
-    'yara_cache_db_path': os.getenv('YARA_CACHE_DB_PATH', '/cowrie-data/var/yara-cache.db'),
+    "log_path": os.getenv("COWRIE_LOG_PATH", "/cowrie-data/log/cowrie/cowrie.json"),
+    "tty_path": os.getenv("COWRIE_TTY_PATH", "/cowrie-data/lib/cowrie/tty"),
+    "download_path": os.getenv("COWRIE_DOWNLOAD_PATH", "/cowrie-data/lib/cowrie/downloads"),
+    "geoip_db_path": os.getenv("GEOIP_DB_PATH", "/cowrie-data/geoip/GeoLite2-City.mmdb"),
+    "base_url": os.getenv("BASE_URL", ""),
+    "virustotal_api_key": os.getenv("VIRUSTOTAL_API_KEY", ""),
+    "cache_db_path": os.getenv("CACHE_DB_PATH", "/tmp/vt-cache.db"),
+    "yara_cache_db_path": os.getenv("YARA_CACHE_DB_PATH", "/cowrie-data/var/yara-cache.db"),
 }
 
 
@@ -51,16 +50,16 @@ class GeoIPLookup:
 
     def lookup(self, ip: str) -> dict:
         """Lookup IP and return geo data."""
-        result = {'country': 'Unknown', 'country_code': 'XX', 'city': 'Unknown'}
+        result = {"country": "Unknown", "country_code": "XX", "city": "Unknown"}
         if not self.reader:
             return result
         try:
             response = self.reader.city(ip)
-            result['country'] = response.country.name or 'Unknown'
-            result['country_code'] = response.country.iso_code or 'XX'
-            result['city'] = response.city.name or 'Unknown'
-            result['latitude'] = response.location.latitude
-            result['longitude'] = response.location.longitude
+            result["country"] = response.country.name or "Unknown"
+            result["country_code"] = response.country.iso_code or "XX"
+            result["city"] = response.city.name or "Unknown"
+            result["latitude"] = response.location.latitude
+            result["longitude"] = response.location.longitude
         except Exception:
             pass
         return result
@@ -76,23 +75,20 @@ class CacheDB:
     def _init_db(self):
         """Initialize database schema."""
         conn = sqlite3.connect(self.db_path)
-        conn.execute('''
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS vt_cache (
                 sha256 TEXT PRIMARY KEY,
                 result TEXT,
                 timestamp INTEGER
             )
-        ''')
+        """)
         conn.commit()
         conn.close()
 
     def get_vt_result(self, sha256: str) -> Optional[dict]:
         """Get cached VT result."""
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute(
-            'SELECT result FROM vt_cache WHERE sha256 = ?',
-            (sha256,)
-        )
+        cursor = conn.execute("SELECT result FROM vt_cache WHERE sha256 = ?", (sha256,))
         row = cursor.fetchone()
         conn.close()
         if row:
@@ -103,8 +99,8 @@ class CacheDB:
         """Cache VT result."""
         conn = sqlite3.connect(self.db_path)
         conn.execute(
-            'INSERT OR REPLACE INTO vt_cache (sha256, result, timestamp) VALUES (?, ?, ?)',
-            (sha256, json.dumps(result), int(time.time()))
+            "INSERT OR REPLACE INTO vt_cache (sha256, result, timestamp) VALUES (?, ?, ?)",
+            (sha256, json.dumps(result), int(time.time())),
         )
         conn.commit()
         conn.close()
@@ -127,23 +123,23 @@ class YARACache:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.execute(
-                '''SELECT matches, scan_timestamp, file_type, file_mime,
+                """SELECT matches, scan_timestamp, file_type, file_mime,
                           file_category, is_previewable
-                   FROM yara_cache WHERE sha256 = ?''',
-                (sha256,)
+                   FROM yara_cache WHERE sha256 = ?""",
+                (sha256,),
             )
             row = cursor.fetchone()
             conn.close()
 
             if row:
                 return {
-                    'sha256': sha256,
-                    'matches': json.loads(row[0]) if row[0] else [],
-                    'scan_timestamp': row[1],
-                    'file_type': row[2],
-                    'file_mime': row[3],
-                    'file_category': row[4],
-                    'is_previewable': bool(row[5]) if row[5] is not None else False
+                    "sha256": sha256,
+                    "matches": json.loads(row[0]) if row[0] else [],
+                    "scan_timestamp": row[1],
+                    "file_type": row[2],
+                    "file_mime": row[3],
+                    "file_category": row[4],
+                    "is_previewable": bool(row[5]) if row[5] is not None else False,
                 }
         except Exception:
             pass
@@ -156,7 +152,7 @@ class VirusTotalScanner:
     def __init__(self, api_key: str, cache: CacheDB):
         self.api_key = api_key
         self.cache = cache
-        self.base_url = 'https://www.virustotal.com/api/v3'
+        self.base_url = "https://www.virustotal.com/api/v3"
 
     def scan_file(self, sha256: str) -> Optional[dict]:
         """Scan file and return results."""
@@ -169,30 +165,26 @@ class VirusTotalScanner:
             return cached
 
         # Query VirusTotal
-        headers = {'x-apikey': self.api_key}
+        headers = {"x-apikey": self.api_key}
 
         try:
-            response = requests.get(
-                f'{self.base_url}/files/{sha256}',
-                headers=headers,
-                timeout=10
-            )
+            response = requests.get(f"{self.base_url}/files/{sha256}", headers=headers, timeout=10)
 
             if response.status_code == 200:
                 data = response.json()
-                attributes = data['data']['attributes']
+                attributes = data["data"]["attributes"]
 
                 result = {
-                    'sha256': sha256,
-                    'detections': attributes['last_analysis_stats']['malicious'],
-                    'total_engines': sum(attributes['last_analysis_stats'].values()),
-                    'link': f"https://www.virustotal.com/gui/file/{sha256}"
+                    "sha256": sha256,
+                    "detections": attributes["last_analysis_stats"]["malicious"],
+                    "total_engines": sum(attributes["last_analysis_stats"].values()),
+                    "link": f"https://www.virustotal.com/gui/file/{sha256}",
                 }
 
                 # Extract threat label if available
-                threat_class = attributes.get('popular_threat_classification', {})
-                if threat_class and 'suggested_threat_label' in threat_class:
-                    result['threat_label'] = threat_class['suggested_threat_label']
+                threat_class = attributes.get("popular_threat_classification", {})
+                if threat_class and "suggested_threat_label" in threat_class:
+                    result["threat_label"] = threat_class["suggested_threat_label"]
 
                 # Cache result
                 self.cache.set_vt_result(sha256, result)
@@ -213,88 +205,89 @@ class SessionParser:
     def __init__(self, log_path: str):
         self.log_path = log_path
         self.sessions = {}
-        self.geoip = GeoIPLookup(CONFIG['geoip_db_path'])
+        self.geoip = GeoIPLookup(CONFIG["geoip_db_path"])
 
     def parse_all(self, hours: int = 168) -> dict:
         """Parse all sessions from logs within the specified hours."""
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
-        sessions = defaultdict(lambda: {
-            'id': None,
-            'src_ip': None,
-            'start_time': None,
-            'end_time': None,
-            'duration': 0,
-            'username': None,
-            'password': None,
-            'commands': [],
-            'downloads': [],
-            'tty_log': None,
-            'client_version': None,
-            'geo': {},
-            'login_success': False,
-        })
+        sessions = defaultdict(
+            lambda: {
+                "id": None,
+                "src_ip": None,
+                "start_time": None,
+                "end_time": None,
+                "duration": 0,
+                "username": None,
+                "password": None,
+                "commands": [],
+                "downloads": [],
+                "tty_log": None,
+                "client_version": None,
+                "geo": {},
+                "login_success": False,
+            }
+        )
 
         if not os.path.exists(self.log_path):
             return {}
 
-        with open(self.log_path, 'r') as f:
+        with open(self.log_path) as f:
             for line in f:
                 try:
                     entry = json.loads(line.strip())
-                    timestamp = datetime.fromisoformat(entry['timestamp'].replace('Z', '+00:00'))
+                    timestamp = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
 
                     if timestamp < cutoff_time:
                         continue
 
-                    session_id = entry.get('session')
+                    session_id = entry.get("session")
                     if not session_id:
                         continue
 
-                    event_id = entry.get('eventid', '')
+                    event_id = entry.get("eventid", "")
                     session = sessions[session_id]
-                    session['id'] = session_id
+                    session["id"] = session_id
 
-                    if event_id == 'cowrie.session.connect':
-                        session['src_ip'] = entry.get('src_ip')
-                        session['start_time'] = entry['timestamp']
-                        session['client_version'] = entry.get('version')
-                        if session['src_ip']:
-                            session['geo'] = self.geoip.lookup(session['src_ip'])
+                    if event_id == "cowrie.session.connect":
+                        session["src_ip"] = entry.get("src_ip")
+                        session["start_time"] = entry["timestamp"]
+                        session["client_version"] = entry.get("version")
+                        if session["src_ip"]:
+                            session["geo"] = self.geoip.lookup(session["src_ip"])
 
-                    elif event_id == 'cowrie.login.success':
-                        session['username'] = entry.get('username')
-                        session['password'] = entry.get('password')
-                        session['login_success'] = True
+                    elif event_id == "cowrie.login.success":
+                        session["username"] = entry.get("username")
+                        session["password"] = entry.get("password")
+                        session["login_success"] = True
 
-                    elif event_id == 'cowrie.login.failed':
-                        if not session['username']:
-                            session['username'] = entry.get('username')
-                            session['password'] = entry.get('password')
+                    elif event_id == "cowrie.login.failed":
+                        if not session["username"]:
+                            session["username"] = entry.get("username")
+                            session["password"] = entry.get("password")
 
-                    elif event_id == 'cowrie.command.input':
-                        session['commands'].append({
-                            'command': entry.get('input', ''),
-                            'timestamp': entry['timestamp']
-                        })
+                    elif event_id == "cowrie.command.input":
+                        session["commands"].append({"command": entry.get("input", ""), "timestamp": entry["timestamp"]})
 
-                    elif event_id == 'cowrie.session.file_download':
-                        session['downloads'].append({
-                            'url': entry.get('url', ''),
-                            'shasum': entry.get('shasum', ''),
-                            'timestamp': entry['timestamp']
-                        })
+                    elif event_id == "cowrie.session.file_download":
+                        session["downloads"].append(
+                            {
+                                "url": entry.get("url", ""),
+                                "shasum": entry.get("shasum", ""),
+                                "timestamp": entry["timestamp"],
+                            }
+                        )
 
-                    elif event_id == 'cowrie.log.closed':
-                        tty_log = entry.get('ttylog')
+                    elif event_id == "cowrie.log.closed":
+                        tty_log = entry.get("ttylog")
                         if tty_log:
-                            session['tty_log'] = tty_log
+                            session["tty_log"] = tty_log
 
-                    elif event_id == 'cowrie.session.closed':
-                        session['end_time'] = entry['timestamp']
-                        if session['start_time']:
-                            start = datetime.fromisoformat(session['start_time'].replace('Z', '+00:00'))
-                            end = datetime.fromisoformat(session['end_time'].replace('Z', '+00:00'))
-                            session['duration'] = (end - start).total_seconds()
+                    elif event_id == "cowrie.session.closed":
+                        session["end_time"] = entry["timestamp"]
+                        if session["start_time"]:
+                            start = datetime.fromisoformat(session["start_time"].replace("Z", "+00:00"))
+                            end = datetime.fromisoformat(session["end_time"].replace("Z", "+00:00"))
+                            session["duration"] = (end - start).total_seconds()
 
                 except (json.JSONDecodeError, KeyError, ValueError):
                     continue
@@ -312,25 +305,21 @@ class SessionParser:
 
         if not sessions:
             return {
-                'total_sessions': 0,
-                'unique_ips': 0,
-                'sessions_with_commands': 0,
-                'total_downloads': 0,
-                'top_countries': [],
-                'top_credentials': [],
-                'top_commands': [],
-                'hourly_activity': [],
+                "total_sessions": 0,
+                "unique_ips": 0,
+                "sessions_with_commands": 0,
+                "total_downloads": 0,
+                "top_countries": [],
+                "top_credentials": [],
+                "top_commands": [],
+                "hourly_activity": [],
             }
 
         # Calculate stats
         ips = set()
-        ip_details = defaultdict(lambda: {
-            'count': 0,
-            'geo': None,
-            'last_seen': None,
-            'successful_logins': 0,
-            'failed_logins': 0
-        })
+        ip_details = defaultdict(
+            lambda: {"count": 0, "geo": None, "last_seen": None, "successful_logins": 0, "failed_logins": 0}
+        )
         country_counter = Counter()
         credential_counter = Counter()
         successful_credentials = set()
@@ -342,56 +331,58 @@ class SessionParser:
         ip_locations = []  # For map
 
         for session in sessions.values():
-            if session['src_ip']:
-                ips.add(session['src_ip'])
-                ip = session['src_ip']
-                ip_details[ip]['count'] += 1
-                ip_details[ip]['geo'] = session.get('geo', {})
-                ip_details[ip]['last_seen'] = session['start_time']
+            if session["src_ip"]:
+                ips.add(session["src_ip"])
+                ip = session["src_ip"]
+                ip_details[ip]["count"] += 1
+                ip_details[ip]["geo"] = session.get("geo", {})
+                ip_details[ip]["last_seen"] = session["start_time"]
 
                 # Track login attempts for this IP
-                if session.get('login_success'):
-                    ip_details[ip]['successful_logins'] += 1
-                elif session.get('username'):  # Had login attempt but not successful
-                    ip_details[ip]['failed_logins'] += 1
+                if session.get("login_success"):
+                    ip_details[ip]["successful_logins"] += 1
+                elif session.get("username"):  # Had login attempt but not successful
+                    ip_details[ip]["failed_logins"] += 1
 
                 # Collect IP locations for map
-                geo = session.get('geo', {})
-                if geo and 'latitude' in geo and 'longitude' in geo:
-                    ip_locations.append({
-                        'ip': ip,
-                        'lat': geo['latitude'],
-                        'lon': geo['longitude'],
-                        'country': geo.get('country', 'Unknown'),
-                        'city': geo.get('city', 'Unknown')
-                    })
+                geo = session.get("geo", {})
+                if geo and "latitude" in geo and "longitude" in geo:
+                    ip_locations.append(
+                        {
+                            "ip": ip,
+                            "lat": geo["latitude"],
+                            "lon": geo["longitude"],
+                            "country": geo.get("country", "Unknown"),
+                            "city": geo.get("city", "Unknown"),
+                        }
+                    )
 
-                country = session.get('geo', {}).get('country', 'Unknown')
+                country = session.get("geo", {}).get("country", "Unknown")
                 country_counter[country] += 1
 
-            if session['username'] and session['password']:
+            if session["username"] and session["password"]:
                 cred = f"{session['username']}:{session['password']}"
                 credential_counter[cred] += 1
                 # Track successful logins
-                if session.get('login_success'):
+                if session.get("login_success"):
                     successful_credentials.add(cred)
 
-            if session['commands']:
+            if session["commands"]:
                 sessions_with_cmds += 1
-                for cmd in session['commands']:
-                    command_counter[cmd['command']] += 1
+                for cmd in session["commands"]:
+                    command_counter[cmd["command"]] += 1
 
             # Track downloads
-            for download in session['downloads']:
+            for download in session["downloads"]:
                 total_downloads += 1
-                if download['shasum']:
-                    unique_downloads.add(download['shasum'])
+                if download["shasum"]:
+                    unique_downloads.add(download["shasum"])
 
-            if session['start_time']:
+            if session["start_time"]:
                 try:
-                    hour = datetime.fromisoformat(
-                        session['start_time'].replace('Z', '+00:00')
-                    ).strftime('%Y-%m-%d %H:00')
+                    hour = datetime.fromisoformat(session["start_time"].replace("Z", "+00:00")).strftime(
+                        "%Y-%m-%d %H:00"
+                    )
                     hourly_activity[hour] += 1
                 except Exception:
                     pass
@@ -401,24 +392,22 @@ class SessionParser:
 
         # Sort IP details by session count
         sorted_ips = sorted(
-            [{'ip': ip, **details} for ip, details in ip_details.items()],
-            key=lambda x: x['count'],
-            reverse=True
+            [{"ip": ip, **details} for ip, details in ip_details.items()], key=lambda x: x["count"], reverse=True
         )
 
         return {
-            'total_sessions': len(sessions),
-            'unique_ips': len(ips),
-            'sessions_with_commands': sessions_with_cmds,
-            'total_downloads': total_downloads,
-            'unique_downloads': len(unique_downloads),
-            'ip_list': sorted_ips,
-            'ip_locations': ip_locations,
-            'top_countries': country_counter.most_common(10),
-            'top_credentials': credential_counter.most_common(10),
-            'successful_credentials': successful_credentials,
-            'top_commands': command_counter.most_common(20),
-            'hourly_activity': sorted_hours[-48:],  # Last 48 hours
+            "total_sessions": len(sessions),
+            "unique_ips": len(ips),
+            "sessions_with_commands": sessions_with_cmds,
+            "total_downloads": total_downloads,
+            "unique_downloads": len(unique_downloads),
+            "ip_list": sorted_ips,
+            "ip_locations": ip_locations,
+            "top_countries": country_counter.most_common(10),
+            "top_credentials": credential_counter.most_common(10),
+            "successful_credentials": successful_credentials,
+            "top_commands": command_counter.most_common(20),
+            "hourly_activity": sorted_hours[-48:],  # Last 48 hours
         }
 
     def get_all_commands(self, hours: int = 168) -> list:
@@ -426,17 +415,19 @@ class SessionParser:
         sessions = self.parse_all(hours=hours)
         all_commands = []
         for session in sessions.values():
-            if session['commands']:
-                for cmd in session['commands']:
-                    all_commands.append({
-                        'timestamp': cmd['timestamp'],
-                        'command': cmd['command'],
-                        'src_ip': session['src_ip'],
-                        'session_id': session['id']
-                    })
-        
+            if session["commands"]:
+                for cmd in session["commands"]:
+                    all_commands.append(
+                        {
+                            "timestamp": cmd["timestamp"],
+                            "command": cmd["command"],
+                            "src_ip": session["src_ip"],
+                            "session_id": session["id"],
+                        }
+                    )
+
         # Sort by timestamp, most recent first
-        return sorted(all_commands, key=lambda x: x['timestamp'], reverse=True)
+        return sorted(all_commands, key=lambda x: x["timestamp"], reverse=True)
 
 
 class TTYLogParser:
@@ -464,9 +455,9 @@ class TTYLogParser:
         original_tty_log_name = tty_log_name
         # Strip common Cowrie path prefixes if present
         # Sessions may store paths like "var/lib/cowrie/tty/HASH"
-        for prefix in ['var/lib/cowrie/tty/', 'lib/cowrie/tty/', 'tty/']:
+        for prefix in ["var/lib/cowrie/tty/", "lib/cowrie/tty/", "tty/"]:
             if tty_log_name.startswith(prefix):
-                tty_log_name = tty_log_name[len(prefix):]
+                tty_log_name = tty_log_name[len(prefix) :]
                 break
 
         # Try direct path (just the hash/filename)
@@ -479,7 +470,9 @@ class TTYLogParser:
             if tty_log_name in files:
                 return os.path.join(root, tty_log_name)
 
-        print(f"[!] TTY file lookup failed. Searched for '{tty_log_name}' (from '{original_tty_log_name}') in '{self.tty_path}' but it was not found.")
+        print(
+            f"[!] TTY file lookup failed. Searched for '{tty_log_name}' (from '{original_tty_log_name}') in '{self.tty_path}' but it was not found."
+        )
         return None
 
     def parse_tty_log(self, tty_log_name: str) -> Optional[dict]:
@@ -501,7 +494,7 @@ class TTYLogParser:
         record_size = struct.calcsize("<iLiiLL")
 
         try:
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 while True:
                     # Read record header
                     record_data = f.read(record_size)
@@ -513,7 +506,7 @@ class TTYLogParser:
                         break
 
                     try:
-                        op, tty, length, direction, sec, usec = struct.unpack('<iLiiLL', record_data)
+                        op, tty, length, direction, sec, usec = struct.unpack("<iLiiLL", record_data)
                     except struct.error as e:
                         print(f"[!] Corrupt record in TTY log, stopping parse: {file_path} - {e}")
                         break
@@ -525,7 +518,9 @@ class TTYLogParser:
                     # Read data payload
                     data = f.read(length)
                     if len(data) < length:
-                        print(f"[!] Truncated data record in TTY log (expected {length}, got {len(data)}), stopping parse: {file_path}")
+                        print(
+                            f"[!] Truncated data record in TTY log (expected {length}, got {len(data)}), stopping parse: {file_path}"
+                        )
                         break
 
                     # Track the first TTY we see
@@ -538,7 +533,7 @@ class TTYLogParser:
                             # Try to extract terminal dimensions
                             try:
                                 if len(data) >= 8:
-                                    width, height = struct.unpack('<II', data[:8])
+                                    width, height = struct.unpack("<II", data[:8])
                             except struct.error:
                                 # Ignore if terminal size parsing fails
                                 pass
@@ -563,9 +558,9 @@ class TTYLogParser:
                                 data = data.replace(b"\n", b"\r\n")
 
                                 try:
-                                    text = data.decode('utf-8', errors='replace')
+                                    text = data.decode("utf-8", errors="replace")
                                 except Exception:
-                                    text = data.decode('latin-1', errors='replace')
+                                    text = data.decode("latin-1", errors="replace")
 
                                 # Add to stdout (v1 format uses [time, data])
                                 stdout.append([sleeptime, text])
@@ -574,7 +569,7 @@ class TTYLogParser:
                         elif op == self.OP_CLOSE:
                             break
 
-        except (IOError, OSError) as e:
+        except OSError as e:
             print(f"[!] I/O error reading TTY log '{file_path}': {e}")
             return None
         except Exception as e:
@@ -583,66 +578,62 @@ class TTYLogParser:
 
         # Return asciicast v1 format (matches Cowrie's asciinema.py)
         return {
-            'version': 1,
-            'width': min(width, 200),
-            'height': min(height, 50),
-            'duration': duration,
-            'command': '/bin/bash',
-            'title': 'Cowrie Recording',
-            'env': {'SHELL': '/bin/bash', 'TERM': 'xterm256-color'},
-            'stdout': stdout
+            "version": 1,
+            "width": min(width, 200),
+            "height": min(height, 50),
+            "duration": duration,
+            "command": "/bin/bash",
+            "title": "Cowrie Recording",
+            "env": {"SHELL": "/bin/bash", "TERM": "xterm256-color"},
+            "stdout": stdout,
         }
 
 
 # Initialize parsers
-session_parser = SessionParser(CONFIG['log_path'])
-tty_parser = TTYLogParser(CONFIG['tty_path'])
+session_parser = SessionParser(CONFIG["log_path"])
+tty_parser = TTYLogParser(CONFIG["tty_path"])
 
 # Initialize VirusTotal scanner if API key is provided
 vt_scanner = None
-if CONFIG['virustotal_api_key']:
-    cache_db = CacheDB(CONFIG['cache_db_path'])
-    vt_scanner = VirusTotalScanner(CONFIG['virustotal_api_key'], cache_db)
+if CONFIG["virustotal_api_key"]:
+    cache_db = CacheDB(CONFIG["cache_db_path"])
+    vt_scanner = VirusTotalScanner(CONFIG["virustotal_api_key"], cache_db)
 
 # Initialize YARA cache (reads results from yara-scanner-daemon)
-yara_cache = YARACache(CONFIG['yara_cache_db_path'])
+yara_cache = YARACache(CONFIG["yara_cache_db_path"])
 
 
-@app.route('/')
+@app.route("/")
 def index():
     """Dashboard page."""
-    hours = request.args.get('hours', 24, type=int)
+    hours = request.args.get("hours", 24, type=int)
     stats = session_parser.get_stats(hours=hours)
-    return render_template('index.html', stats=stats, hours=hours, config=CONFIG)
+    return render_template("index.html", stats=stats, hours=hours, config=CONFIG)
 
 
-@app.route('/sessions')
+@app.route("/sessions")
 def sessions():
     """Session listing page."""
-    hours = request.args.get('hours', 168, type=int)
-    page = request.args.get('page', 1, type=int)
+    hours = request.args.get("hours", 168, type=int)
+    page = request.args.get("page", 1, type=int)
     per_page = 50
 
     all_sessions = session_parser.parse_all(hours=hours)
 
     # Sort by start time (most recent first)
-    sorted_sessions = sorted(
-        all_sessions.values(),
-        key=lambda x: x['start_time'] or '',
-        reverse=True
-    )
+    sorted_sessions = sorted(all_sessions.values(), key=lambda x: x["start_time"] or "", reverse=True)
 
     # Filter options
-    ip_filter = request.args.get('ip', '')
-    has_commands = request.args.get('has_commands', '')
-    has_tty = request.args.get('has_tty', '')
+    ip_filter = request.args.get("ip", "")
+    has_commands = request.args.get("has_commands", "")
+    has_tty = request.args.get("has_tty", "")
 
     if ip_filter:
-        sorted_sessions = [s for s in sorted_sessions if s['src_ip'] == ip_filter]
-    if has_commands == '1':
-        sorted_sessions = [s for s in sorted_sessions if s['commands']]
-    if has_tty == '1':
-        sorted_sessions = [s for s in sorted_sessions if s['tty_log']]
+        sorted_sessions = [s for s in sorted_sessions if s["src_ip"] == ip_filter]
+    if has_commands == "1":
+        sorted_sessions = [s for s in sorted_sessions if s["commands"]]
+    if has_tty == "1":
+        sorted_sessions = [s for s in sorted_sessions if s["tty_log"]]
 
     # Paginate
     total = len(sorted_sessions)
@@ -651,7 +642,7 @@ def sessions():
     paginated = sorted_sessions[start:end]
 
     return render_template(
-        'sessions.html',
+        "sessions.html",
         sessions=paginated,
         page=page,
         per_page=per_page,
@@ -660,323 +651,321 @@ def sessions():
         ip_filter=ip_filter,
         has_commands=has_commands,
         has_tty=has_tty,
-        config=CONFIG
+        config=CONFIG,
     )
 
 
-@app.route('/session/<session_id>')
+@app.route("/session/<session_id>")
 def session_detail(session_id: str):
     """Session detail page."""
     session = session_parser.get_session(session_id)
     if not session:
-        return render_template('404.html', message='Session not found'), 404
+        return render_template("404.html", message="Session not found"), 404
 
     # Check if TTY log exists
     has_tty = False
-    if session['tty_log']:
-        tty_file = tty_parser.find_tty_file(session['tty_log'])
+    if session["tty_log"]:
+        tty_file = tty_parser.find_tty_file(session["tty_log"])
         has_tty = tty_file is not None
 
-    return render_template('session_detail.html', session=session, has_tty=has_tty, config=CONFIG)
+    return render_template("session_detail.html", session=session, has_tty=has_tty, config=CONFIG)
 
 
-@app.route('/session/<session_id>/playback')
+@app.route("/session/<session_id>/playback")
 def session_playback(session_id: str):
     """Session playback page with asciinema player."""
     session = session_parser.get_session(session_id)
     if not session:
-        return render_template('404.html', message='Session not found'), 404
+        return render_template("404.html", message="Session not found"), 404
 
-    if not session['tty_log']:
-        return render_template('404.html', message='No TTY recording for this session'), 404
+    if not session["tty_log"]:
+        return render_template("404.html", message="No TTY recording for this session"), 404
 
     # Parse TTY log for width and height
-    asciicast = tty_parser.parse_tty_log(session['tty_log'])
+    asciicast = tty_parser.parse_tty_log(session["tty_log"])
     if not asciicast:
         print(f"[!] Failed to parse TTY log for playback: {session['tty_log']}")
-        return render_template('404.html', message='Failed to parse TTY log for playback'), 404
+        return render_template("404.html", message="Failed to parse TTY log for playback"), 404
 
-    return render_template('playback.html', session=session, asciicast=asciicast, config=CONFIG)
+    return render_template("playback.html", session=session, asciicast=asciicast, config=CONFIG)
 
 
-@app.route('/api/session/<session_id>/asciicast')
+@app.route("/api/session/<session_id>/asciicast")
 def session_asciicast(session_id: str):
     """Return asciicast data for a session."""
     session = session_parser.get_session(session_id)
-    if not session or not session['tty_log']:
+    if not session or not session["tty_log"]:
         print(f"[!] No TTY recording for session {session_id}")
-        return jsonify({'error': 'No TTY recording'}), 404
+        return jsonify({"error": "No TTY recording"}), 404
 
     # Check if TTY file exists
-    tty_file = tty_parser.find_tty_file(session['tty_log'])
+    tty_file = tty_parser.find_tty_file(session["tty_log"])
     if not tty_file:
         print(f"[!] TTY file not found: {session['tty_log']}")
-        return jsonify({'error': 'TTY recording file not found'}), 404
+        return jsonify({"error": "TTY recording file not found"}), 404
 
-    asciicast = tty_parser.parse_tty_log(session['tty_log'])
+    asciicast = tty_parser.parse_tty_log(session["tty_log"])
     if not asciicast:
         print(f"[!] Failed to parse TTY log: {session['tty_log']}")
-        return jsonify({'error': 'Failed to parse TTY log'}), 404
+        return jsonify({"error": "Failed to parse TTY log"}), 404
 
     return jsonify(asciicast)
 
 
-@app.route('/api/stats')
+@app.route("/api/stats")
 def api_stats():
     """API endpoint for dashboard stats."""
-    hours = request.args.get('hours', 24, type=int)
+    hours = request.args.get("hours", 24, type=int)
     stats = session_parser.get_stats(hours=hours)
     return jsonify(stats)
 
 
-@app.route('/api/sessions')
+@app.route("/api/sessions")
 def api_sessions():
     """API endpoint for sessions list."""
-    hours = request.args.get('hours', 168, type=int)
-    limit = request.args.get('limit', 100, type=int)
+    hours = request.args.get("hours", 168, type=int)
+    limit = request.args.get("limit", 100, type=int)
 
     all_sessions = session_parser.parse_all(hours=hours)
-    sorted_sessions = sorted(
-        all_sessions.values(),
-        key=lambda x: x['start_time'] or '',
-        reverse=True
-    )[:limit]
+    sorted_sessions = sorted(all_sessions.values(), key=lambda x: x["start_time"] or "", reverse=True)[:limit]
 
     return jsonify(sorted_sessions)
 
 
-@app.route('/downloads')
+@app.route("/downloads")
 def downloads():
     """Downloaded files listing page."""
-    hours = request.args.get('hours', 168, type=int)
+    hours = request.args.get("hours", 168, type=int)
     all_sessions = session_parser.parse_all(hours=hours)
 
     # Collect all downloads
     all_downloads = []
     for session in all_sessions.values():
-        for download in session['downloads']:
-            download['session_id'] = session['id']
-            download['src_ip'] = session['src_ip']
+        for download in session["downloads"]:
+            download["session_id"] = session["id"]
+            download["src_ip"] = session["src_ip"]
             all_downloads.append(download)
 
     # Deduplicate by shasum
     unique_downloads = {}
     for dl in all_downloads:
-        shasum = dl['shasum']
+        shasum = dl["shasum"]
         if shasum not in unique_downloads:
             unique_downloads[shasum] = dl
-            unique_downloads[shasum]['count'] = 1
+            unique_downloads[shasum]["count"] = 1
         else:
-            unique_downloads[shasum]['count'] += 1
+            unique_downloads[shasum]["count"] += 1
 
     # Check which files exist on disk and get VT/YARA scores
-    download_path = CONFIG['download_path']
+    download_path = CONFIG["download_path"]
     for shasum, dl in unique_downloads.items():
         file_path = os.path.join(download_path, shasum)
-        dl['exists'] = os.path.exists(file_path)
-        if dl['exists']:
-            dl['size'] = os.path.getsize(file_path)
+        dl["exists"] = os.path.exists(file_path)
+        if dl["exists"]:
+            dl["size"] = os.path.getsize(file_path)
         else:
-            dl['size'] = 0
+            dl["size"] = 0
 
         # Get YARA matches and file type from cache
         yara_result = yara_cache.get_result(shasum)
         if yara_result:
-            if yara_result.get('matches'):
-                dl['yara_matches'] = yara_result['matches']
-            if yara_result.get('file_type'):
-                dl['file_type'] = yara_result['file_type']
-                dl['file_mime'] = yara_result.get('file_mime')
-                dl['file_category'] = yara_result.get('file_category')
-                dl['is_previewable'] = yara_result.get('is_previewable', False)
+            if yara_result.get("matches"):
+                dl["yara_matches"] = yara_result["matches"]
+            if yara_result.get("file_type"):
+                dl["file_type"] = yara_result["file_type"]
+                dl["file_mime"] = yara_result.get("file_mime")
+                dl["file_category"] = yara_result.get("file_category")
+                dl["is_previewable"] = yara_result.get("is_previewable", False)
 
         # Get VirusTotal score if scanner is available
         if vt_scanner and shasum:
             vt_result = vt_scanner.scan_file(shasum)
             if vt_result:
-                dl['vt_detections'] = vt_result['detections']
-                dl['vt_total'] = vt_result['total_engines']
-                dl['vt_link'] = vt_result['link']
-                dl['vt_threat_label'] = vt_result.get('threat_label', '')
+                dl["vt_detections"] = vt_result["detections"]
+                dl["vt_total"] = vt_result["total_engines"]
+                dl["vt_link"] = vt_result["link"]
+                dl["vt_threat_label"] = vt_result.get("threat_label", "")
 
-    downloads_list = sorted(unique_downloads.values(), key=lambda x: x['timestamp'], reverse=True)
+    downloads_list = sorted(unique_downloads.values(), key=lambda x: x["timestamp"], reverse=True)
 
-    return render_template('downloads.html', downloads=downloads_list, hours=hours, config=CONFIG)
+    return render_template("downloads.html", downloads=downloads_list, hours=hours, config=CONFIG)
 
 
-@app.route('/download/<shasum>/preview')
+@app.route("/download/<shasum>/preview")
 def download_preview(shasum: str):
     """Preview a downloaded file (text files only)."""
     # Get file info from cache
     file_info = yara_cache.get_result(shasum)
 
     if not file_info:
-        return render_template('404.html', message='File not found in cache'), 404
+        return render_template("404.html", message="File not found in cache"), 404
 
-    if not file_info.get('is_previewable'):
-        return render_template('404.html', message='File type not previewable'), 400
+    if not file_info.get("is_previewable"):
+        return render_template("404.html", message="File type not previewable"), 400
 
     # Check if file exists
-    download_path = CONFIG['download_path']
+    download_path = CONFIG["download_path"]
     file_path = os.path.join(download_path, shasum)
 
     if not os.path.exists(file_path):
-        return render_template('404.html', message='File not found on disk'), 404
+        return render_template("404.html", message="File not found on disk"), 404
 
     # Check file size
     file_size = os.path.getsize(file_path)
     max_size = 1024 * 1024  # 1MB limit
 
     if file_size > max_size:
-        return render_template('404.html',
-            message=f'File too large for preview ({file_size} bytes, max {max_size})'), 400
+        return render_template(
+            "404.html", message=f"File too large for preview ({file_size} bytes, max {max_size})"
+        ), 400
 
     # Read file content
     try:
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             content = f.read()
 
         # Try to decode as UTF-8, fall back to latin-1
         try:
-            text_content = content.decode('utf-8')
+            text_content = content.decode("utf-8")
         except UnicodeDecodeError:
-            text_content = content.decode('latin-1')
+            text_content = content.decode("latin-1")
 
         # Determine language for syntax highlighting based on file type
-        file_type = file_info.get('file_type', '').lower()
-        file_mime = file_info.get('file_mime', '').lower()
+        file_type = file_info.get("file_type", "").lower()
+        file_mime = file_info.get("file_mime", "").lower()
 
-        language = 'plaintext'
-        if 'python' in file_type or 'python' in file_mime:
-            language = 'python'
-        elif 'shell' in file_type or 'bash' in file_type or file_mime == 'text/x-shellscript':
-            language = 'bash'
-        elif 'perl' in file_type or 'perl' in file_mime:
-            language = 'perl'
-        elif 'ruby' in file_type or 'ruby' in file_mime:
-            language = 'ruby'
-        elif 'php' in file_type or 'php' in file_mime:
-            language = 'php'
-        elif 'javascript' in file_type or 'javascript' in file_mime:
-            language = 'javascript'
-        elif 'json' in file_type or file_mime == 'application/json':
-            language = 'json'
-        elif 'xml' in file_type or 'xml' in file_mime:
-            language = 'xml'
-        elif 'html' in file_type or 'html' in file_mime:
-            language = 'html'
-        elif 'c source' in file_type or 'c++' in file_type:
-            language = 'c'
+        language = "plaintext"
+        if "python" in file_type or "python" in file_mime:
+            language = "python"
+        elif "shell" in file_type or "bash" in file_type or file_mime == "text/x-shellscript":
+            language = "bash"
+        elif "perl" in file_type or "perl" in file_mime:
+            language = "perl"
+        elif "ruby" in file_type or "ruby" in file_mime:
+            language = "ruby"
+        elif "php" in file_type or "php" in file_mime:
+            language = "php"
+        elif "javascript" in file_type or "javascript" in file_mime:
+            language = "javascript"
+        elif "json" in file_type or file_mime == "application/json":
+            language = "json"
+        elif "xml" in file_type or "xml" in file_mime:
+            language = "xml"
+        elif "html" in file_type or "html" in file_mime:
+            language = "html"
+        elif "c source" in file_type or "c++" in file_type:
+            language = "c"
 
-        return render_template('preview.html',
+        return render_template(
+            "preview.html",
             shasum=shasum,
             file_info=file_info,
             content=text_content,
             language=language,
             file_size=file_size,
-            config=CONFIG
+            config=CONFIG,
         )
 
     except Exception as e:
-        return render_template('404.html', message=f'Error reading file: {e}'), 500
+        return render_template("404.html", message=f"Error reading file: {e}"), 500
 
 
-@app.route('/api/download/<shasum>/content')
+@app.route("/api/download/<shasum>/content")
 def api_download_content(shasum: str):
     """API endpoint to get raw file content (text files only)."""
     # Get file info from cache
     file_info = yara_cache.get_result(shasum)
 
     if not file_info:
-        return jsonify({'error': 'File not found in cache'}), 404
+        return jsonify({"error": "File not found in cache"}), 404
 
-    if not file_info.get('is_previewable'):
-        return jsonify({'error': 'File type not previewable'}), 400
+    if not file_info.get("is_previewable"):
+        return jsonify({"error": "File type not previewable"}), 400
 
     # Check if file exists
-    download_path = CONFIG['download_path']
+    download_path = CONFIG["download_path"]
     file_path = os.path.join(download_path, shasum)
 
     if not os.path.exists(file_path):
-        return jsonify({'error': 'File not found on disk'}), 404
+        return jsonify({"error": "File not found on disk"}), 404
 
     # Check file size
     file_size = os.path.getsize(file_path)
     max_size = 1024 * 1024  # 1MB limit
 
     if file_size > max_size:
-        return jsonify({'error': f'File too large ({file_size} bytes)'}), 400
+        return jsonify({"error": f"File too large ({file_size} bytes)"}), 400
 
     # Read and return content
     try:
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             content = f.read()
 
         try:
-            text_content = content.decode('utf-8')
+            text_content = content.decode("utf-8")
         except UnicodeDecodeError:
-            text_content = content.decode('latin-1')
+            text_content = content.decode("latin-1")
 
-        return Response(text_content, mimetype='text/plain')
+        return Response(text_content, mimetype="text/plain")
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/commands')
+@app.route("/commands")
 def commands():
     """Commands listing page."""
-    hours = request.args.get('hours', 168, type=int)
+    hours = request.args.get("hours", 168, type=int)
     all_commands = session_parser.get_all_commands(hours=hours)
-    return render_template('commands.html', commands=all_commands, hours=hours, config=CONFIG)
+    return render_template("commands.html", commands=all_commands, hours=hours, config=CONFIG)
 
 
-@app.route('/ips')
+@app.route("/ips")
 def ip_list():
     """IP address listing page."""
-    hours = request.args.get('hours', 168, type=int)
+    hours = request.args.get("hours", 168, type=int)
     stats = session_parser.get_stats(hours=hours)
 
-    return render_template('ips.html', ips=stats['ip_list'], hours=hours, config=CONFIG)
+    return render_template("ips.html", ips=stats["ip_list"], hours=hours, config=CONFIG)
 
 
-@app.template_filter('format_duration')
+@app.template_filter("format_duration")
 def format_duration(seconds):
     """Format duration in seconds to human readable string."""
     if not seconds:
-        return 'N/A'
+        return "N/A"
     if seconds < 60:
-        return f'{int(seconds)}s'
+        return f"{int(seconds)}s"
     elif seconds < 3600:
-        return f'{int(seconds // 60)}m {int(seconds % 60)}s'
+        return f"{int(seconds // 60)}m {int(seconds % 60)}s"
     else:
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
-        return f'{hours}h {minutes}m'
+        return f"{hours}h {minutes}m"
 
 
-@app.template_filter('format_timestamp')
+@app.template_filter("format_timestamp")
 def format_timestamp(ts_str):
     """Format ISO timestamp to readable string."""
     if not ts_str:
-        return 'N/A'
+        return "N/A"
     try:
-        dt = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
-        return dt.strftime('%Y-%m-%d %H:%M:%S UTC')
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
     except Exception:
         return ts_str
 
 
-@app.template_filter('truncate_hash')
+@app.template_filter("truncate_hash")
 def truncate_hash(hash_str, length=16):
     """Truncate a hash for display."""
     if not hash_str:
-        return 'N/A'
+        return "N/A"
     if len(hash_str) <= length:
         return hash_str
-    return hash_str[:length] + '...'
+    return hash_str[:length] + "..."
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Development server
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
