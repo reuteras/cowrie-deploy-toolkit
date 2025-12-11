@@ -52,11 +52,14 @@ services:
       - cowrie-var:/cowrie-data:ro
       # Mount GeoIP database if available
       - /opt/cowrie/geoip:/cowrie-data/geoip:ro
+      # Mount YARA/VT cache directory (from yara-scanner-daemon on host)
+      - /opt/cowrie/var:/cowrie-data/var:ro
     environment:
       - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
       - COWRIE_DOWNLOAD_PATH=/cowrie-data/lib/cowrie/downloads
       - GEOIP_DB_PATH=/cowrie-data/geoip/GeoLite2-City.mmdb
+      - YARA_CACHE_DB_PATH=/cowrie-data/var/yara-cache.db
       - BASE_URL=${WEB_BASE_URL:-}
     depends_on:
       - cowrie
