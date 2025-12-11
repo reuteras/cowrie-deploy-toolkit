@@ -21,6 +21,9 @@ dependencies = [
 
     # File system watching for real-time YARA scanning
     "inotify-simple>=1.3.5",
+
+    # File type detection (libmagic wrapper)
+    "python-magic>=0.4.27",
 ]
 
 [project.optional-dependencies]

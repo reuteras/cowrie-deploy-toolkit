@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+
+{% block title %}File Preview - {{ shasum[:16] }}... - Cowrie Honeypot{% endblock %}
+
+{% block head %}
+<!-- Highlight.js for syntax highlighting -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+    .preview-container {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    .preview-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+    .preview-title h1 {
+        margin: 0 0 10px 0;
+        font-size: 1.5em;
+    }
+    .preview-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        font-size: 0.9em;
+        color: #666;
+    }
+    .preview-meta-item {
+        background: #f0f0f0;
+        padding: 4px 10px;
+        border-radius: 4px;
+    }
+    .preview-meta-item.category-executable {
+        background: #ffe0e0;
+        color: #c00;
+    }
+    .preview-meta-item.category-script {
+        background: #fff3cd;
+        color: #856404;
+    }
+    .preview-actions {
+        display: flex;
+        gap: 10px;
+    }
+    .file-info-table {
+        width: 100%;
+        margin-bottom: 20px;
+        border-collapse: collapse;
+    }
+    .file-info-table th,
+    .file-info-table td {
+        padding: 8px 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+    }
+    .file-info-table th {
+        background: #f5f5f5;
+        width: 150px;
+        font-weight: 600;
+    }
+    .code-container {
+        position: relative;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    .code-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #2d333b;
+        color: #adbac7;
+        padding: 8px 15px;
+        font-size: 0.85em;
+    }
+    .code-header .language-tag {
+        background: #444c56;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.9em;
+    }
+    .code-header .copy-btn {
+        background: #444c56;
+        color: #adbac7;
+        border: none;
+        padding: 4px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+    }
+    .code-header .copy-btn:hover {
+        background: #555d67;
+    }
+    .code-content {
+        max-height: 70vh;
+        overflow: auto;
+    }
+    .code-content pre {
+        margin: 0;
+        padding: 15px;
+        font-size: 13px;
+        line-height: 1.5;
+        tab-size: 4;
+    }
+    .code-content code {
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+    .yara-matches {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 6px;
+    }
+    .yara-matches h3 {
+        margin: 0 0 10px 0;
+        color: #856404;
+    }
+    .yara-matches ul {
+        margin: 0;
+        padding-left: 20px;
+    }
+    .back-link {
+        display: inline-block;
+        margin-bottom: 20px;
+        color: #666;
+        text-decoration: none;
+    }
+    .back-link:hover {
+        color: #333;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="preview-container">
+    <a href="{{ url_for('downloads') }}" class="back-link">&larr; Back to Downloads</a>
+
+    <div class="preview-header">
+        <div class="preview-title">
+            <h1>File Preview</h1>
+            <div class="preview-meta">
+                <span class="preview-meta-item">
+                    <strong>SHA256:</strong> <code>{{ shasum[:32] }}...</code>
+                </span>
+                <span class="preview-meta-item category-{{ file_info.file_category or 'unknown' }}">
+                    {{ file_info.file_category or 'Unknown' }}
+                </span>
+                <span class="preview-meta-item">
+                    {{ (file_size / 1024) | round(1) }} KB
+                </span>
+            </div>
+        </div>
+        <div class="preview-actions">
+            <a href="{{ url_for('api_download_content', shasum=shasum) }}"
+               class="btn btn-sm" download="{{ shasum }}.txt">Download Raw</a>
+            <a href="https://www.virustotal.com/gui/file/{{ shasum }}"
+               target="_blank" class="btn btn-sm">View on VirusTotal</a>
+        </div>
+    </div>
+
+    {% if file_info.matches %}
+    <div class="yara-matches">
+        <h3>YARA Matches ({{ file_info.matches | length }})</h3>
+        <ul>
+            {% for match in file_info.matches %}
+            <li>{{ match }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <table class="file-info-table">
+        <tr>
+            <th>File Type</th>
+            <td>{{ file_info.file_type or 'Unknown' }}</td>
+        </tr>
+        <tr>
+            <th>MIME Type</th>
+            <td><code>{{ file_info.file_mime or 'Unknown' }}</code></td>
+        </tr>
+        <tr>
+            <th>Full SHA256</th>
+            <td><code>{{ shasum }}</code></td>
+        </tr>
+    </table>
+
+    <div class="code-container">
+        <div class="code-header">
+            <span class="language-tag">{{ language }}</span>
+            <button class="copy-btn" onclick="copyCode()">Copy to Clipboard</button>
+        </div>
+        <div class="code-content">
+            <pre><code class="language-{{ language }}" id="code-block">{{ content }}</code></pre>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/perl.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/php.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+<script>
+    // Initialize syntax highlighting
+    hljs.highlightAll();
+
+    // Copy to clipboard function
+    function copyCode() {
+        const codeBlock = document.getElementById('code-block');
+        const text = codeBlock.textContent;
+
+        navigator.clipboard.writeText(text).then(function() {
+            const btn = document.querySelector('.copy-btn');
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(function() {
+                btn.textContent = originalText;
+            }, 2000);
+        }).catch(function(err) {
+            console.error('Failed to copy:', err);
+        });
+    }
+</script>
+{% endblock %}

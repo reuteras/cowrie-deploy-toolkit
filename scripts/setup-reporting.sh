@@ -38,6 +38,7 @@ apt-get install -y \
     git \
     sqlite3 \
     curl \
+    libmagic1 \
     > /dev/null 2>&1
 
 echo " - Done"
