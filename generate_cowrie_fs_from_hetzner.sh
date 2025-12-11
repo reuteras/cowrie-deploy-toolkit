@@ -271,6 +271,7 @@ cp /proc/net/arp tmp/proc/net
 tar --no-xattrs -rf /tmp/contents.tar \
     tmp/proc \
     2>/dev/null || true
+gzip /tmp/contents.tar
 EOFCONTENTS
 
 # Download and extract contents
