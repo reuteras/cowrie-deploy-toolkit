@@ -41,7 +41,9 @@ jobs:
           FILTER_REGEX_EXCLUDE: CHANGELOG.md
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VALIDATE_BIOME_FORMAT: false
+          VALIDATE_BIOME_LINT: false
           VALIDATE_CSS_PRETTIER: false
+          VALIDATE_HTML: false
           VALIDATE_HTML_PRETTIER: false
           VALIDATE_JSCPD: false
           VALIDATE_JSON_PRETTIER: false

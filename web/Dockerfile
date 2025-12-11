@@ -7,32 +7,22 @@ ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 
-# Create non-root user
-RUN groupadd -r cowrie && useradd -r -g cowrie cowrie
-
 # Set work directory
 WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Create directory for static files
-RUN mkdir -p /app/static /app/templates
-
-# Create mount point directories (needed for read-only container)
-RUN mkdir -p /geoip
-
-# Change ownership
-RUN chown -R cowrie:cowrie /app
+# Install system dependencies
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl && \
+    pip install --no-cache-dir -r requirements.txt && \
+    mkdir -p /app/static /app/templates /geoip && \
+    groupadd -r cowrie && useradd -r -g cowrie cowrie && \
+    chown -R cowrie:cowrie /app && \
+    rm -rf /var/lib/apt/lists/*
 
 # Switch to non-root user
 USER cowrie
