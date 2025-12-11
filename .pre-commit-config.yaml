@@ -1,0 +1,96 @@
+---
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+      - id: check-ast
+      - id: fix-byte-order-marker
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: check-executables-have-shebangs
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+      - id: name-tests-test
+        args: ["--pytest-test-first"]
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      - id: check-shebang-scripts-are-executable
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.8
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+  - repo: https://github.com/editorconfig-checker/editorconfig-checker.python
+    rev: 3.6.0
+    hooks:
+      - id: editorconfig-checker
+        alias: ec
+        exclude: ^miniflux_tui/ui/screens/loading\.py$
+  - repo: local
+    hooks:
+      - id: markdown-table-formatter
+        name: markdown-table-formatter
+        entry: npx markdown-table-formatter
+        language: node
+        types: [markdown]
+        additional_dependencies: ["markdown-table-formatter@1.6.1"]
+  - repo: https://github.com/owenlamont/uv-secure
+    rev: 0.15.2
+    hooks:
+      - id: uv-secure
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/pylint-dev/pylint
+    rev: v4.0.4
+    hooks:
+      - id: pylint
+        args: ["--errors-only", "--rcfile=/dev/null"]
+        exclude: ^(fuzz/|tests/)
+        additional_dependencies:
+          - "textual>=6.4.0"
+          - "miniflux>=1.1.4"
+          - "html2text>=2025.4.15"
+          - "pytest>=8.0.0"
+          - "bleach>=6.0.0"
+          - "beautifulsoup4>=4.12.0"
+          - "httpx>=0.28.1"
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: shellcheck
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.407
+    hooks:
+      - id: pyright
+        exclude: ^tests/test_key_bindings\.py
+        additional_dependencies:
+          - "textual>=6.4.0"
+          - "miniflux>=1.1.4"
+          - "html2text>=2025.4.15"
+          - "pytest>=8.0.0"
+          - "pytest-asyncio>=0.23.0"
+          - "bleach>=6.0.0"
+          - "beautifulsoup4>=4.12.0"
+          - "httpx>=0.28.1"
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.2
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml"]
+        additional_dependencies: ["bandit[toml]"]
+        exclude: ^tests/
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.11.0
+    hooks:
+      - id: shellcheck
