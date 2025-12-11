@@ -195,6 +195,7 @@ User=root
 Environment="COWRIE_DOWNLOAD_PATH=/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
 Environment="YARA_RULES_PATH=/opt/cowrie/yara-rules"
 Environment="YARA_CACHE_DB_PATH=/opt/cowrie/var/yara-cache.db"
+Environment="UV_CACHE_DIR=/opt/cowrie/var/.uv-cache"
 WorkingDirectory=/opt/cowrie
 ExecStart=/root/.local/bin/uv run scripts/yara-scanner-daemon.py
 Restart=always
@@ -203,7 +204,7 @@ RestartSec=10
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=read-only
 ReadWritePaths=/opt/cowrie/var /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads
 PrivateTmp=true
 
