@@ -225,32 +225,6 @@ tailscale up --authkey="$TAILSCALE_AUTHKEY" --ssh=${TAILSCALE_USE_SSH} --hostnam
 # Get Tailscale IP
 TAILSCALE_IP=\$(tailscale ip -4)
 echo "[*] Tailscale IP: \$TAILSCALE_IP"
-
-# Configure firewall if block_public_ssh is enabled (but don't enable it yet)
-if [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
-    echo "[*] Configuring firewall rules (will be enabled at end of deployment)..."
-
-    # Install UFW if not present
-    DEBIAN_FRONTEND=noninteractive apt-get install -qq -y ufw > /dev/null 2>&1
-
-    # Disable UFW to ensure clean state
-    ufw --force disable > /dev/null 2>&1
-
-    # Set default policies
-    ufw --force default deny incoming > /dev/null
-    ufw --force default allow outgoing > /dev/null
-
-    # Allow SSH from Tailscale network only
-    ufw allow in on tailscale0 to any port $REAL_SSH_PORT proto tcp comment 'SSH via Tailscale' > /dev/null
-
-    # Allow honeypot SSH from anywhere (port 22 for Cowrie)
-    ufw allow $COWRIE_SSH_PORT/tcp comment 'Cowrie honeypot' > /dev/null
-
-    # Note: Firewall will be enabled at the end of deployment to avoid disconnection
-    echo "[*] Firewall rules configured (not yet enabled)"
-else
-    echo "[*] Firewall will not be configured (block_public_ssh=false)"
-fi
 TAILSCALEEOF
 
     # Get the Tailscale IP for display
@@ -952,28 +926,6 @@ else
 fi
 
 # ============================================================
-# STEP 14 — Enable firewall (if Tailscale is configured to block public SSH)
-# ============================================================
-
-if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
-    echo "[*] Enabling firewall to block public SSH access..."
-
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'UFWEOF'
-set -e
-
-# Enable UFW firewall
-ufw --force enable > /dev/null
-
-echo "[*] Firewall enabled: Port 2222 now only accessible via Tailscale"
-UFWEOF
-
-    echo "[*] Firewall successfully enabled"
-    echo "[!] IMPORTANT: Management SSH is now ONLY accessible via Tailscale IP: $TAILSCALE_IP"
-else
-    echo "[*] Firewall not enabled (Tailscale block_public_ssh is disabled)"
-fi
-
-# ============================================================
 # DONE
 # ============================================================
 
@@ -1010,7 +962,7 @@ cat << TSINFO
 Tailscale IP:    $TAILSCALE_IP
 
 SSH Access (TAILSCALE ONLY):
-  Management SSH:  ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP
+  Management SSH:  ssh root@$TAILSCALE_IP
   Honeypot SSH:    ssh root@$SERVER_IP (port 22 - public)
 TSINFO
     fi
