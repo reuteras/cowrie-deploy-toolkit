@@ -419,6 +419,25 @@ else
 fi
 
 # ============================================================
+# STEP 6.5 — Upload IP-Lock Authentication Plugin
+# ============================================================
+
+echo "[*] Uploading IP-Lock authentication plugin..."
+
+# Create plugins directory
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+    "mkdir -p /opt/cowrie/plugins"
+
+# Upload the IP-lock plugin
+if [ -f "./cowrie-plugins/output_iplock.py" ]; then
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+        ./cowrie-plugins/output_iplock.py "root@$SERVER_IP:/opt/cowrie/plugins/" > /dev/null
+    echo "[*] IP-Lock plugin uploaded successfully"
+else
+    echo "[!] Warning: IP-Lock plugin not found at ./cowrie-plugins/output_iplock.py"
+fi
+
+# ============================================================
 # ============================================================
 # STEP 7 — Generate cowrie.cfg
 # ============================================================
@@ -492,6 +511,10 @@ logfile = var/log/cowrie/cowrie.json
 [output_textlog]
 enabled = true
 logfile = var/log/cowrie/cowrie.log
+
+[output_iplock]
+enabled = true
+db_path = var/lib/cowrie/iplock.db
 EOFCFG
 
 # Add VirusTotal configuration if API key is available
@@ -547,6 +570,7 @@ services:
       - /opt/cowrie/share/cowrie/cmdoutput.json:/cowrie/cowrie-git/src/cowrie/data/cmdoutput.json:ro
       - /opt/cowrie/share/cowrie/txtcmds:/cowrie/cowrie-git/src/cowrie/data/txtcmds:ro
       - /opt/cowrie/share/cowrie/contents:/cowrie/cowrie-git/honeyfs:ro
+      - /opt/cowrie/plugins:/cowrie/cowrie-git/src/cowrie/output:ro
     environment:
       - COWRIE_HOSTNAME=server
     # Security hardening
@@ -875,6 +899,7 @@ services:
       - /opt/cowrie/share/cowrie/cmdoutput.json:/cowrie/cowrie-git/src/cowrie/data/cmdoutput.json:ro
       - /opt/cowrie/share/cowrie/txtcmds:/cowrie/cowrie-git/src/cowrie/data/txtcmds:ro
       - /opt/cowrie/share/cowrie/contents:/cowrie/cowrie-git/honeyfs:ro
+      - /opt/cowrie/plugins:/cowrie/cowrie-git/src/cowrie/output:ro
     environment:
       - COWRIE_HOSTNAME=server
     cap_drop:
