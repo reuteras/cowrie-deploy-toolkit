@@ -64,6 +64,7 @@ class FileAnalysisCache:
         "text/xml",
         "text/css",
         "text/javascript",
+        "text/x-ssh-public-key",
         "application/json",
         "application/xml",
         "application/x-sh",
