@@ -195,8 +195,6 @@ locate > /root/txtcmds/usr/bin/locate 2>&1
 lscpu > /root/txtcmds/usr/bin/lscpu 2>&1
 make > /root/txtcmds/usr/bin/make 2>&1
 mount > /root/txtcmds/usr/bin/mount 2>&1
-ssh -V > /root/txtcmds/usr/bin/ssh 2>&1
-
 EOF
 
 echo "[*] Filesystem pickle created (Cowrie directories excluded)."
