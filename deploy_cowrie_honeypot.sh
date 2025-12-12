@@ -695,17 +695,14 @@ set -e
 # Install Postfix
 DEBIAN_FRONTEND=noninteractive apt-get install -y postfix mailutils libsasl2-modules > /dev/null 2>&1
 
-# Set Scaleway domain (use localhost as fallback if not configured)
-SCALEWAY_DOMAIN="${SCALEWAY_DOMAIN:-localhost}"
-
 # Configure Postfix for Scaleway
 cat > /etc/postfix/main.cf << EOF
 # Postfix configuration for Scaleway Transactional Email
 # Domain configuration
-myhostname = \$SERVER_NAME.\$SCALEWAY_DOMAIN
-myorigin = \$SCALEWAY_DOMAIN
-mydestination = localhost, \$SCALEWAY_DOMAIN
-masquerade_domains = \$SCALEWAY_DOMAIN
+myhostname = $SERVER_NAME.$SCALEWAY_DOMAIN
+myorigin = $SCALEWAY_DOMAIN
+mydestination = localhost, $SCALEWAY_DOMAIN
+masquerade_domains = $SCALEWAY_DOMAIN
 
 # Network and interface configuration (security hardening)
 mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
