@@ -6,14 +6,22 @@
 <div class="commands-page">
     <div class="page-header">
         <h1>Commands Executed</h1>
-        <div class="time-filter">
-            <label>Time range:</label>
-            <select onchange="window.location.href='?hours=' + this.value">
-                <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
-                <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
-                <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
-                <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
-            </select>
+        <div class="filters">
+            <form method="get" class="filter-form">
+                <select name="hours" onchange="this.form.submit()">
+                    <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
+                    <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
+                    <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
+                    <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
+                </select>
+                <label>
+                    <input type="checkbox" name="unique" value="1"
+                           {% if unique == '1' %}checked{% endif %}
+                           onchange="this.form.submit()">
+                    Unique commands
+                </label>
+                <button type="submit">Filter</button>
+            </form>
         </div>
     </div>
 
