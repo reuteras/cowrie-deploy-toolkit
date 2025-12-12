@@ -106,7 +106,7 @@ echo "[*] SSH is ready."
 # STEP 3 — Configure system identity
 # ============================================================
 
-echo "[*] Setting hostname to $HONEYPOT_HOSTNAME and installing nginx..."
+echo "[*] Setting hostname to $HONEYPOT_HOSTNAME and installing services..."
 
 ssh $SSH_OPTS "root@$SERVER_IP" bash << EOF
 set -e
@@ -115,17 +115,129 @@ hostnamectl set-hostname $HONEYPOT_HOSTNAME
 echo "127.0.0.1 localhost $HONEYPOT_HOSTNAME" > /etc/hosts
 echo "::1 localhost ip6-localhost ip6-loopback $HONEYPOT_HOSTNAME" >> /etc/hosts
 
-# Install and start nginx to have realistic services running
+# Install nginx, MySQL/MariaDB, PHP and WordPress for realistic services
+echo "[*] Installing nginx, MariaDB, PHP, and WordPress..."
 DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
-DEBIAN_FRONTEND=noninteractive apt-get install -qq -y nginx > /dev/null
+DEBIAN_FRONTEND=noninteractive apt-get install -qq -y nginx mariadb-server php-fpm php-mysql wordpress > /dev/null
+
+# Start services
 systemctl enable nginx > /dev/null 2>&1
 systemctl start nginx
+systemctl enable mariadb > /dev/null 2>&1
+systemctl start mariadb
 
-# Wait for nginx to fully start
-sleep 2
+# Wait for services to fully start
+sleep 3
 
-echo "[*] Hostname set to $HONEYPOT_HOSTNAME, nginx installed and running"
+echo "[*] Hostname set to $HONEYPOT_HOSTNAME, services installed and running"
 EOF
+
+# ============================================================
+# STEP 3.5 — Configure WordPress and setup fake data
+# ============================================================
+
+echo "[*] Setting up WordPress with fake database..."
+
+# Upload fake WordPress database SQL file
+FAKE_WP_DB="./fake-data/wordpress-db.sql"
+if [ -f "$FAKE_WP_DB" ]; then
+    scp $SSH_OPTS "$FAKE_WP_DB" "root@$SERVER_IP:/tmp/wordpress-db.sql" > /dev/null
+    echo "[*] Uploaded fake WordPress database"
+else
+    echo "[!] Warning: $FAKE_WP_DB not found, skipping WordPress database setup"
+fi
+
+ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOF'
+set -e
+
+# Create WordPress database and import fake data if available
+if [ -f /tmp/wordpress-db.sql ]; then
+    mysql -e "CREATE DATABASE IF NOT EXISTS wordpress_db;"
+    mysql -e "CREATE USER IF NOT EXISTS 'wp_user'@'localhost' IDENTIFIED BY 'wp_pass_2024';"
+    mysql -e "GRANT ALL PRIVILEGES ON wordpress_db.* TO 'wp_user'@'localhost';"
+    mysql -e "FLUSH PRIVILEGES;"
+    mysql wordpress_db < /tmp/wordpress-db.sql
+    rm /tmp/wordpress-db.sql
+    echo "[*] WordPress database created and populated"
+fi
+
+# Configure WordPress to use database
+mkdir -p /var/www/html/blog
+ln -sf /usr/share/wordpress /var/www/html/blog/wp
+cat > /var/www/html/blog/wp-config.php << 'WPCONFIG'
+<?php
+define('DB_NAME', 'wordpress_db');
+define('DB_USER', 'wp_user');
+define('DB_PASSWORD', 'wp_pass_2024');
+define('DB_HOST', 'localhost');
+define('DB_CHARSET', 'utf8mb4');
+define('DB_COLLATE', '');
+
+define('AUTH_KEY',         'put your unique phrase here');
+define('SECURE_AUTH_KEY',  'put your unique phrase here');
+define('LOGGED_IN_KEY',    'put your unique phrase here');
+define('NONCE_KEY',        'put your unique phrase here');
+define('AUTH_SALT',        'put your unique phrase here');
+define('SECURE_AUTH_SALT', 'put your unique phrase here');
+define('LOGGED_IN_SALT',   'put your unique phrase here');
+define('NONCE_SALT',       'put your unique phrase here');
+
+\$table_prefix = 'wp_';
+define('WP_DEBUG', false);
+
+if ( ! defined( 'ABSPATH' ) ) {
+    define( 'ABSPATH', __DIR__ . '/' );
+}
+
+require_once ABSPATH . 'wp/wp-settings.php';
+WPCONFIG
+
+echo "[*] WordPress configuration created at /var/www/html/blog/wp-config.php"
+EOF
+
+# ============================================================
+# STEP 3.6 — Setup Canary Token files
+# ============================================================
+
+echo "[*] Setting up Canary Token files in /root/backup..."
+
+# Create /root/backup directory on remote server
+ssh $SSH_OPTS "root@$SERVER_IP" "mkdir -p /root/backup"
+
+# Check for Canary Token files locally
+CANARY_DIR="./canary-tokens"
+CANARY_UPLOADED=false
+
+# MySQL dump Canary Token
+if [ -f "$CANARY_DIR/mysql-backup.sql" ]; then
+    scp $SSH_OPTS "$CANARY_DIR/mysql-backup.sql" "root@$SERVER_IP:/root/backup/mysql-backup.sql" > /dev/null
+    echo "[*] Uploaded MySQL backup Canary Token to /root/backup/mysql-backup.sql"
+    CANARY_UPLOADED=true
+fi
+
+# Excel Canary Token (look for any .xlsx file)
+EXCEL_TOKEN=$(find "$CANARY_DIR" -maxdepth 1 -name "*.xlsx" -type f 2>/dev/null | head -1)
+if [ -n "$EXCEL_TOKEN" ]; then
+    scp $SSH_OPTS "$EXCEL_TOKEN" "root@$SERVER_IP:/root/Q1_Financial_Report.xlsx" > /dev/null
+    echo "[*] Uploaded Excel Canary Token to /root/Q1_Financial_Report.xlsx"
+    CANARY_UPLOADED=true
+fi
+
+# PDF Canary Token (look for any .pdf file)
+PDF_TOKEN=$(find "$CANARY_DIR" -maxdepth 1 -name "*.pdf" -type f 2>/dev/null | head -1)
+if [ -n "$PDF_TOKEN" ]; then
+    scp $SSH_OPTS "$PDF_TOKEN" "root@$SERVER_IP:/root/Network_Passwords.pdf" > /dev/null
+    echo "[*] Uploaded PDF Canary Token to /root/Network_Passwords.pdf"
+    CANARY_UPLOADED=true
+fi
+
+if [ "$CANARY_UPLOADED" = false ]; then
+    echo "[!] Warning: No Canary Token files found in $CANARY_DIR/"
+    echo "[!]          Create tokens at https://canarytokens.org/nest/ and place them in:"
+    echo "[!]            - $CANARY_DIR/mysql-backup.sql (MySQL dump token)"
+    echo "[!]            - $CANARY_DIR/*.xlsx (Excel document token)"
+    echo "[!]            - $CANARY_DIR/*.pdf (PDF document token)"
+fi
 
 # ============================================================
 # STEP 4 — Install createfs and requirements
@@ -250,7 +362,14 @@ tar --no-xattrs -cf /tmp/contents.tar \
     etc/timezone \
     etc/nginx/nginx.conf \
     etc/nginx/sites-available/default \
+    etc/mysql/my.cnf \
+    etc/mysql/mariadb.cnf \
+    etc/php/*/fpm/php.ini \
     var/www/html/index.nginx-debian.html \
+    var/www/html/blog/wp-config.php \
+    root/backup \
+    root/*.xlsx \
+    root/*.pdf \
     2>/dev/null || true
 
 mkdir -p tmp/proc/1 proc/net
