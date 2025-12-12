@@ -213,8 +213,8 @@ WantedBy=multi-user.target
 YARASERVICE
 
 # Reload systemd and enable service
-systemctl daemon-reload
-systemctl enable yara-scanner.service
+systemctl daemon-reload 2>/dev/null
+systemctl enable yara-scanner.service 2>/dev/null
 
 # Scan existing files before starting daemon
 echo "[*] Scanning existing downloads with YARA..."
