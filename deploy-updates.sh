@@ -126,17 +126,14 @@ scp $SSH_OPTS -P "$SSH_PORT" \
 # ============================================================
 echo_info "Checking which services need restart..."
 
-# Check if YARA scanner daemon is running
+# Check if YARA scanner daemon is running (systemd service)
 YARA_RUNNING=$(ssh $SSH_OPTS -p "$SSH_PORT" "root@$SERVER_IP" \
-    "pgrep -f yara-scanner-daemon || echo 'false'" 2>/dev/null)
+    "systemctl is-active yara-scanner.service 2>/dev/null || echo 'inactive'" 2>/dev/null)
 
-if [ "$YARA_RUNNING" != "false" ]; then
+if [ "$YARA_RUNNING" = "active" ]; then
     echo_info "Restarting YARA scanner daemon..."
-    ssh $SSH_OPTS -p "$SSH_PORT" "root@$SERVER_IP" << 'EOF'
-pkill -f yara-scanner-daemon
-cd /opt/cowrie
-nohup ./scripts/yara-scanner-daemon.py --daemon > /dev/null 2>&1 &
-EOF
+    ssh $SSH_OPTS -p "$SSH_PORT" "root@$SERVER_IP" \
+        "systemctl restart yara-scanner.service" 2>/dev/null
     echo_info "YARA scanner daemon restarted"
 fi
 
@@ -173,8 +170,8 @@ echo "  Docker containers:"
 docker ps --format "    - {{.Names}}: {{.Status}}" --filter "name=cowrie" 2>/dev/null || echo "    (none running)"
 echo ""
 echo "  YARA scanner:"
-if pgrep -f yara-scanner-daemon > /dev/null; then
-    echo "    - Running (PID: $(pgrep -f yara-scanner-daemon))"
+if systemctl is-active --quiet yara-scanner.service; then
+    echo "    - Running (systemd service active)"
 else
     echo "    - Not running"
 fi

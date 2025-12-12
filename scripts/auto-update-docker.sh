@@ -49,83 +49,42 @@ fi
 log "Starting auto-update check..."
 
 # ============================================================
-# Step 1: Get current image IDs
-# ============================================================
-log "Checking current image versions..."
-
-IMAGES=$(docker compose config --images 2>/dev/null)
-if [ -z "$IMAGES" ]; then
-    log "ERROR: Failed to get images from docker-compose.yml"
-    exit 1
-fi
-
-# Store current image IDs
-declare -A CURRENT_IMAGES
-for img in $IMAGES; do
-    IMAGE_ID=$(docker images --quiet "$img" 2>/dev/null || echo "")
-    if [ -n "$IMAGE_ID" ]; then
-        CURRENT_IMAGES["$img"]="$IMAGE_ID"
-        log "Current image: $img = $IMAGE_ID"
-    fi
-done
-
-# ============================================================
-# Step 2: Pull latest images
+# Step 1: Pull latest images
 # ============================================================
 log "Pulling latest images..."
 
-if ! docker compose pull --quiet 2>&1 | tee -a "$LOG_FILE"; then
+if ! docker compose pull 2>&1 | tee -a "$LOG_FILE"; then
     log "ERROR: Failed to pull images"
     exit 1
 fi
 
 # ============================================================
-# Step 3: Check for updates
+# Step 2: Recreate containers (only if images changed)
 # ============================================================
-log "Checking for image updates..."
+log "Updating containers..."
 
-UPDATES_AVAILABLE=false
-for img in "${!CURRENT_IMAGES[@]}"; do
-    NEW_IMAGE_ID=$(docker images --quiet "$img" 2>/dev/null || echo "")
+# docker compose up -d automatically:
+# - Recreates containers if images have changed
+# - Leaves containers alone if nothing changed
+# - Handles dependencies correctly
+if docker compose up -d 2>&1 | tee -a "$LOG_FILE"; then
+    log "Containers updated successfully"
 
-    if [ -n "$NEW_IMAGE_ID" ] && [ "$NEW_IMAGE_ID" != "${CURRENT_IMAGES[$img]}" ]; then
-        log "Update available: $img (${CURRENT_IMAGES[$img]:0:12} -> ${NEW_IMAGE_ID:0:12})"
-        UPDATES_AVAILABLE=true
-    else
-        log "No update: $img (${CURRENT_IMAGES[$img]:0:12})"
-    fi
-done
+    # Wait a few seconds for containers to start
+    sleep 5
 
-# ============================================================
-# Step 4: Apply updates if available
-# ============================================================
-if [ "$UPDATES_AVAILABLE" = "true" ]; then
-    log "Applying updates..."
+    # Show container status
+    log "Container status:"
+    docker compose ps 2>&1 | tee -a "$LOG_FILE"
 
-    # Recreate containers with new images
-    if docker compose up -d --force-recreate 2>&1 | tee -a "$LOG_FILE"; then
-        log "Containers recreated successfully"
+    # Clean up old images
+    log "Cleaning up old images..."
+    docker image prune -f 2>&1 | tee -a "$LOG_FILE"
 
-        # Wait a few seconds for containers to start
-        sleep 5
-
-        # Show container status
-        log "Container status:"
-        docker compose ps 2>&1 | tee -a "$LOG_FILE"
-
-        # Clean up old images
-        log "Cleaning up old images..."
-        docker image prune -f 2>&1 | tee -a "$LOG_FILE"
-
-        log "Auto-update completed successfully"
-    else
-        log "ERROR: Failed to recreate containers"
-        log "Attempting to restore service..."
-        docker compose up -d 2>&1 | tee -a "$LOG_FILE"
-        exit 1
-    fi
+    log "Auto-update completed successfully"
 else
-    log "No updates available, containers are up to date"
+    log "ERROR: Failed to update containers"
+    exit 1
 fi
 
 # ============================================================
