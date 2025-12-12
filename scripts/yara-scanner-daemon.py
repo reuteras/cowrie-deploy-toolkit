@@ -90,6 +90,14 @@ class FileAnalysisCache:
         "PHP",
         "source",
         "program text",
+        "OpenSSH",
+        "SSH",
+        "RSA public key",
+        "DSA public key",
+        "ECDSA public key",
+        "Ed25519 public key",
+        "public key",
+        "PEM certificate",
     ]
 
     def __init__(self, db_path: str):
