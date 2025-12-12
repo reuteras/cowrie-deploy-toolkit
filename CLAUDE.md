@@ -299,6 +299,132 @@ open http://localhost:5000
 
 **Note**: If you enabled Tailscale with `block_public_ssh = true`, you must use your Tailscale IP address (shown in deployment output).
 
+## Data Sharing and Threat Intelligence
+
+The toolkit supports sharing honeypot data with global threat intelligence communities and querying IP reputation services. This helps improve collective security and provides context about attackers.
+
+### DShield (SANS Internet Storm Center)
+
+**What it does:** Automatically shares attack data with the SANS Internet Storm Center's DShield project, contributing to global threat intelligence.
+
+**Configuration in `master-config.toml`:**
+```toml
+[data_sharing]
+dshield_enabled = true
+dshield_userid = "YOUR_DSHIELD_USERID"
+dshield_auth_key = "YOUR_DSHIELD_AUTH_KEY"
+# Or: "op read op://Personal/DShield/auth_key"
+dshield_batch_size = 100  # Events to batch before sending
+```
+
+**Getting Credentials:**
+1. Sign up at https://isc.sans.edu/ssh.html
+2. Get your credentials at https://isc.sans.edu/myaccount.html
+3. Your data will appear in DShield's global threat database
+
+**What data is shared:** SSH connection attempts, authentication attempts, source IPs, timestamps
+
+**Benefits:**
+- Contribute to global threat intelligence
+- Help security researchers identify attack patterns
+- Free participation in the SANS ISC community
+- View aggregated data from thousands of sensors worldwide
+
+### GreyNoise Threat Intelligence
+
+**What it does:** Queries GreyNoise API to identify if attacking IPs are known scanners, bots, or mass internet scanners. Enriches logs with threat classification data.
+
+**Configuration in `master-config.toml`:**
+```toml
+[data_sharing]
+greynoise_enabled = true
+greynoise_api_key = ""  # Optional: API key for higher limits
+# Or: "op read op://Personal/GreyNoise/api_key"
+greynoise_tags = "all"  # Or specify: "SHODAN,JBOSS_WORM,CPANEL_SCANNER_LOW"
+greynoise_debug = false
+```
+
+**Getting an API Key:**
+- Free Community API: Works without a key (limited queries)
+- Free API Key: https://www.greynoise.io/ (5,000 queries/month)
+- Paid plans available for higher volume
+
+**What you get:**
+- Classification: Benign, malicious, or unknown
+- Actor tags: SHODAN, Censys, Mirai, etc.
+- Organization information
+- First/last seen dates
+- Logged to `cowrie.log` for analysis
+
+**Benefits:**
+- Identify mass internet scanners vs targeted attacks
+- Filter noise from security research scanners
+- Understand attacker infrastructure
+
+### ASN (Autonomous System Number) Data
+
+**What it does:** Enriches IP data with ASN information, showing which network/organization owns the attacking IP.
+
+**Configuration:** Automatically enabled when MaxMind databases are configured. The web dashboard's IP list displays:
+- ASN number (e.g., AS15169)
+- Organization name (e.g., Google LLC, DigitalOcean, Alibaba)
+
+**No additional configuration needed** - Uses the existing MaxMind GeoLite2-ASN database that's automatically downloaded during deployment.
+
+**Benefits:**
+- Identify cloud providers hosting attacks
+- Track patterns by network (e.g., attacks from specific ASNs)
+- Understand infrastructure abuse patterns
+
+### Other Honeypot Data Sharing Opportunities
+
+Several other projects accept honeypot data contributions:
+
+1. **OWASP Honeypot Project**
+   - Open-source threat intelligence collection
+   - Exports to STIX/TAXII formats for MISP integration
+   - Focus: Web application attacks and SSH/telnet
+   - More info: https://github.com/OWASP/Honeypot-Project
+
+2. **MISP (Malware Information Sharing Platform)**
+   - Open-source threat intelligence platform
+   - Can import Cowrie JSON logs as MISP events
+   - Community-driven threat sharing
+   - Integration available via custom scripts
+   - More info: https://www.misp-project.org/
+
+3. **AlienVault OTX (Open Threat Exchange)**
+   - Free threat intelligence community
+   - Accepts manual or automated threat submissions
+   - Pulse-based sharing system
+   - API available for automation
+   - Sign up: https://otx.alienvault.com/
+
+4. **Shodan Honeyscore**
+   - Query service (not data submission)
+   - Check if your honeypot is detectable as a honeypot
+   - API: https://api.shodan.io/labs/honeyscore/{ip}
+   - Helps improve anti-fingerprinting
+
+5. **HoneyDB**
+   - Community honeypot data aggregation
+   - JSON-based API for submissions
+   - Provides visualization and analytics
+   - More info: https://honeydb.io/
+
+6. **CommunityHoneyNetwork (CHN)**
+   - Deployment framework with central management
+   - Built-in data aggregation and sharing
+   - Supports multiple honeypot types
+   - Self-hosted or cloud options
+   - More info: https://communityhoneynetwork.readthedocs.io/
+
+**Note on Privacy and Legal Compliance:**
+- Review each service's data handling policy
+- Ensure compliance with local privacy laws (GDPR, etc.)
+- Most services anonymize or aggregate data
+- You control what data is shared via Cowrie output modules
+
 ## Accessing the Deployed Honeypot
 
 **Note**: Replace `<SERVER_IP>` with `<TAILSCALE_IP>` if you enabled Tailscale with `block_public_ssh = true`.

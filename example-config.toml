@@ -106,6 +106,24 @@ enabled = false
 # built from tailscale_name and tailscale_domain when Tailscale is enabled.
 # Example: https://<tailscale_name>.<tailscale_domain>
 
+[data_sharing]
+# DShield (SANS Internet Storm Center) - Contribute to global threat intelligence
+# Sign up at https://isc.sans.edu/ssh.html and get your credentials at https://isc.sans.edu/myaccount.html
+dshield_enabled = false
+dshield_userid = ""  # Your DShield user ID
+dshield_auth_key = ""  # Your DShield auth key from myaccount page
+# Or: "op read op://Personal/DShield/auth_key"
+dshield_batch_size = 100  # Number of events to batch before sending
+
+# GreyNoise - Query threat intelligence for attacking IPs
+# Get a free API key at https://www.greynoise.io/
+# Free tier: 5,000 queries/month
+greynoise_enabled = false
+greynoise_api_key = ""  # Optional: GreyNoise API key (Community API works without key)
+# Or: "op read op://Personal/GreyNoise/api_key"
+greynoise_tags = "all"  # Tags to scan for: "all" or comma-separated like "SHODAN,JBOSS_WORM"
+greynoise_debug = false  # Enable debug logging
+
 [advanced]
 # Report generation interval (hours)
 report_hours = 24
