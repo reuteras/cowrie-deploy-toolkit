@@ -27,6 +27,8 @@
                 <th>IP Address</th>
                 <th>Country</th>
                 <th>City</th>
+                <th>ASN</th>
+                <th>Organization</th>
                 <th>Sessions</th>
                 <th>Successful Logins</th>
                 <th>Failed Logins</th>
@@ -56,6 +58,20 @@
                     {% endif %}
                 </td>
                 <td>
+                    {% if ip_data.geo and ip_data.geo.asn %}
+                    <code>AS{{ ip_data.geo.asn }}</code>
+                    {% else %}
+                    <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if ip_data.geo and ip_data.geo.asn_org %}
+                    {{ ip_data.geo.asn_org }}
+                    {% else %}
+                    <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+                <td>
                     <a href="{{ url_for('sessions', ip=ip_data.ip, hours=hours) }}" class="badge badge-success">
                         {{ ip_data.count }}
                     </a>
@@ -78,7 +94,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="7" class="no-data">No IP addresses recorded</td>
+                <td colspan="9" class="no-data">No IP addresses recorded</td>
             </tr>
             {% endfor %}
         </tbody>

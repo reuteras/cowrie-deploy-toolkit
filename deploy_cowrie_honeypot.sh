@@ -115,6 +115,59 @@ if [ -f "$MASTER_CONFIG" ]; then
             echo "[*] Web dashboard is enabled in master config"
         fi
     fi
+
+    # Check if data sharing is enabled (DShield and GreyNoise)
+    DSHIELD_ENABLED="false"
+    DSHIELD_USERID=""
+    DSHIELD_AUTH_KEY=""
+    DSHIELD_BATCH_SIZE="100"
+    GREYNOISE_ENABLED="false"
+    GREYNOISE_API_KEY=""
+    GREYNOISE_TAGS="all"
+    GREYNOISE_DEBUG="false"
+
+    if grep -q "\[data_sharing\]" "$MASTER_CONFIG" 2>/dev/null; then
+        DATA_SHARING_SECTION=$(sed -n '/\[data_sharing\]/,/^\[/p' "$MASTER_CONFIG")
+
+        # DShield configuration
+        if echo "$DATA_SHARING_SECTION" | grep -q "dshield_enabled.*=.*true"; then
+            DSHIELD_ENABLED="true"
+            echo "[*] DShield data sharing is enabled"
+
+            # Extract DShield credentials
+            DSHIELD_USERID=$(echo "$DATA_SHARING_SECTION" | grep "^dshield_userid" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+            DSHIELD_AUTH_KEY=$(echo "$DATA_SHARING_SECTION" | grep "^dshield_auth_key" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+            DSHIELD_BATCH_SIZE=$(echo "$DATA_SHARING_SECTION" | grep "^dshield_batch_size" | head -1 | sed -E 's/^[^=]*= *([0-9]+).*/\1/')
+
+            # Execute command if it looks like "op read" command
+            if echo "$DSHIELD_AUTH_KEY" | grep -q "^op read"; then
+                DSHIELD_AUTH_KEY=$(eval "$DSHIELD_AUTH_KEY" 2>/dev/null || echo "")
+            fi
+
+            [ -z "$DSHIELD_BATCH_SIZE" ] && DSHIELD_BATCH_SIZE="100"
+        fi
+
+        # GreyNoise configuration
+        if echo "$DATA_SHARING_SECTION" | grep -q "greynoise_enabled.*=.*true"; then
+            GREYNOISE_ENABLED="true"
+            echo "[*] GreyNoise threat intelligence lookup is enabled"
+
+            # Extract GreyNoise settings
+            GREYNOISE_API_KEY=$(echo "$DATA_SHARING_SECTION" | grep "^greynoise_api_key" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+            GREYNOISE_TAGS=$(echo "$DATA_SHARING_SECTION" | grep "^greynoise_tags" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+
+            # Execute command if it looks like "op read" command
+            if echo "$GREYNOISE_API_KEY" | grep -q "^op read"; then
+                GREYNOISE_API_KEY=$(eval "$GREYNOISE_API_KEY" 2>/dev/null || echo "")
+            fi
+
+            if echo "$DATA_SHARING_SECTION" | grep -q "greynoise_debug.*=.*true"; then
+                GREYNOISE_DEBUG="true"
+            fi
+
+            [ -z "$GREYNOISE_TAGS" ] && GREYNOISE_TAGS="all"
+        fi
+    fi
 else
     echo "[!] Error: master-config.toml not found, using default settings"
     exit
@@ -535,6 +588,37 @@ collection = cowrie
 commenttext = First seen by #Cowrie SSH/telnet Honeypot http://github.com/cowrie/cowrie
 EOFVT
     echo "[*] VirusTotal integration enabled in cowrie.cfg"
+fi
+
+# Add DShield configuration if enabled
+if [ "$DSHIELD_ENABLED" = "true" ] && [ -n "$DSHIELD_USERID" ] && [ -n "$DSHIELD_AUTH_KEY" ]; then
+    cat >> /tmp/cowrie.cfg << EOFDSHIELD
+
+[output_dshield]
+enabled = true
+userid = $DSHIELD_USERID
+auth_key = $DSHIELD_AUTH_KEY
+batch_size = $DSHIELD_BATCH_SIZE
+EOFDSHIELD
+    echo "[*] DShield data sharing enabled in cowrie.cfg"
+fi
+
+# Add GreyNoise configuration if enabled
+if [ "$GREYNOISE_ENABLED" = "true" ]; then
+    cat >> /tmp/cowrie.cfg << EOFGREYNOISE
+
+[output_greynoise]
+enabled = true
+debug = $GREYNOISE_DEBUG
+tags = $GREYNOISE_TAGS
+EOFGREYNOISE
+
+    # Add API key if provided
+    if [ -n "$GREYNOISE_API_KEY" ]; then
+        echo "api_key = $GREYNOISE_API_KEY" >> /tmp/cowrie.cfg
+    fi
+
+    echo "[*] GreyNoise threat intelligence lookup enabled in cowrie.cfg"
 fi
 
 # Upload cowrie.cfg

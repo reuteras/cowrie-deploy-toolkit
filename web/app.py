@@ -30,6 +30,7 @@ CONFIG = {
     "tty_path": os.getenv("COWRIE_TTY_PATH", "/cowrie-data/lib/cowrie/tty"),
     "download_path": os.getenv("COWRIE_DOWNLOAD_PATH", "/cowrie-data/lib/cowrie/downloads"),
     "geoip_db_path": os.getenv("GEOIP_DB_PATH", "/cowrie-data/geoip/GeoLite2-City.mmdb"),
+    "geoip_asn_path": os.getenv("GEOIP_ASN_PATH", "/cowrie-data/geoip/GeoLite2-ASN.mmdb"),
     "base_url": os.getenv("BASE_URL", ""),
     "virustotal_api_key": os.getenv("VIRUSTOTAL_API_KEY", ""),
     "cache_db_path": os.getenv("CACHE_DB_PATH", "/tmp/vt-cache.db"),
@@ -38,18 +39,26 @@ CONFIG = {
 
 
 class GeoIPLookup:
-    """Simple GeoIP lookup wrapper."""
+    """Simple GeoIP lookup wrapper with ASN support."""
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, asn_db_path: Optional[str] = None):
         self.reader = None
+        self.asn_reader = None
         if geoip2 and os.path.exists(db_path):
             try:
                 self.reader = geoip2.database.Reader(db_path)
             except Exception:
                 pass
 
+        # Initialize ASN database if provided
+        if geoip2 and asn_db_path and os.path.exists(asn_db_path):
+            try:
+                self.asn_reader = geoip2.database.Reader(asn_db_path)
+            except Exception:
+                pass
+
     def lookup(self, ip: str) -> dict:
-        """Lookup IP and return geo data."""
+        """Lookup IP and return geo data with ASN information."""
         result = {"country": "Unknown", "country_code": "XX", "city": "Unknown"}
         if not self.reader:
             return result
@@ -62,6 +71,16 @@ class GeoIPLookup:
             result["longitude"] = response.location.longitude
         except Exception:
             pass
+
+        # Add ASN information if available
+        if self.asn_reader:
+            try:
+                asn_response = self.asn_reader.asn(ip)
+                result["asn"] = asn_response.autonomous_system_number
+                result["asn_org"] = asn_response.autonomous_system_organization
+            except Exception:
+                pass
+
         return result
 
 
@@ -205,7 +224,7 @@ class SessionParser:
     def __init__(self, log_path: str):
         self.log_path = log_path
         self.sessions = {}
-        self.geoip = GeoIPLookup(CONFIG["geoip_db_path"])
+        self.geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
 
     def parse_all(self, hours: int = 168) -> dict:
         """Parse all sessions from logs within the specified hours."""
