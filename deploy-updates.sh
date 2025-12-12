@@ -25,7 +25,7 @@ if [ $# -lt 1 ]; then
 fi
 
 SERVER_IP="$1"
-SSH_PORT="${2:-2222}"  # Default to 2222 if not specified
+SSH_PORT="${2:-22}"  # Default to 2222 if not specified
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -139,24 +139,19 @@ fi
 
 # Check if web dashboard is running and restart if updated
 if [ "$WEB_UPDATED" = "true" ]; then
-    WEB_CONTAINER=$(ssh $SSH_OPTS -p "$SSH_PORT" "root@$SERVER_IP" \
-        "docker ps --filter 'name=cowrie-web' --format '{{.Names}}' 2>/dev/null || echo 'false'" 2>/dev/null)
-
-    if [ "$WEB_CONTAINER" != "false" ] && [ -n "$WEB_CONTAINER" ]; then
-        echo_info "Rebuilding and restarting web dashboard..."
-        ssh $SSH_OPTS -p "$SSH_PORT" "root@$SERVER_IP" << 'EOF'
+    echo_info "Rebuilding and restarting web dashboard..."
+    ssh $SSH_OPTS -p "$SSH_PORT" "root@$SERVER_IP" << 'EOF'
 cd /opt/cowrie
-docker compose build cowrie-web
-docker compose restart cowrie-web
+docker compose build --pull > /dev/null 2>&1
+docker compose pull > /dev/null 2>&1
+docker compose up -d > /dev/null 2>&1
 EOF
-        echo_info "Web dashboard restarted"
-    fi
+    echo_info "Web dashboard restarted"
 fi
 
 # ============================================================
 # Done
 # ============================================================
-echo ""
 echo_info "✓ Deployment complete!"
 echo ""
 echo "Updated components:"
