@@ -98,6 +98,91 @@ Deploys a Cowrie honeypot using a previously generated output directory.
 4. **Authentic SSH banner** - Uses the exact SSH banner from the source server
 5. **Real file contents** - `/etc/passwd`, `/etc/shadow`, configs are from real system
 6. **Matching kernel strings** - Kernel version, build string, and arch match source
+7. **IP-locked credentials** - Each IP is locked to the first credentials they successfully authenticate with
+
+## IP-Locked Credential Authentication
+
+**New in v2.0**: Enhanced anti-fingerprinting through IP-based credential locking.
+
+### How It Works
+
+When an attacker successfully authenticates from an IP address, that IP becomes permanently "locked" to those specific credentials. This makes the honeypot behave like a real server where credentials are fixed, not arbitrary.
+
+**Example Scenario:**
+```text
+1. IP 1.2.3.4 tries: root:password → Success ✓
+   → IP locked to root:password
+
+2. Same IP tries: root:admin → Rejected ✗
+   (Even though honeypot normally accepts all credentials)
+
+3. Same IP tries: root:password → Success ✓
+   (Only the locked credentials work)
+```
+
+### Benefits
+
+- **Enhanced Realism** - Mimics real server behavior where credentials don't change
+- **Anti-Fingerprinting** - Harder for attackers to identify as a honeypot by testing multiple credentials
+- **Better Data Quality** - Captures authentic post-compromise behavior instead of endless credential testing
+- **Persistent State** - IP locks survive container restarts and rebuilds
+
+### Technical Details
+
+**Plugin**: `output_iplock.py` (Cowrie output plugin)
+- Intercepts `cowrie.login.success` events
+- Stores IP → credential mappings in SQLite
+- Database: `/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/iplock.db`
+- Logs violations for analysis
+
+**Configuration**: Automatically enabled in `cowrie.cfg`
+```ini
+[output_iplock]
+enabled = true
+db_path = var/lib/cowrie/iplock.db
+```
+
+### Accessing IP-Lock Data
+
+```bash
+# View the IP-lock database
+ssh -p 2222 root@<SERVER_IP> 'sqlite3 /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/iplock.db "SELECT * FROM ip_locks LIMIT 10;"'
+
+# Check for credential violations (IPs trying different credentials)
+ssh -p 2222 root@<SERVER_IP> 'sqlite3 /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/iplock.db "SELECT src_ip, COUNT(*) as violations FROM auth_attempts WHERE is_locked = 1 AND lock_matched = 0 GROUP BY src_ip ORDER BY violations DESC LIMIT 10;"'
+
+# View lock statistics
+ssh -p 2222 root@<SERVER_IP> 'tail -f /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.log | grep IPLockAuth'
+```
+
+### Database Schema
+
+**ip_locks table** - Tracks locked IPs
+- `src_ip` (unique) - IP address
+- `username` - Locked username
+- `password` - Locked password
+- `locked_at` - First successful login timestamp
+- `login_count` - Number of successful logins with locked credentials
+
+**auth_attempts table** - Analysis and forensics
+- `src_ip` - Source IP
+- `username` - Attempted username
+- `password` - Attempted password
+- `success` - Whether authentication succeeded
+- `is_locked` - Whether IP was already locked at time of attempt
+- `lock_matched` - Whether credentials matched the lock (NULL if not locked)
+
+### Disabling IP-Lock
+
+To disable (not recommended for production):
+
+Edit `/opt/cowrie/etc/cowrie.cfg` on the server and set:
+```ini
+[output_iplock]
+enabled = false
+```
+
+Then restart: `docker compose restart -d`
 
 ## Configuration
 
