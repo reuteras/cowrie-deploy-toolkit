@@ -694,7 +694,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y postfix mailutils libsasl2-mod
 # Configure Postfix for Scaleway
 cat > /etc/postfix/main.cf << 'EOF'
 # Postfix configuration for Scaleway Transactional Email
-myhostname = $(hostname)
+myhostname = $SERVER_NAME
 mydestination = localhost
 relayhost = [smtp.tem.scw.cloud]:587
 smtp_use_tls = yes
@@ -917,7 +917,7 @@ echo "[*] Starting services..."
 docker compose up -d --quiet-pull > /dev/null 2>&1
 
 echo "[*] Web dashboard deployed on localhost:5000"
-echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@SERVER_IP"
+echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
 
 # Configure Tailscale Serve if Tailscale is enabled
 if command -v tailscale &> /dev/null; then
@@ -936,12 +936,10 @@ WEBEOF
     if [ "$ENABLE_TAILSCALE" = "true" ] && [ -n "$TAILSCALE_DOMAIN" ]; then
         # Use configured Tailscale name and domain
         echo "[*] Web dashboard available at: https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
-        echo "[*] Also via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
     elif [ "$ENABLE_TAILSCALE" = "true" ]; then
         # Tailscale enabled but no domain configured - query from Tailscale
         TAILSCALE_FQDN=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo '${TAILSCALE_NAME}'")
         echo "[*] Web dashboard available at: https://$TAILSCALE_FQDN"
-        echo "[*] Also via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
     else
         echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
     fi
@@ -968,7 +966,8 @@ if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" 
     # Get Tailscale hostname for Tailscale SSH (use Tailscale IP since public SSH is blocked)
     if [ "$TAILSCALE_USE_SSH" = "true" ]; then
         TS_HOSTNAME=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -p "$REAL_SSH_PORT" "root@$TAILSCALE_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo ''" 2>/dev/null) || TS_HOSTNAME=""
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -p "$REAL_SSH_PORT" "root@$TAILSCALE_IP" "systemctl stop ssh && systemctl disable ssh 2>/dev/null" 2>/dev/null
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "systemctl disable ssh 2>/dev/null"
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "systemctl stop ssh 2>/dev/null"
     fi
 
     if [ "$TAILSCALE_USE_SSH" = "true" ] && [ -n "$TS_HOSTNAME" ]; then
