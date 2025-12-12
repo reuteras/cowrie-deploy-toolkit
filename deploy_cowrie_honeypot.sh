@@ -897,11 +897,13 @@ services:
     volumes:
       - cowrie-var:/cowrie-data:ro
       - /var/lib/GeoIP:/geoip:ro
+      - /opt/cowrie/var:/yara-cache:ro
     environment:
       - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
       - COWRIE_DOWNLOAD_PATH=/cowrie-data/lib/cowrie/downloads
       - GEOIP_DB_PATH=/geoip/GeoLite2-City.mmdb
+      - YARA_CACHE_DB_PATH=/yara-cache/yara-cache.db
       - BASE_URL=$WEB_BASE_URL
       - VIRUSTOTAL_API_KEY=$VT_API_KEY
     depends_on:
