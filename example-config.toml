@@ -44,6 +44,16 @@ email_subject_prefix = "[Honeypot]"
 [email]
 # Scaleway Transactional Email settings
 # Docs: https://www.scaleway.com/en/docs/managed-services/transactional-email/
+
+# Your verified domain in Scaleway Transactional Email
+# This domain is used for:
+# - myorigin (default domain for outbound mail)
+# - mydestination (domains this server receives mail for)
+# - masquerade_domains (rewrite sender addresses to use this domain)
+# - Appended to myhostname for the full FQDN
+# Example: "example.com" or "mail.example.com"
+scaleway_domain = "yourdomain.com"
+
 smtp_host = "smtp.tem.scw.cloud"
 smtp_port = 587
 smtp_user = "YOUR_SMTP_USERNAME"

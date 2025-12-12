@@ -672,9 +672,10 @@ fi
 if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     echo "[*] Setting up Postfix for Scaleway Transactional Email..."
 
-    # Extract SMTP credentials from master config
+    # Extract SMTP credentials and domain from master config
     SMTP_USER=$(grep "smtp_user" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
     SMTP_PASSWORD=$(grep "smtp_password" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+    SCALEWAY_DOMAIN=$(grep "scaleway_domain" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
 
     # Execute commands if they look like "op read" commands
     if echo "$SMTP_USER" | grep -q "^op read"; then
@@ -682,6 +683,9 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     fi
     if echo "$SMTP_PASSWORD" | grep -q "^op read"; then
         SMTP_PASSWORD=$(eval "$SMTP_PASSWORD")
+    fi
+    if echo "$SCALEWAY_DOMAIN" | grep -q "^op read"; then
+        SCALEWAY_DOMAIN=$(eval "$SCALEWAY_DOMAIN")
     fi
 
     if [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASSWORD" ]; then
@@ -691,11 +695,28 @@ set -e
 # Install Postfix
 DEBIAN_FRONTEND=noninteractive apt-get install -y postfix mailutils libsasl2-modules > /dev/null 2>&1
 
+# Set Scaleway domain (use localhost as fallback if not configured)
+SCALEWAY_DOMAIN="${SCALEWAY_DOMAIN:-localhost}"
+
 # Configure Postfix for Scaleway
-cat > /etc/postfix/main.cf << 'EOF'
+cat > /etc/postfix/main.cf << EOF
 # Postfix configuration for Scaleway Transactional Email
-myhostname = $SERVER_NAME
-mydestination = localhost
+# Domain configuration
+myhostname = \$SERVER_NAME.\$SCALEWAY_DOMAIN
+myorigin = \$SCALEWAY_DOMAIN
+mydestination = localhost, \$SCALEWAY_DOMAIN
+masquerade_domains = \$SCALEWAY_DOMAIN
+
+# Network and interface configuration (security hardening)
+mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
+inet_interfaces = loopback-only
+inet_protocols = all
+
+# Header rewriting
+local_header_rewrite_clients = static:all
+append_at_myorigin = yes
+
+# Relay configuration
 relayhost = [smtp.tem.scw.cloud]:587
 smtp_use_tls = yes
 smtp_sasl_auth_enable = yes
