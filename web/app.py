@@ -916,8 +916,20 @@ def api_download_content(shasum: str):
 def commands():
     """Commands listing page."""
     hours = request.args.get("hours", 168, type=int)
+    unique_only = request.args.get("unique", "")
     all_commands = session_parser.get_all_commands(hours=hours)
-    return render_template("commands.html", commands=all_commands, hours=hours, config=CONFIG)
+
+    # Filter to unique commands if requested
+    if unique_only == "1":
+        seen_commands = set()
+        unique_commands = []
+        for cmd in all_commands:
+            if cmd["command"] not in seen_commands:
+                seen_commands.add(cmd["command"])
+                unique_commands.append(cmd)
+        all_commands = unique_commands
+
+    return render_template("commands.html", commands=all_commands, hours=hours, unique=unique_only, config=CONFIG)
 
 
 @app.route("/ips")

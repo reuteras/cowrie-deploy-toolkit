@@ -462,22 +462,25 @@ hostname = $HOSTNAME
 log_path = var/log/cowrie
 download_path = var/lib/cowrie/downloads
 ttylog_path = var/lib/cowrie/tty
+# For https://github.com/cowrie/cowrie/blob/main/src/cowrie/commands/nc.py
+out_addr = $SERVER_IP
 
 [shell]
-filesystem = share/cowrie/fs.pickle
-kernel_version = $KERNEL_VERSION
-kernel_build_string = $KERNEL_BUILD
-hardware_platform = $KERNEL_ARCH
-operating_system = GNU/Linux
 arch = $ARCH
+filesystem = share/cowrie/fs.pickle
+hardware_platform = $KERNEL_ARCH
+kernel_build_string = $KERNEL_BUILD
+kernel_version = $KERNEL_VERSION
+operating_system = GNU/Linux
+ssh_version = SSH-2.0-$SSH_BANNER
 
 [ssh]
 enabled = true
-version = SSH-2.0-$SSH_BANNER
 listen_endpoints = tcp:2222:interface=0.0.0.0
 sftp_enabled = true
 forwarding = true
 forward_redirect = false
+version = SSH-2.0-$SSH_BANNER
 
 [telnet]
 enabled = false
@@ -502,6 +505,11 @@ upload = true
 scan_file = true
 scan_url = false
 debug = false
+# Optional: Collection name for organizing artifacts
+# If not set, no collection will be created
+collection = cowrie
+# Optional: Custom comment text (default: Cowrie attribution)
+commenttext = First seen by #Cowrie SSH/telnet Honeypot http://github.com/cowrie/cowrie
 EOFVT
     echo "[*] VirusTotal integration enabled in cowrie.cfg"
 fi
@@ -686,7 +694,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y postfix mailutils libsasl2-mod
 # Configure Postfix for Scaleway
 cat > /etc/postfix/main.cf << 'EOF'
 # Postfix configuration for Scaleway Transactional Email
-myhostname = $(hostname)
+myhostname = $SERVER_NAME
 mydestination = localhost
 relayhost = [smtp.tem.scw.cloud]:587
 smtp_use_tls = yes
@@ -909,7 +917,7 @@ echo "[*] Starting services..."
 docker compose up -d --quiet-pull > /dev/null 2>&1
 
 echo "[*] Web dashboard deployed on localhost:5000"
-echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@SERVER_IP"
+echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
 
 # Configure Tailscale Serve if Tailscale is enabled
 if command -v tailscale &> /dev/null; then
@@ -928,12 +936,10 @@ WEBEOF
     if [ "$ENABLE_TAILSCALE" = "true" ] && [ -n "$TAILSCALE_DOMAIN" ]; then
         # Use configured Tailscale name and domain
         echo "[*] Web dashboard available at: https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
-        echo "[*] Also via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
     elif [ "$ENABLE_TAILSCALE" = "true" ]; then
         # Tailscale enabled but no domain configured - query from Tailscale
         TAILSCALE_FQDN=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo '${TAILSCALE_NAME}'")
         echo "[*] Web dashboard available at: https://$TAILSCALE_FQDN"
-        echo "[*] Also via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
     else
         echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
     fi
@@ -960,6 +966,8 @@ if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" 
     # Get Tailscale hostname for Tailscale SSH (use Tailscale IP since public SSH is blocked)
     if [ "$TAILSCALE_USE_SSH" = "true" ]; then
         TS_HOSTNAME=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -p "$REAL_SSH_PORT" "root@$TAILSCALE_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo ''" 2>/dev/null) || TS_HOSTNAME=""
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "systemctl disable ssh 2>/dev/null"
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "systemctl stop ssh 2>/dev/null"
     fi
 
     if [ "$TAILSCALE_USE_SSH" = "true" ] && [ -n "$TS_HOSTNAME" ]; then
@@ -989,7 +997,7 @@ Tailscale IP:    $TAILSCALE_IP
 
 SSH Access (available via both public IP and Tailscale):
   Management SSH:  ssh -p $REAL_SSH_PORT root@$SERVER_IP
-                   ssh -p $REAL_SSH_PORT root@$TAILSCALE_IP (via Tailscale)
+                   ssh root@$TAILSCALE_IP (via Tailscale)
   Honeypot SSH:    ssh root@$SERVER_IP (port 22)
 TSPUBLICINFO
 else
