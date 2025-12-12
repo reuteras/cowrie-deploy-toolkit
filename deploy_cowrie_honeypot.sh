@@ -966,6 +966,24 @@ else
 fi
 
 # ============================================================
+# STEP 14 — Set up automatic Docker image updates
+# ============================================================
+
+echo "[*] Setting up automatic Docker image updates..."
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'AUTOUPDATEEOF'
+# Make auto-update script executable
+chmod +x /opt/cowrie/scripts/auto-update-docker.sh
+
+# Install cron job for daily Docker image updates at 3 AM
+(crontab -l 2>/dev/null || echo "") | grep -v "auto-update-docker.sh" | crontab -
+(crontab -l; echo "0 3 * * * /opt/cowrie/scripts/auto-update-docker.sh >> /var/log/cowrie-auto-update.log 2>&1") | crontab -
+
+echo "[*] Cron job installed for daily Docker updates at 3 AM"
+AUTOUPDATEEOF
+
+echo "[*] Automatic Docker updates configured"
+
+# ============================================================
 # DONE
 # ============================================================
 
@@ -1049,5 +1067,12 @@ if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
         DASHBOARD_IP="$TAILSCALE_IP"
     fi
 fi
+
+cat << UPDATEINFO
+
+Automatic Updates:
+  Docker images:   Daily at 3 AM (auto-update-docker.sh)
+  Deploy changes:  ./deploy-updates.sh $SERVER_IP $REAL_SSH_PORT
+UPDATEINFO
 
 echo "============================================"

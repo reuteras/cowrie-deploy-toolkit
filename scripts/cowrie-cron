@@ -1,0 +1,12 @@
+# Cowrie Honeypot Cron Jobs
+# Install: sudo crontab -u root scripts/cowrie-cron
+# Or manually add these lines to root's crontab with: sudo crontab -e
+
+# Auto-update Docker images daily at 3 AM
+0 3 * * * /opt/cowrie/scripts/auto-update-docker.sh >> /var/log/cowrie-auto-update.log 2>&1
+
+# Daily report (if reporting is enabled) - runs at 1 AM
+# 0 1 * * * cd /opt/cowrie && /opt/cowrie/.venv/bin/python3 /opt/cowrie/scripts/daily-report.py >> /var/log/cowrie-report.log 2>&1
+
+# Update YARA rules daily at 2 AM (if YARA is installed)
+# 0 2 * * * /opt/cowrie/scripts/update-yara-rules.sh >> /var/log/yara-update.log 2>&1
