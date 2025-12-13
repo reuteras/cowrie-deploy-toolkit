@@ -273,7 +273,7 @@ echo "[*] Setting up cron job..."
 
 # Use full path to uv for cron reliability
 UV_PATH="$HOME/.local/bin/uv"
-CRON_ENTRY="0 5 * * * source /opt/cowrie/etc/report.env && cd /opt/cowrie && $UV_PATH run scripts/daily-report.py 2>&1 | logger -t cowrie-report"
+CRON_ENTRY="0 5 * * * . /opt/cowrie/etc/report.env && cd /opt/cowrie && $UV_PATH run scripts/daily-report.py 2>&1 | logger -t cowrie-report"
 
 # Check if cron job already exists
 if crontab -l 2>/dev/null | grep -q "daily-report.py"; then
