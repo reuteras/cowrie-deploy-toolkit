@@ -51,10 +51,17 @@ log "Starting auto-update check..."
 # ============================================================
 # Step 1: Pull latest images
 # ============================================================
-log "Pulling latest images..."
+log "Pulling latest cowrie image..."
 
-if ! docker compose pull 2>&1 | tee -a "$LOG_FILE"; then
-    log "ERROR: Failed to pull images"
+if ! docker compose pull cowrie >> "$LOG_FILE" 2>&1 ; then
+    log "ERROR: Failed to pull image"
+    exit 1
+fi
+
+log "Building cowrie-web image..."
+
+if ! docker compose build --pull cowrie-web >> "$LOG_FILE" 2>&1 ; then
+    log "ERROR: Failed to build image"
     exit 1
 fi
 
@@ -67,19 +74,15 @@ log "Updating containers..."
 # - Recreates containers if images have changed
 # - Leaves containers alone if nothing changed
 # - Handles dependencies correctly
-if docker compose up -d 2>&1 | tee -a "$LOG_FILE"; then
+if docker compose up -d >> "$LOG_FILE" 2>&1 ; then
     log "Containers updated successfully"
 
     # Wait a few seconds for containers to start
     sleep 5
 
-    # Show container status
-    log "Container status:"
-    docker compose ps 2>&1 | tee -a "$LOG_FILE"
-
     # Clean up old images
     log "Cleaning up old images..."
-    docker image prune -f 2>&1 | tee -a "$LOG_FILE"
+    docker image prune -f >> "$LOG_FILE" 2>&1
 
     log "Auto-update completed successfully"
 else
@@ -97,7 +100,7 @@ if docker ps --filter "name=cowrie" --filter "status=running" | grep -q cowrie; 
     log "✓ Cowrie container is running"
 else
     log "ERROR: Cowrie container is not running!"
-    docker compose ps 2>&1 | tee -a "$LOG_FILE"
+    docker compose ps >> "$LOG_FILE" 2>&1
     exit 1
 fi
 
@@ -111,6 +114,5 @@ if docker compose config --services 2>/dev/null | grep -q cowrie-web; then
 fi
 
 log "Auto-update check completed"
-log "---"
 
 exit 0

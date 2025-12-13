@@ -1,15 +1,33 @@
 #!/usr/bin/env bash
-set -euo pipefail
+
+# ============================================================
+# Cowrie Honeypot Deployment Script
+# ============================================================
+# Deploys a Cowrie honeypot using a previously generated filesystem snapshot
+# with automated configuration, security hardening, and optional features.
+# ============================================================
+
+# Load common functions library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/common.sh
+source "$SCRIPT_DIR/scripts/common.sh"
+
+# ============================================================
+# DEPENDENCY CHECKS
+# ============================================================
+
+echo_info "Checking required dependencies..."
+check_dependencies "hcloud" "jq" "nc" "tar" "ssh" "scp" "python3"
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 
 if [ $# -ne 1 ]; then
-    echo "Usage: $0 <output_directory>"
-    echo "Example: $0 ./output_20251204_135502"
+    echo_error "Usage: $0 <output_directory>"
+    echo_error "Example: $0 ./output_20251204_135502"
     echo ""
-    echo "Requires master-config.toml in project root"
+    echo_error "Requires master-config.toml in project root"
     exit 1
 fi
 
@@ -48,72 +66,71 @@ TAILSCALE_NAME="cowrie-honeypot"
 TAILSCALE_DOMAIN=""
 
 if [ -f "$MASTER_CONFIG" ]; then
-    echo "[*] Found master-config.toml, reading deployment settings..."
+    echo_info "Found master-config.toml, reading deployment settings..."
 
-    # Read deployment section if present
-    if grep -q "\[deployment\]" "$MASTER_CONFIG" 2>/dev/null; then
-        # Extract server_type (match: server_type = "value" and extract value)
-        CONFIG_SERVER_TYPE=$(grep "^server_type" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-        [ -n "$CONFIG_SERVER_TYPE" ] && SERVER_TYPE="$CONFIG_SERVER_TYPE"
+    # Read deployment configuration using TOML parser
+    CONFIG_SERVER_TYPE=$(read_toml_value "$MASTER_CONFIG" "deployment.server_type")
+    [ -n "$CONFIG_SERVER_TYPE" ] && SERVER_TYPE="$CONFIG_SERVER_TYPE"
 
-        # Extract server_image
-        CONFIG_SERVER_IMAGE=$(grep "^server_image" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-        [ -n "$CONFIG_SERVER_IMAGE" ] && SERVER_IMAGE="$CONFIG_SERVER_IMAGE"
+    CONFIG_SERVER_IMAGE=$(read_toml_value "$MASTER_CONFIG" "deployment.server_image")
+    [ -n "$CONFIG_SERVER_IMAGE" ] && SERVER_IMAGE="$CONFIG_SERVER_IMAGE"
 
-        # Extract SSH keys from array (parse ["key1", "key2"] format)
-        SSH_KEYS_LINE=$(grep "^ssh_keys" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *\[(.*)\]/\1/')
-        if [ -n "$SSH_KEYS_LINE" ]; then
-            # Extract first and second keys
-            SSH_KEY_NAME1=$(echo "$SSH_KEYS_LINE" | sed -E 's/"([^"]+)".*/\1/')
-            SSH_KEY_NAME2=$(echo "$SSH_KEYS_LINE" | sed -E 's/[^,]*, *"([^"]+)".*/\1/')
-        fi
-
-        echo "[*] Using deployment config: $SERVER_TYPE, $SERVER_IMAGE"
+    # Read SSH keys array
+    SSH_KEYS_TEMP=()
+    read_toml_array "$MASTER_CONFIG" "deployment.ssh_keys" SSH_KEYS_TEMP
+    if [ ${#SSH_KEYS_TEMP[@]} -ge 1 ]; then
+        SSH_KEY_NAME1="${SSH_KEYS_TEMP[0]}"
+    fi
+    if [ ${#SSH_KEYS_TEMP[@]} -ge 2 ]; then
+        SSH_KEY_NAME2="${SSH_KEYS_TEMP[1]}"
     fi
 
+    echo_info "Using deployment config: $SERVER_TYPE, $SERVER_IMAGE"
+
     # Check if reporting is enabled
-    if grep -q "enable_reporting.*=.*true" "$MASTER_CONFIG" 2>/dev/null; then
+    CONFIG_ENABLE_REPORTING=$(read_toml_value "$MASTER_CONFIG" "honeypot.enable_reporting")
+    if [ "$CONFIG_ENABLE_REPORTING" = "true" ]; then
         ENABLE_REPORTING="true"
-        echo "[*] Reporting is enabled in master config"
+        echo_info "Reporting is enabled in master config"
     fi
 
     # Check if Tailscale is enabled
-    if grep -q "\[tailscale\]" "$MASTER_CONFIG" 2>/dev/null; then
-        if sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
-            ENABLE_TAILSCALE="true"
-            echo "[*] Tailscale is enabled in master config"
+    CONFIG_TAILSCALE_ENABLED=$(read_toml_value "$MASTER_CONFIG" "tailscale.enabled")
+    if [ "$CONFIG_TAILSCALE_ENABLED" = "true" ]; then
+        ENABLE_TAILSCALE="true"
+        echo_info "Tailscale is enabled in master config"
 
-            # Extract auth key
-            TAILSCALE_AUTHKEY=$(sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep "^authkey" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-            if echo "$TAILSCALE_AUTHKEY" | grep -q "^op read"; then
-                TAILSCALE_AUTHKEY=$(eval "$TAILSCALE_AUTHKEY")
-            fi
+        # Extract auth key
+        TAILSCALE_AUTHKEY=$(read_toml_value "$MASTER_CONFIG" "tailscale.authkey")
+        if echo "$TAILSCALE_AUTHKEY" | grep -q "^op read"; then
+            TAILSCALE_AUTHKEY=$(eval "$TAILSCALE_AUTHKEY")
+        fi
 
-            # Extract tailscale_name (hostname for Tailscale)
-            CONFIG_TAILSCALE_NAME=$(sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep "^tailscale_name" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-            [ -n "$CONFIG_TAILSCALE_NAME" ] && TAILSCALE_NAME="$CONFIG_TAILSCALE_NAME"
+        # Extract tailscale_name (hostname for Tailscale)
+        CONFIG_TAILSCALE_NAME=$(read_toml_value "$MASTER_CONFIG" "tailscale.tailscale_name")
+        [ -n "$CONFIG_TAILSCALE_NAME" ] && TAILSCALE_NAME="$CONFIG_TAILSCALE_NAME"
 
-            # Extract tailscale_domain (tailnet domain)
-            TAILSCALE_DOMAIN=$(sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep "^tailscale_domain" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+        # Extract tailscale_domain (tailnet domain)
+        TAILSCALE_DOMAIN=$(read_toml_value "$MASTER_CONFIG" "tailscale.tailscale_domain")
 
-            # Extract block_public_ssh setting
-            if sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep -q "block_public_ssh.*=.*false"; then
-                TAILSCALE_BLOCK_PUBLIC_SSH="false"
-            fi
+        # Extract block_public_ssh setting
+        CONFIG_BLOCK_PUBLIC_SSH=$(read_toml_value "$MASTER_CONFIG" "tailscale.block_public_ssh")
+        if [ "$CONFIG_BLOCK_PUBLIC_SSH" = "false" ]; then
+            TAILSCALE_BLOCK_PUBLIC_SSH="false"
+        fi
 
-            # Extract use_tailscale_ssh setting
-            if sed -n '/\[tailscale\]/,/^\[/p' "$MASTER_CONFIG" | grep -q "use_tailscale_ssh.*=.*true"; then
-                TAILSCALE_USE_SSH="true"
-            fi
+        # Extract use_tailscale_ssh setting
+        CONFIG_USE_TAILSCALE_SSH=$(read_toml_value "$MASTER_CONFIG" "tailscale.use_tailscale_ssh")
+        if [ "$CONFIG_USE_TAILSCALE_SSH" = "true" ]; then
+            TAILSCALE_USE_SSH="true"
         fi
     fi
 
     # Check if web dashboard is enabled
-    if grep -q "\[web_dashboard\]" "$MASTER_CONFIG" 2>/dev/null; then
-        if sed -n '/\[web_dashboard\]/,/^\[/p' "$MASTER_CONFIG" | grep -q "enabled.*=.*true"; then
-            ENABLE_WEB_DASHBOARD="true"
-            echo "[*] Web dashboard is enabled in master config"
-        fi
+    CONFIG_WEB_DASHBOARD=$(read_toml_value "$MASTER_CONFIG" "web_dashboard.enabled")
+    if [ "$CONFIG_WEB_DASHBOARD" = "true" ]; then
+        ENABLE_WEB_DASHBOARD="true"
+        echo_info "Web dashboard is enabled in master config"
     fi
 
     # Check if data sharing is enabled (DShield and GreyNoise)
@@ -126,62 +143,61 @@ if [ -f "$MASTER_CONFIG" ]; then
     GREYNOISE_TAGS="all"
     GREYNOISE_DEBUG="false"
 
-    if grep -q "\[data_sharing\]" "$MASTER_CONFIG" 2>/dev/null; then
-        DATA_SHARING_SECTION=$(sed -n '/\[data_sharing\]/,/^\[/p' "$MASTER_CONFIG")
+    # DShield configuration
+    CONFIG_DSHIELD_ENABLED=$(read_toml_value "$MASTER_CONFIG" "data_sharing.dshield_enabled")
+    if [ "$CONFIG_DSHIELD_ENABLED" = "true" ]; then
+        DSHIELD_ENABLED="true"
+        echo_info "DShield data sharing is enabled"
 
-        # DShield configuration
-        if echo "$DATA_SHARING_SECTION" | grep -q "dshield_enabled.*=.*true"; then
-            DSHIELD_ENABLED="true"
-            echo "[*] DShield data sharing is enabled"
+        # Extract DShield credentials
+        DSHIELD_USERID=$(read_toml_value "$MASTER_CONFIG" "data_sharing.dshield_userid")
+        DSHIELD_AUTH_KEY=$(read_toml_value "$MASTER_CONFIG" "data_sharing.dshield_auth_key")
+        CONFIG_DSHIELD_BATCH_SIZE=$(read_toml_value "$MASTER_CONFIG" "data_sharing.dshield_batch_size")
 
-            # Extract DShield credentials
-            DSHIELD_USERID=$(echo "$DATA_SHARING_SECTION" | grep "^dshield_userid" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-            DSHIELD_AUTH_KEY=$(echo "$DATA_SHARING_SECTION" | grep "^dshield_auth_key" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-            DSHIELD_BATCH_SIZE=$(echo "$DATA_SHARING_SECTION" | grep "^dshield_batch_size" | head -1 | sed -E 's/^[^=]*= *([0-9]+).*/\1/')
-
-            # Execute command if it looks like "op read" command
-            if echo "$DSHIELD_AUTH_KEY" | grep -q "^op read"; then
-                DSHIELD_AUTH_KEY=$(eval "$DSHIELD_AUTH_KEY" 2>/dev/null || echo "")
-            fi
-
-            [ -z "$DSHIELD_BATCH_SIZE" ] && DSHIELD_BATCH_SIZE="100"
+        # Execute command if it looks like "op read" command
+        if echo "$DSHIELD_AUTH_KEY" | grep -q "^op read"; then
+            DSHIELD_AUTH_KEY=$(eval "$DSHIELD_AUTH_KEY" 2>/dev/null || echo "")
         fi
 
-        # GreyNoise configuration
-        if echo "$DATA_SHARING_SECTION" | grep -q "greynoise_enabled.*=.*true"; then
-            GREYNOISE_ENABLED="true"
-            echo "[*] GreyNoise threat intelligence lookup is enabled"
+        [ -n "$CONFIG_DSHIELD_BATCH_SIZE" ] && DSHIELD_BATCH_SIZE="$CONFIG_DSHIELD_BATCH_SIZE"
+    fi
 
-            # Extract GreyNoise settings
-            GREYNOISE_API_KEY=$(echo "$DATA_SHARING_SECTION" | grep "^greynoise_api_key" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-            GREYNOISE_TAGS=$(echo "$DATA_SHARING_SECTION" | grep "^greynoise_tags" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+    # GreyNoise configuration
+    CONFIG_GREYNOISE_ENABLED=$(read_toml_value "$MASTER_CONFIG" "data_sharing.greynoise_enabled")
+    if [ "$CONFIG_GREYNOISE_ENABLED" = "true" ]; then
+        GREYNOISE_ENABLED="true"
+        echo_info "GreyNoise threat intelligence lookup is enabled"
 
-            # Execute command if it looks like "op read" command
-            if echo "$GREYNOISE_API_KEY" | grep -q "^op read"; then
-                GREYNOISE_API_KEY=$(eval "$GREYNOISE_API_KEY" 2>/dev/null || echo "")
-            fi
+        # Extract GreyNoise settings
+        GREYNOISE_API_KEY=$(read_toml_value "$MASTER_CONFIG" "data_sharing.greynoise_api_key")
+        CONFIG_GREYNOISE_TAGS=$(read_toml_value "$MASTER_CONFIG" "data_sharing.greynoise_tags")
 
-            if echo "$DATA_SHARING_SECTION" | grep -q "greynoise_debug.*=.*true"; then
-                GREYNOISE_DEBUG="true"
-            fi
-
-            [ -z "$GREYNOISE_TAGS" ] && GREYNOISE_TAGS="all"
+        # Execute command if it looks like "op read" command
+        if echo "$GREYNOISE_API_KEY" | grep -q "^op read"; then
+            GREYNOISE_API_KEY=$(eval "$GREYNOISE_API_KEY" 2>/dev/null || echo "")
         fi
+
+        CONFIG_GREYNOISE_DEBUG=$(read_toml_value "$MASTER_CONFIG" "data_sharing.greynoise_debug")
+        if [ "$CONFIG_GREYNOISE_DEBUG" = "true" ]; then
+            GREYNOISE_DEBUG="true"
+        fi
+
+        [ -n "$CONFIG_GREYNOISE_TAGS" ] && GREYNOISE_TAGS="$CONFIG_GREYNOISE_TAGS"
     fi
 else
-    echo "[!] Error: master-config.toml not found, using default settings"
+    echo_warn " Error: master-config.toml not found, using default settings"
     exit
 fi
 
 SERVER_NAME="cowrie-honeypot-$(date +%s)"
 
-echo "[*] Deploying Cowrie honeypot from: $OUTPUT_DIR"
+echo_info "Deploying Cowrie honeypot from: $OUTPUT_DIR"
 
 # ============================================================
 # STEP 1 — Create server
 # ============================================================
 
-echo "[*] Creating Hetzner server: $SERVER_NAME"
+echo_info "Creating Hetzner server: $SERVER_NAME"
 
 SERVER_ID=$(hcloud server create \
     --name "$SERVER_NAME" \
@@ -191,45 +207,45 @@ SERVER_ID=$(hcloud server create \
     --ssh-key "$SSH_KEY_NAME2" \
     --output json 2> /dev/null | jq -r '.server.id')
 
-echo "[*] Server created with ID: $SERVER_ID"
+echo_info "Server created with ID: $SERVER_ID"
 
 # Set up cleanup on error
 cleanup_on_error() {
     echo ""
-    echo "[!] Deployment failed! Cleaning up..."
-    echo "[*] Deleting server $SERVER_ID..."
+    echo_warn " Deployment failed! Cleaning up..."
+    echo_info "Deleting server $SERVER_ID..."
     hcloud server delete "$SERVER_ID" 2>/dev/null || true
-    echo "[*] Server deleted."
+    echo_info "Server deleted."
     exit 1
 }
 
 trap cleanup_on_error ERR
 
 # Wait for IP
-echo "[*] Waiting for server IP..."
+echo_info "Waiting for server IP..."
 sleep 5
 
 SERVER_IP=$(hcloud server describe "$SERVER_ID" --output json | jq -r '.public_net.ipv4.ip')
 
-echo "[*] Server IP: $SERVER_IP"
-echo "[*] Cowrie honeypot will run on port $COWRIE_SSH_PORT"
+echo_info "Server IP: $SERVER_IP"
+echo_info "Cowrie honeypot will run on port $COWRIE_SSH_PORT"
 
 # ============================================================
 # STEP 2 — Wait for SSH
 # ============================================================
 
-echo -n "[*] Waiting for SSH to become available"
+echo_n_info "Waiting for SSH to become available"
 until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=3 "root@$SERVER_IP" "echo ." 2>/dev/null; do
     printf "."
     sleep 3
 done
-echo "[*] SSH is ready."
+echo_info "SSH is ready."
 
 # ============================================================
 # STEP 3 — Move SSH to alternate port
 # ============================================================
 
-echo "[*] Moving SSH to port $REAL_SSH_PORT..."
+echo_info "Moving SSH to port $REAL_SSH_PORT..."
 
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "root@$SERVER_IP" bash << EOF
 set -e
@@ -244,17 +260,17 @@ sshd -t > /dev/null
 systemctl restart sshd > /dev/null
 EOF
 
-echo "[*] SSH moved to port $REAL_SSH_PORT. Reconnecting..."
+echo_info "SSH moved to port $REAL_SSH_PORT. Reconnecting..."
 sleep 3
 
 # Test new SSH port
-echo -n "[*] Testing SSH on port $REAL_SSH_PORT"
+echo_n_info "Testing SSH on port $REAL_SSH_PORT"
 until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=3 -p "$REAL_SSH_PORT" "root@$SERVER_IP" "echo -n ." 2>/dev/null; do
     printf "."
     sleep 2
 done
 echo ""
-echo "[*] SSH confirmed on port $REAL_SSH_PORT."
+echo_info "SSH confirmed on port $REAL_SSH_PORT."
 
 # ============================================================
 # STEP 3.5 — Set up Tailscale (if enabled)
@@ -262,48 +278,48 @@ echo "[*] SSH confirmed on port $REAL_SSH_PORT."
 
 if [ "$ENABLE_TAILSCALE" = "true" ]; then
     if [ -z "$TAILSCALE_AUTHKEY" ]; then
-        echo "[!] Error: Tailscale is enabled but no auth key provided"
-        echo "[!] Add 'authkey' to the [tailscale] section in master-config.toml"
+        echo_warn " Error: Tailscale is enabled but no auth key provided"
+        echo_warn " Add 'authkey' to the [tailscale] section in master-config.toml"
         exit 1
     fi
 
-    echo "[*] Setting up Tailscale for secure management access..."
+    echo_info "Setting up Tailscale for secure management access..."
 
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << TAILSCALEEOF
 set -e
 
 # Install Tailscale
-echo "[*] Installing Tailscale..."
+echo "[remote] Installing Tailscale..."
 curl -fsSL https://tailscale.com/install.sh | sh > /dev/null 2>&1
 
 # Start and authenticate Tailscale
-echo "[*] Authenticating with Tailscale..."
+echo "[remote] Authenticating with Tailscale..."
 tailscale up --authkey="$TAILSCALE_AUTHKEY" --ssh=${TAILSCALE_USE_SSH} --hostname="$TAILSCALE_NAME" > /dev/null 2>&1
 
 # Get Tailscale IP
 TAILSCALE_IP=\$(tailscale ip -4)
-echo "[*] Tailscale IP: \$TAILSCALE_IP"
+echo "[remote] Tailscale IP: \$TAILSCALE_IP"
 TAILSCALEEOF
 
     # Get the Tailscale IP for display
     TAILSCALE_IP=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale ip -4" 2>/dev/null)
 
-    echo "[*] Tailscale configured successfully"
-    echo "[*] Tailscale IP: $TAILSCALE_IP"
+    echo_info "Tailscale configured successfully"
+    echo_info "Tailscale IP: $TAILSCALE_IP"
 
     if [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
-        echo "[*] IMPORTANT: Management SSH is now ONLY accessible via Tailscale"
-        echo "[*]     Connect with: ssh root@$TAILSCALE_IP"
+        echo_info "IMPORTANT: Management SSH is now ONLY accessible via Tailscale"
+        echo_info "    Connect with: ssh root@$TAILSCALE_IP"
     fi
 else
-    echo "[*] Tailscale disabled, management SSH accessible via public IP"
+    echo_info "Tailscale disabled, management SSH accessible via public IP"
 fi
 
 # ============================================================
 # STEP 4 — Install Docker
 # ============================================================
 
-echo "[*] Installing Docker..."
+echo_info "Installing Docker..."
 
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
 set -e
@@ -339,13 +355,13 @@ systemctl enable docker > /dev/null 2>&1
 systemctl start docker > /dev/null
 EOF
 
-echo "[*] Docker installed."
+echo_info "Docker installed."
 
 # ============================================================
 # STEP 5 — Configure automatic updates and security
 # ============================================================
 
-echo "[*] Configuring automatic security updates..."
+echo_info "Configuring automatic security updates..."
 
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
 set -e
@@ -382,16 +398,16 @@ AUTOEOF
 # Ensure Docker starts on boot (for Cowrie auto-restart)
 systemctl enable docker > /dev/null 2>&1
 
-echo "[*] Automatic updates configured for ALL packages (will reboot at 3 AM if needed)"
+echo "[remote] Automatic updates configured for ALL packages (will reboot at 3 AM if needed)"
 EOF
 
-echo "[*] Security configuration complete."
+echo_info "Security configuration complete."
 
 # ============================================================
 # STEP 6 — Upload configuration
 # ============================================================
 
-echo "[*] Uploading Cowrie configuration..."
+echo_info "Uploading Cowrie configuration..."
 
 # Create remote directory structure
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
@@ -407,53 +423,51 @@ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERRO
 
 # Generate and upload cmdoutput.json for realistic process list
 if [ -f "$IDENTITY_DIR/ps.txt" ]; then
-    echo "[*] Generating cmdoutput.json from ps.txt..."
+    echo_info "Generating cmdoutput.json from ps.txt..."
 
     # Generate cmdoutput.json using the converter script
     if command -v uv &> /dev/null; then
-        uv run --quiet scripts/ps-to-cmdoutput.py "$IDENTITY_DIR/ps.txt" /tmp/cmdoutput.json
-    else
-        echo "[!] Warning: uv not found. Cannot generate cmdoutput.json."
-        echo "[*] fs.pickle uploaded (cmdoutput.json generation skipped)."
-    fi
+        CMDOUTPUT_TMP=$(create_temp_file ".json")
+        uv run --quiet scripts/ps-to-cmdoutput.py "$IDENTITY_DIR/ps.txt" "$CMDOUTPUT_TMP"
 
-    # Upload cmdoutput.json if it was generated
-    if [ -f /tmp/cmdoutput.json ]; then
+        # Upload cmdoutput.json
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-            /tmp/cmdoutput.json "root@$SERVER_IP:/opt/cowrie/share/cowrie/cmdoutput.json" > /dev/null
-        rm /tmp/cmdoutput.json
-        echo "[*] fs.pickle and cmdoutput.json uploaded."
+            "$CMDOUTPUT_TMP" "root@$SERVER_IP:/opt/cowrie/share/cowrie/cmdoutput.json" > /dev/null
+        echo_info "fs.pickle and cmdoutput.json uploaded."
+    else
+        echo_warn " Warning: uv not found. Cannot generate cmdoutput.json."
+        echo_info "fs.pickle uploaded (cmdoutput.json generation skipped)."
     fi
 else
-    echo "[!] Error ps.txt not found, exiting."
+    echo_warn " Error ps.txt not found, exiting."
     exit 1
 fi
 
 # Upload contents directory for real file content
 CONTENTS_DIR="$OUTPUT_DIR/contents"
 if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A $CONTENTS_DIR 2>/dev/null)" ]; then
-    echo "[*] Uploading file contents..."
+    echo_info "Uploading file contents..."
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
         "mkdir -p /opt/cowrie/share/cowrie/contents"
 
     # Upload contents as tarball for efficiency (--no-xattrs to avoid macOS extended attributes)
-    tar --no-xattrs -czf /tmp/contents.tar.gz -C "$CONTENTS_DIR" . 2>/dev/null
+    CONTENTS_TAR=$(create_temp_file ".tar.gz")
+    tar --no-xattrs -czf "$CONTENTS_TAR" -C "$CONTENTS_DIR" . 2>/dev/null
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-        /tmp/contents.tar.gz "root@$SERVER_IP:/tmp/contents.tar.gz" > /dev/null
+        "$CONTENTS_TAR" "root@$SERVER_IP:/tmp/contents.tar.gz" > /dev/null
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
         "cd /opt/cowrie/share/cowrie/contents && tar xzf /tmp/contents.tar.gz && rm /tmp/contents.tar.gz"
-    rm /tmp/contents.tar.gz
 
     FILE_COUNT=$(find "$CONTENTS_DIR" -type f | wc -l | tr -d ' ')
-    echo "[*] Uploaded $FILE_COUNT files with real content"
+    echo_info "Uploaded $FILE_COUNT files with real content"
 else
-    echo "[!] Warning: No contents directory found, files will have no content"
+    echo_warn " Warning: No contents directory found, files will have no content"
 fi
 
 # Upload txtcmds directory for real command output
 CONTENTS_DIR="$OUTPUT_DIR/txtcmds"
 if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A $CONTENTS_DIR 2>/dev/null)" ]; then
-    echo "[*] Uploading txtcmds contents..."
+    echo_info "Uploading txtcmds contents..."
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
         "mkdir -p /opt/cowrie/share/cowrie/txtcmds"
 
@@ -466,16 +480,16 @@ if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A $CONTENTS_DIR 2>/dev/null)" ]; then
     rm /tmp/txtcmds.tar.gz
 
     FILE_COUNT=$(find "$CONTENTS_DIR" -type f | wc -l | tr -d ' ')
-    echo "[*] Uploaded $FILE_COUNT files with txtcmds content"
+    echo_info "Uploaded $FILE_COUNT files with txtcmds content"
 else
-    echo "[!] Warning: No txtcmds directory found"
+    echo_warn " Warning: No txtcmds directory found"
 fi
 
 # ============================================================
 # STEP 6.5 — Upload IP-Lock Authentication Plugin
 # ============================================================
 
-echo "[*] Uploading IP-Lock authentication plugin..."
+echo_info "Uploading IP-Lock authentication plugin..."
 
 # Create plugins directory
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
@@ -485,9 +499,9 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERRO
 if [ -f "./cowrie-plugins/output_iplock.py" ]; then
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
         ./cowrie-plugins/output_iplock.py "root@$SERVER_IP:/opt/cowrie/plugins/" > /dev/null
-    echo "[*] IP-Lock plugin uploaded successfully"
+    echo_info "IP-Lock plugin uploaded successfully"
 else
-    echo "[!] Warning: IP-Lock plugin not found at ./cowrie-plugins/output_iplock.py"
+    echo_warn " Warning: IP-Lock plugin not found at ./cowrie-plugins/output_iplock.py"
 fi
 
 # ============================================================
@@ -495,7 +509,7 @@ fi
 # STEP 7 — Generate cowrie.cfg
 # ============================================================
 
-echo "[*] Generating cowrie.cfg with identity data..."
+echo_info "Generating cowrie.cfg with identity data..."
 
 # Read identity data
 KERNEL_VERSION=$(cat "$IDENTITY_DIR/kernel.txt" | awk '{print $3}')
@@ -587,7 +601,7 @@ collection = cowrie
 # Optional: Custom comment text (default: Cowrie attribution)
 commenttext = First seen by #Cowrie SSH/telnet Honeypot http://github.com/cowrie/cowrie
 EOFVT
-    echo "[*] VirusTotal integration enabled in cowrie.cfg"
+    echo_info "VirusTotal integration enabled in cowrie.cfg"
 fi
 
 # Add DShield configuration if enabled
@@ -600,7 +614,7 @@ userid = $DSHIELD_USERID
 auth_key = $DSHIELD_AUTH_KEY
 batch_size = $DSHIELD_BATCH_SIZE
 EOFDSHIELD
-    echo "[*] DShield data sharing enabled in cowrie.cfg"
+    echo_info "DShield data sharing enabled in cowrie.cfg"
 fi
 
 # Add GreyNoise configuration if enabled
@@ -618,7 +632,7 @@ EOFGREYNOISE
         echo "api_key = $GREYNOISE_API_KEY" >> /tmp/cowrie.cfg
     fi
 
-    echo "[*] GreyNoise threat intelligence lookup enabled in cowrie.cfg"
+    echo_info "GreyNoise threat intelligence lookup enabled in cowrie.cfg"
 fi
 
 # Upload cowrie.cfg
@@ -627,13 +641,13 @@ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERRO
 
 rm /tmp/cowrie.cfg
 
-echo "[*] Configuration uploaded."
+echo_info "Configuration uploaded."
 
 # ============================================================
 # STEP 8 — Deploy Cowrie container
 # ============================================================
 
-echo "[*] Starting Cowrie container..."
+echo_info "Starting Cowrie container..."
 
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
 set -e
@@ -671,7 +685,7 @@ volumes:
     name: cowrie-var
 DOCKEREOF
 
-echo "[*] Initializing Cowrie volumes with custom configuration..."
+echo "[remote] Initializing Cowrie volumes with custom configuration..."
 
 # Start container briefly to initialize volumes
 cd /opt/cowrie
@@ -680,7 +694,7 @@ sleep 10
 docker compose stop > /dev/null 2>&1
 
 # Copy cowrie.cfg into etc volume
-echo "[*] Copying cowrie.cfg to volume..."
+echo "[remote] Copying cowrie.cfg to volume..."
 docker run --rm \
   -v cowrie-etc:/dest \
   -v /opt/cowrie/etc/cowrie.cfg:/src/cowrie.cfg:ro \
@@ -693,7 +707,7 @@ docker run --rm \
   alpine chown -R 999:999 /etc /var > /dev/null 2>&1
 
 # Start Cowrie with custom configuration
-echo "[*] Starting Cowrie with custom configuration..."
+echo "[remote] Starting Cowrie with custom configuration..."
 cd /opt/cowrie
 docker compose up -d > /dev/null 2>&1
 
@@ -704,20 +718,20 @@ sleep 5
 docker compose ps > /dev/null || exit 1
 EOF
 
-echo "[*] Cowrie container started."
+echo_info "Cowrie container started."
 
 # ============================================================
 # STEP 9 — Test honeypot
 # ============================================================
 
-echo "[*] Testing honeypot (this may take a moment)..."
+echo_info "Testing honeypot (this may take a moment)..."
 sleep 5
 
 # Test if port 22 responds with SSH
 if timeout 15 bash -c "echo | nc $SERVER_IP 22" 2>/dev/null | grep -q "SSH"; then
-    echo "[*] Honeypot is responding on port 22!"
+    echo_info "Honeypot is responding on port 22!"
 else
-    echo "[!] Warning: Honeypot may not be responding correctly on port 22"
+    echo_warn " Warning: Honeypot may not be responding correctly on port 22"
 fi
 
 # ============================================================
@@ -725,7 +739,7 @@ fi
 # ============================================================
 
 if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
-    echo "[*] Setting up MaxMind GeoIP auto-updates..."
+    echo_info "Setting up MaxMind GeoIP auto-updates..."
 
     # Extract MaxMind credentials from master config
     MAXMIND_ACCOUNT_ID=$(grep "maxmind_account_id" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
@@ -763,13 +777,13 @@ geoipupdate
 (crontab -l 2>/dev/null || echo "") | grep -v geoipupdate | crontab -
 (crontab -l; echo "0 3 * * 3 /usr/bin/geoipupdate") | crontab -
 
-echo "[*] MaxMind GeoIP databases downloaded and auto-update configured"
+echo "[remote] MaxMind GeoIP databases downloaded and auto-update configured"
 MAXMINDEOF
 
-        echo "[*] MaxMind GeoIP configured successfully"
+        echo_info "MaxMind GeoIP configured successfully"
     else
-        echo "[!] Warning: MaxMind credentials not found in master-config.toml"
-        echo "[!] GeoIP enrichment will not be available"
+        echo_warn " Warning: MaxMind credentials not found in master-config.toml"
+        echo_warn " GeoIP enrichment will not be available"
     fi
 fi
 
@@ -778,7 +792,7 @@ fi
 # ============================================================
 
 if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
-    echo "[*] Setting up Postfix for Scaleway Transactional Email..."
+    echo_info "Setting up Postfix for Scaleway Transactional Email..."
 
     # Extract SMTP credentials and domain from master config
     SMTP_USER=$(grep "smtp_user" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
@@ -843,13 +857,13 @@ postmap /etc/postfix/sasl_passwd
 systemctl restart postfix
 systemctl enable postfix > /dev/null 2>&1
 
-echo "[*] Postfix configured for Scaleway Transactional Email"
+echo "[remote] Postfix configured for Scaleway Transactional Email"
 POSTFIXEOF
 
-        echo "[*] Postfix configured successfully"
+        echo_info "Postfix configured successfully"
 
         # Send test email to verify configuration
-        echo "[*] Sending test email..."
+        echo_info "Sending test email..."
         EMAIL_TO=$(grep "email_to" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
         EMAIL_FROM=$(grep "email_from" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
 
@@ -874,13 +888,13 @@ You will receive daily reports from this honeypot at the configured interval.
 " | mail -s "[Honeypot] Test Email - Configuration Successful" -a "From: $EMAIL_FROM" "$EMAIL_TO"
 
 TESTEMAILEOF
-            echo "[*] Test email sent to $EMAIL_TO"
+            echo_info "Test email sent to $EMAIL_TO"
         else
-            echo "[!] Warning: Email addresses not found in master-config.toml, skipping test email"
+            echo_warn " Warning: Email addresses not found in master-config.toml, skipping test email"
         fi
     else
-        echo "[!] Warning: SMTP credentials not found in master-config.toml"
-        echo "[!] Email delivery will not be available"
+        echo_warn " Warning: SMTP credentials not found in master-config.toml"
+        echo_warn " Email delivery will not be available"
     fi
 fi
 
@@ -889,20 +903,20 @@ fi
 # ============================================================
 
 if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
-    echo "[*] Setting up automated reporting..."
+    echo_info "Setting up automated reporting..."
 
     # Process master config to generate server config
-    echo "[*] Processing master-config.toml..."
+    echo_info "Processing master-config.toml..."
     if command -v uv &> /dev/null; then
         uv run --quiet scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env
     else
-        echo "[!] Error: Neither uv nor python3 found. Cannot process config."
+        echo_warn " Error: Neither uv nor python3 found. Cannot process config."
         exit 1
     fi
 
     if [ -f /tmp/server-report.env ]; then
         # Upload toolkit files to server
-        echo "[*] Uploading reporting toolkit..."
+        echo_info "Uploading reporting toolkit..."
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
             scripts README.md pyproject.toml /tmp/server-report.env "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
 
@@ -911,21 +925,21 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
             "mv /opt/cowrie/server-report.env /opt/cowrie/etc/report.env && chmod 600 /opt/cowrie/etc/report.env"
 
         # Run setup-reporting.sh on the server
-        echo "[*] Running setup-reporting.sh on server..."
+        echo_info "Running setup-reporting.sh on server..."
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'REPORTEOF'
 cd /opt/cowrie
 chmod +x scripts/setup-reporting.sh scripts/daily-report.py scripts/process-config.py
 ./scripts/setup-reporting.sh
 REPORTEOF
 
-        echo "[*] Reporting configured successfully"
+        echo_info "Reporting configured successfully"
         rm -f /tmp/server-report.env
     else
-        echo "[!] Error: Failed to process config. Skipping automated reporting setup."
+        echo_warn " Error: Failed to process config. Skipping automated reporting setup."
         exit 1
     fi
 else
-    echo "[*] Reporting disabled or master-config.toml not found, skipping reporting setup"
+    echo_info "Reporting disabled or master-config.toml not found, skipping reporting setup"
 fi
 
 # ============================================================
@@ -933,22 +947,22 @@ fi
 # ============================================================
 
 if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
-    echo "[*] Setting up SSH Session Playback Web Dashboard..."
+    echo_info "Setting up SSH Session Playback Web Dashboard..."
 
     # Build WEB_BASE_URL from Tailscale settings if available
     WEB_BASE_URL=""
     if [ "$ENABLE_TAILSCALE" = "true" ] && [ -n "$TAILSCALE_NAME" ] && [ -n "$TAILSCALE_DOMAIN" ]; then
         WEB_BASE_URL="https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
-        echo "[*] Web dashboard base URL: $WEB_BASE_URL"
+        echo_info "Web dashboard base URL: $WEB_BASE_URL"
     fi
 
     # Upload web service files
-    echo "[*] Uploading web service files..."
+    echo_info "Uploading web service files..."
     scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
         web "root@$SERVER_IP:/opt/cowrie/" || {
-            echo "[!] Error: Failed to upload web service files"
-            echo "[!] This usually means the web/ directory is missing from your local directory"
-            echo "[!] Make sure you're running the script from the cowrie-deploy-toolkit directory"
+            echo_warn " Error: Failed to upload web service files"
+            echo_warn " This usually means the web/ directory is missing from your local directory"
+            echo_warn " Make sure you're running the script from the cowrie-deploy-toolkit directory"
             exit 1
         }
 
@@ -961,7 +975,7 @@ if [ -d /var/lib/docker/volumes/cowrie-var/_data ]; then
     mkdir -p /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty
     chown -R 999:999 /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty
 else
-    echo "[*] Cowrie volume not yet created, will be created by docker compose"
+    echo "[remote] Cowrie volume not yet created, will be created by docker compose"
 fi
 
 # Ensure GeoIP directory exists (web dashboard needs it even if reporting is disabled)
@@ -1040,47 +1054,47 @@ DOCKEREOF
 
 # Build and start web service
 cd /opt/cowrie
-echo "[*] Building web dashboard container (this may take a minute)..."
+echo "[remote] Building web dashboard container (this may take a minute)..."
 docker compose build --quiet cowrie-web 2>&1 | grep -E "ERROR|WARN" || true
-echo "[*] Starting services..."
+echo "[remote] Starting services..."
 docker compose up -d --quiet-pull > /dev/null 2>&1
 
-echo "[*] Web dashboard deployed on localhost:5000"
-echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
+echo "[remote] Web dashboard deployed on localhost:5000"
+echo "[remote] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
 
 # Configure Tailscale Serve if Tailscale is enabled
 if command -v tailscale &> /dev/null; then
-    echo "[*] Configuring Tailscale Serve for web dashboard..."
+    echo "[remote] Configuring Tailscale Serve for web dashboard..."
     tailscale serve --bg --https=443 5000 > /dev/null 2>&1
 
     # Add @reboot cron job to ensure Tailscale Serve persists after reboot
     (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve" | crontab -
     (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 5000 > /dev/null 2>&1") | crontab -
 
-    echo "[*] Web dashboard available at: https://\$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
+    echo "[remote] Web dashboard available at: https://\$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
 fi
 WEBEOF
 
-    echo "[*] Web dashboard configured successfully"
+    echo_info "Web dashboard configured successfully"
     if [ "$ENABLE_TAILSCALE" = "true" ] && [ -n "$TAILSCALE_DOMAIN" ]; then
         # Use configured Tailscale name and domain
-        echo "[*] Web dashboard available at: https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
+        echo_info "Web dashboard available at: https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
     elif [ "$ENABLE_TAILSCALE" = "true" ]; then
         # Tailscale enabled but no domain configured - query from Tailscale
         TAILSCALE_FQDN=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo '${TAILSCALE_NAME}'")
-        echo "[*] Web dashboard available at: https://$TAILSCALE_FQDN"
+        echo_info "Web dashboard available at: https://$TAILSCALE_FQDN"
     else
-        echo "[*] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
+        echo_info "Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
     fi
 else
-    echo "[*] Web dashboard disabled, skipping setup"
+    echo_info "Web dashboard disabled, skipping setup"
 fi
 
 # ============================================================
 # STEP 14 — Set up automatic Docker image updates
 # ============================================================
 
-echo "[*] Setting up automatic Docker image updates..."
+echo_info "Setting up automatic Docker image updates..."
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'AUTOUPDATEEOF'
 # Make auto-update script executable
 chmod +x /opt/cowrie/scripts/auto-update-docker.sh
@@ -1089,10 +1103,10 @@ chmod +x /opt/cowrie/scripts/auto-update-docker.sh
 (crontab -l 2>/dev/null || echo "") | grep -v "auto-update-docker.sh" | crontab -
 (crontab -l; echo "0 3 * * * /opt/cowrie/scripts/auto-update-docker.sh >> /var/log/cowrie-auto-update.log 2>&1") | crontab -
 
-echo "[*] Cron job installed for daily Docker updates at 3 AM"
+echo "[remote] Cron job installed for daily Docker updates at 3 AM"
 AUTOUPDATEEOF
 
-echo "[*] Automatic Docker updates configured"
+echo_info "Automatic Docker updates configured"
 
 # ============================================================
 # DONE

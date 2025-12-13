@@ -128,7 +128,19 @@ greynoise_debug = false  # Enable debug logging
 # Report generation interval (hours)
 report_hours = 24
 
-# Paths (usually don't need to change these)
+# Deployment paths (usually don't need to change these)
+[advanced.paths]
+# Base directory for Cowrie installation on server
+cowrie_base = "/opt/cowrie"
+
+# Docker volume paths
+docker_volumes_base = "/var/lib/docker/volumes"
+cowrie_var_volume = "/var/lib/docker/volumes/cowrie-var/_data"
+
+# GeoIP database directory
+geoip_dir = "/var/lib/GeoIP"
+
+# Reporting paths (automatically derived from above if not specified)
 log_path = "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json"
 download_path = "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
 tty_path = "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty"
@@ -136,3 +148,4 @@ geoip_db_path = "/var/lib/GeoIP/GeoLite2-City.mmdb"
 geoip_asn_path = "/var/lib/GeoIP/GeoLite2-ASN.mmdb"
 yara_rules_path = "/opt/cowrie/yara-rules"
 cache_db_path = "/opt/cowrie/var/report-cache.db"
+yara_cache_db_path = "/opt/cowrie/var/yara-cache.db"

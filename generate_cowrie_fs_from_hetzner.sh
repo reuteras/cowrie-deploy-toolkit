@@ -1,112 +1,141 @@
 #!/usr/bin/env bash
-set -euo pipefail
+
+# ============================================================
+# Cowrie Filesystem Generator
+# ============================================================
+# Creates a realistic filesystem snapshot from a fresh Hetzner server
+# with anti-fingerprinting and authentic identity capture.
+# ============================================================
+
+# Load common functions library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/common.sh
+source "$SCRIPT_DIR/scripts/common.sh"
+
+# ============================================================
+# DEPENDENCY CHECKS
+# ============================================================
+
+echo_info "Checking required dependencies..."
+check_dependencies "hcloud" "jq" "nc" "tar" "ssh" "scp" "python3"
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
 
-# Default configuration (will be overridden by master-config.toml if present)
-SERVER_TYPE="cpx11"              # cheapest and fast enough
-SERVER_IMAGE="debian-13"
-SSH_KEY_NAME1="SSH Key - default"          # must exist in your hcloud account
-HONEYPOT_HOSTNAME="dmz-web01"    # Realistic hostname for the honeypot
-
-# Check for master-config.toml and read deployment settings
+# Master config file
 MASTER_CONFIG="./master-config.toml"
-if [ -f "$MASTER_CONFIG" ]; then
-    echo "[*] Found master-config.toml, reading deployment settings..."
 
-    # Read deployment section if present
-    if grep -q "\[deployment\]" "$MASTER_CONFIG" 2>/dev/null; then
-        # Extract server_type (match: server_type = "value" and extract value)
-        CONFIG_SERVER_TYPE=$(grep "^server_type" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-        [ -n "$CONFIG_SERVER_TYPE" ] && SERVER_TYPE="$CONFIG_SERVER_TYPE"
-
-        # Extract server_image
-        CONFIG_SERVER_IMAGE=$(grep "^server_image" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-        [ -n "$CONFIG_SERVER_IMAGE" ] && SERVER_IMAGE="$CONFIG_SERVER_IMAGE"
-
-        # Extract honeypot_hostname
-        CONFIG_HOSTNAME=$(grep "^honeypot_hostname" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
-        [ -n "$CONFIG_HOSTNAME" ] && HONEYPOT_HOSTNAME="$CONFIG_HOSTNAME"
-
-        # Extract SSH keys from array (parse ["key1", "key2"] format)
-        SSH_KEYS_LINE=$(grep "^ssh_keys" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *\[(.*)\]/\1/')
-        if [ -n "$SSH_KEYS_LINE" ]; then
-            # Extract first and second keys
-            SSH_KEY_NAME1=$(echo "$SSH_KEYS_LINE" | sed -E 's/"([^"]+)".*/\1/')
-            SSH_KEY_NAME2=$(echo "$SSH_KEYS_LINE" | sed -E 's/[^,]*, *"([^"]+)".*/\1/')
-        fi
-
-        echo "[*] Using config: $SERVER_TYPE, $SERVER_IMAGE, hostname=$HONEYPOT_HOSTNAME"
-    fi
-else
-    echo "[!] Error: No master-config.toml found"
-    exit 1
+# Check if master config exists
+if [ ! -f "$MASTER_CONFIG" ]; then
+    fatal_error "No master-config.toml found. Please copy example-config.toml and configure it."
 fi
 
+echo_info "Found master-config.toml, reading deployment settings..."
+
+# Read configuration using Python TOML parser
+SERVER_TYPE=$(read_toml_default "$MASTER_CONFIG" "deployment.server_type" "cpx11")
+SERVER_IMAGE=$(read_toml_default "$MASTER_CONFIG" "deployment.server_image" "debian-13")
+HONEYPOT_HOSTNAME=$(read_toml_default "$MASTER_CONFIG" "deployment.honeypot_hostname" "dmz-web01")
+
+# Read SSH keys array
+SSH_KEYS=()
+read_toml_array "$MASTER_CONFIG" "deployment.ssh_keys" SSH_KEYS
+
+if [ ${#SSH_KEYS[@]} -lt 1 ]; then
+    fatal_error "SSH keys not configured in master-config.toml. Please add deployment.ssh_keys array."
+fi
+
+echo_info "Loaded ${#SSH_KEYS[@]} SSH key(s) from config:"
+for key in "${SSH_KEYS[@]}"; do
+    echo "  - $key"
+done
+
+# Validate configuration
+validate_safe_string "$HONEYPOT_HOSTNAME" || fatal_error "Invalid hostname: $HONEYPOT_HOSTNAME (only alphanumeric, dash, underscore, dot allowed)"
+
+echo_info "Using config: $SERVER_TYPE, $SERVER_IMAGE, hostname=$HONEYPOT_HOSTNAME"
+
+# Output directory setup
 SERVER_NAME="cowrie-source-$(date +%s)"
 OUTPUT_DIR="./output_$(date +%Y%m%d_%H%M%S)"
 IDENTITY_DIR="$OUTPUT_DIR/identity"
 
-# SSH options to avoid host key conflicts
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
-
-echo "[*] Output directory: $OUTPUT_DIR"
+echo_info "Output directory: $OUTPUT_DIR"
 mkdir -p "$IDENTITY_DIR"
 
 # ============================================================
 # STEP 1 — Create temporary server
 # ============================================================
 
-echo "[*] Creating temporary Hetzner server: $SERVER_NAME"
+echo_info "Creating temporary Hetzner server: $SERVER_NAME"
 
-SERVER_ID=$(hcloud server create \
-    --name "$SERVER_NAME" \
-    --type "$SERVER_TYPE" \
-    --image "$SERVER_IMAGE" \
-    --ssh-key "$SSH_KEY_NAME1" \
-    --ssh-key "$SSH_KEY_NAME2" \
-    --output json 2> /dev/null | jq -r '.server.id')
+# Build hcloud command with all SSH keys using array (proper quote handling)
+HCLOUD_CMD=(hcloud server create --name "$SERVER_NAME" --type "$SERVER_TYPE" --image "$SERVER_IMAGE")
+for key in "${SSH_KEYS[@]}"; do
+    HCLOUD_CMD+=(--ssh-key "$key")
+done
+HCLOUD_CMD+=(--output json)
 
-echo "[*] Server created with ID: $SERVER_ID"
+# Execute server creation
+SERVER_CREATION_OUTPUT=$("${HCLOUD_CMD[@]}" 2>&1)
+EXIT_CODE=$?
 
-# Set up cleanup on error
-cleanup_on_error() {
-    echo ""
-    echo "[!] Filesystem generation failed! Cleaning up..."
-    echo "[*] Deleting server $SERVER_ID..."
-    hcloud server delete "$SERVER_ID" 2>/dev/null || true
-    echo "[*] Server deleted."
-    exit 1
-}
+# Try to extract server ID even if command failed (server might have been created)
+# Extract JSON from output (everything from first { to end)
+JSON_OUTPUT=$(echo "$SERVER_CREATION_OUTPUT" | sed -n '/{/,$p')
+SERVER_ID=$(echo "$JSON_OUTPUT" | jq -r '.server.id' 2>/dev/null)
 
-trap cleanup_on_error ERR
+# If server was created, set up cleanup immediately
+if [ -n "$SERVER_ID" ] && [ "$SERVER_ID" != "null" ]; then
+    validate_server_id "$SERVER_ID" || fatal_error "Invalid server ID received: $SERVER_ID"
+    echo_info "Server created with ID: $SERVER_ID"
+
+    # Set up cleanup on error IMMEDIATELY
+    setup_server_cleanup_trap "$SERVER_ID"
+fi
+
+# Now check if creation actually failed
+if [ $EXIT_CODE -ne 0 ]; then
+    if [ -n "$SERVER_ID" ] && [ "$SERVER_ID" != "null" ]; then
+        # Server was created but command failed - cleanup trap will handle it
+        fatal_error "Server creation command failed: $SERVER_CREATION_OUTPUT"
+    else
+        # Server was not created, exit without cleanup
+        fatal_error "Failed to create server: $SERVER_CREATION_OUTPUT"
+    fi
+fi
+
+# Double-check we have a valid server ID
+if [ -z "$SERVER_ID" ] || [ "$SERVER_ID" = "null" ]; then
+    fatal_error "Failed to extract server ID from Hetzner response"
+fi
 
 # Wait for it to get an IP
-echo "[*] Waiting for server IP..."
+echo_info "Waiting for server IP..."
 sleep 5
 
-SERVER_IP=$(hcloud server describe "$SERVER_ID" --output json | jq -r '.public_net.ipv4.ip')
+SERVER_IP=$(hcloud server describe "$SERVER_ID" --output json 2>&1 | jq -r '.public_net.ipv4.ip' 2>/dev/null)
+if [ -z "$SERVER_IP" ] || [ "$SERVER_IP" = "null" ]; then
+    fatal_error "Failed to get server IP address"
+fi
 
-echo "[*] Server IP: $SERVER_IP"
+# Validate IP address
+validate_ip "$SERVER_IP" || fatal_error "Invalid IP address received: $SERVER_IP"
+
+echo_info "Server IP: $SERVER_IP"
 
 # ============================================================
 # STEP 2 — SSH readiness check
 # ============================================================
 
-echo -n "[*] Waiting for SSH to become available"
-until ssh $SSH_OPTS -o ConnectTimeout=3 "root@$SERVER_IP" "echo -n ." 2>/dev/null; do
-    printf "."
-    sleep 3
-done
-echo "[*] SSH is ready."
+wait_for_ssh "root@$SERVER_IP" 22 120
 
 # ============================================================
 # STEP 3 — Configure system identity
 # ============================================================
 
-echo "[*] Setting hostname to $HONEYPOT_HOSTNAME and installing services..."
+echo_info " Setting hostname to $HONEYPOT_HOSTNAME and installing services..."
 
 ssh $SSH_OPTS "root@$SERVER_IP" bash << EOF
 set -e
@@ -116,7 +145,7 @@ echo "127.0.0.1 localhost $HONEYPOT_HOSTNAME" > /etc/hosts
 echo "::1 localhost ip6-localhost ip6-loopback $HONEYPOT_HOSTNAME" >> /etc/hosts
 
 # Install nginx, MySQL/MariaDB, PHP and WordPress for realistic services
-echo "[*] Installing nginx, MariaDB, PHP, and WordPress..."
+echo "[remote] Installing nginx, MariaDB, PHP, and WordPress..."
 DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
 DEBIAN_FRONTEND=noninteractive apt-get install -qq -y nginx mariadb-server php-fpm php-mysql wordpress > /dev/null
 
@@ -129,22 +158,22 @@ systemctl start mariadb
 # Wait for services to fully start
 sleep 3
 
-echo "[*] Hostname set to $HONEYPOT_HOSTNAME, services installed and running"
+echo "[remote] Hostname set to $HONEYPOT_HOSTNAME, services installed and running"
 EOF
 
 # ============================================================
 # STEP 3.5 — Configure WordPress and setup fake data
 # ============================================================
 
-echo "[*] Setting up WordPress with fake database..."
+echo_info " Setting up WordPress with fake database..."
 
 # Upload fake WordPress database SQL file
 FAKE_WP_DB="./fake-data/wordpress-db.sql"
 if [ -f "$FAKE_WP_DB" ]; then
     scp $SSH_OPTS "$FAKE_WP_DB" "root@$SERVER_IP:/tmp/wordpress-db.sql" > /dev/null
-    echo "[*] Uploaded fake WordPress database"
+    echo_info " Uploaded fake WordPress database"
 else
-    echo "[!] Warning: $FAKE_WP_DB not found, skipping WordPress database setup"
+    echo_warn " Warning: $FAKE_WP_DB not found, skipping WordPress database setup"
 fi
 
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOF'
@@ -158,7 +187,7 @@ if [ -f /tmp/wordpress-db.sql ]; then
     mysql -e "FLUSH PRIVILEGES;"
     mysql wordpress_db < /tmp/wordpress-db.sql
     rm /tmp/wordpress-db.sql
-    echo "[*] WordPress database created and populated"
+    echo "[remote] WordPress database created and populated"
 fi
 
 # Configure WordPress to use database
@@ -192,14 +221,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once ABSPATH . 'wp/wp-settings.php';
 WPCONFIG
 
-echo "[*] WordPress configuration created at /var/www/html/blog/wp-config.php"
+echo "[remote] WordPress configuration created at /var/www/html/blog/wp-config.php"
 EOF
 
 # ============================================================
 # STEP 3.6 — Setup Canary Token files
 # ============================================================
 
-echo "[*] Setting up Canary Token files in /root/backup..."
+echo_info " Setting up Canary Token files in /root/backup..."
 
 # Create /root/backup directory on remote server
 ssh $SSH_OPTS "root@$SERVER_IP" "mkdir -p /root/backup"
@@ -211,7 +240,7 @@ CANARY_UPLOADED=false
 # MySQL dump Canary Token
 if [ -f "$CANARY_DIR/mysql-backup.sql" ]; then
     scp $SSH_OPTS "$CANARY_DIR/mysql-backup.sql" "root@$SERVER_IP:/root/backup/mysql-backup.sql" > /dev/null
-    echo "[*] Uploaded MySQL backup Canary Token to /root/backup/mysql-backup.sql"
+    echo_info " Uploaded MySQL backup Canary Token to /root/backup/mysql-backup.sql"
     CANARY_UPLOADED=true
 fi
 
@@ -219,7 +248,7 @@ fi
 EXCEL_TOKEN=$(find "$CANARY_DIR" -maxdepth 1 -name "*.xlsx" -type f 2>/dev/null | head -1)
 if [ -n "$EXCEL_TOKEN" ]; then
     scp $SSH_OPTS "$EXCEL_TOKEN" "root@$SERVER_IP:/root/Q1_Financial_Report.xlsx" > /dev/null
-    echo "[*] Uploaded Excel Canary Token to /root/Q1_Financial_Report.xlsx"
+    echo_info " Uploaded Excel Canary Token to /root/Q1_Financial_Report.xlsx"
     CANARY_UPLOADED=true
 fi
 
@@ -227,23 +256,23 @@ fi
 PDF_TOKEN=$(find "$CANARY_DIR" -maxdepth 1 -name "*.pdf" -type f 2>/dev/null | head -1)
 if [ -n "$PDF_TOKEN" ]; then
     scp $SSH_OPTS "$PDF_TOKEN" "root@$SERVER_IP:/root/Network_Passwords.pdf" > /dev/null
-    echo "[*] Uploaded PDF Canary Token to /root/Network_Passwords.pdf"
+    echo_info " Uploaded PDF Canary Token to /root/Network_Passwords.pdf"
     CANARY_UPLOADED=true
 fi
 
 if [ "$CANARY_UPLOADED" = false ]; then
-    echo "[!] Warning: No Canary Token files found in $CANARY_DIR/"
-    echo "[!]          Create tokens at https://canarytokens.org/nest/ and place them in:"
-    echo "[!]            - $CANARY_DIR/mysql-backup.sql (MySQL dump token)"
-    echo "[!]            - $CANARY_DIR/*.xlsx (Excel document token)"
-    echo "[!]            - $CANARY_DIR/*.pdf (PDF document token)"
+    echo_warn " Warning: No Canary Token files found in $CANARY_DIR/"
+    echo_warn "          Create tokens at https://canarytokens.org/nest/ and place them in:"
+    echo_warn "            - $CANARY_DIR/mysql-backup.sql (MySQL dump token)"
+    echo_warn "            - $CANARY_DIR/*.xlsx (Excel document token)"
+    echo_warn "            - $CANARY_DIR/*.pdf (PDF document token)"
 fi
 
 # ============================================================
 # STEP 4 — Install createfs and requirements
 # ============================================================
 
-echo "[*] Installing requirements and createfs on remote host..."
+echo_info " Installing requirements and createfs on remote host..."
 
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOF'
 set -e
@@ -261,7 +290,7 @@ EOF
 # STEP 4 — Generate fs.pickle
 # ============================================================
 
-echo "[*] Running createfs (this may take a few minutes)..."
+echo_info " Running createfs (this may take a few minutes)..."
 
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOF'
 # Save createfs script to temp location before cleanup
@@ -274,7 +303,7 @@ cp -r /root/cowrie/.venv /tmp/.venv
 
 # CRITICAL: Remove Cowrie installation to prevent honeypot fingerprinting
 # Attackers can detect honeypots by finding /root/cowrie or similar directories
-echo "[*] Removing Cowrie installation from filesystem snapshot..."
+echo "[remote] Removing Cowrie installation from filesystem snapshot..."
 rm -rf /root/cowrie /root/.bash_history
 
 # Remove other potential honeypot indicators
@@ -309,13 +338,13 @@ make > /root/txtcmds/usr/bin/make 2>&1
 mount > /root/txtcmds/usr/bin/mount 2>&1
 EOF
 
-echo "[*] Filesystem pickle created (Cowrie directories excluded)."
+echo_info " Filesystem pickle created (Cowrie directories excluded)."
 
 # ============================================================
 # STEP 5 — Collect identity metadata
 # ============================================================
 
-echo "[*] Collecting identity metadata..."
+echo_info " Collecting identity metadata..."
 
 ssh $SSH_OPTS "root@$SERVER_IP" "uname -a"            > "$IDENTITY_DIR/kernel.txt"
 ssh $SSH_OPTS "root@$SERVER_IP" "cat /proc/version"   > "$IDENTITY_DIR/proc-version"
@@ -328,14 +357,14 @@ ssh $SSH_OPTS "root@$SERVER_IP" "cat /root/ps.txt"    > "$IDENTITY_DIR/ps.txt"
 # SSH banner
 nc -w 2 "$SERVER_IP" 22 | head -n1 > "$IDENTITY_DIR/ssh-banner.txt" || true
 
-echo "[*] Identity data saved to $IDENTITY_DIR"
-echo "[*]   - Process list (ps.txt) captured with nginx running"
+echo_info " Identity data saved to $IDENTITY_DIR"
+echo_info "   - Process list (ps.txt) captured with nginx running"
 
 # ============================================================
 # STEP 6 — Collect file contents for realistic honeypot
 # ============================================================
 
-echo "[*] Collecting file contents for Cowrie contents directory..."
+echo_info " Collecting file contents for Cowrie contents directory..."
 
 CONTENTS_DIR="$OUTPUT_DIR/contents"
 mkdir -p "$CONTENTS_DIR"
@@ -398,14 +427,14 @@ if [ -f "$CONTENTS_DIR/contents.tar.gz" ]; then
     tar xzf contents.tar.gz 2>/dev/null || true
     rm contents.tar.gz
     touch etc/issue.net
-    echo "[*] File contents collected ($(find . -type f | wc -l) files)"
+    echo_info " File contents collected ($(find . -type f | wc -l) files)"
     cd ../..
 else
-    echo "[!] Warning: Could not collect file contents"
+    echo_warn " Warning: Could not collect file contents"
 fi
 
 
-echo "[*] Collecting cmd output for Cowrie txtcmds directory..."
+echo_info " Collecting cmd output for Cowrie txtcmds directory..."
 
 # Copy defaults
 cp -r txtcmds $OUTPUT_DIR
@@ -424,10 +453,10 @@ if [ -f "$OUTPUT_DIR/txtcmds.tar.gz" ]; then
     cd "$OUTPUT_DIR"
     tar xzf txtcmds.tar.gz 2>/dev/null || true
     rm txtcmds.tar.gz
-    echo "[*] Command output contents collected ($(find txtcmds -type f | wc -l) files)"
+    echo_info " Command output contents collected ($(find txtcmds -type f | wc -l) files)"
     cd ..
 else
-    echo "[!] Warning: Could not collect command output contents for txtcmds"
+    echo_warn " Warning: Could not collect command output contents for txtcmds"
 fi
 
 # ============================================================
@@ -436,19 +465,19 @@ fi
 # STEP 7 — Download fs.pickle
 # ============================================================
 
-echo "[*] Downloading fs.pickle..."
+echo_info " Downloading fs.pickle..."
 scp $SSH_OPTS "root@$SERVER_IP:/root/fs.pickle" "$OUTPUT_DIR/fs.pickle" > /dev/null
 
-echo "[*] fs.pickle downloaded."
+echo_info " fs.pickle downloaded."
 
 # ============================================================
 # STEP 8 — Destroy server
 # ============================================================
 
-echo "[*] Deleting temporary server..."
+echo_info " Deleting temporary server..."
 hcloud server delete "$SERVER_ID"
 
-echo "[*] Temporary server deleted."
+echo_info " Temporary server deleted."
 
 # ============================================================
 # DONE

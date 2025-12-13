@@ -372,12 +372,25 @@ ssh root@cowrie-honeypot
 
 ## Web Dashboard (SSH Session Playback)
 
-The toolkit includes an optional web dashboard for viewing and replaying SSH sessions:
+The toolkit includes an optional web dashboard for viewing and replaying SSH sessions built with Flask.
 
-- **Dashboard** - Overview of attack statistics, top countries, credentials, and commands
-- **Session Browser** - List all sessions with filtering and search
-- **TTY Playback** - Watch recorded SSH sessions with asciinema-player
-- **Downloads Viewer** - Browse captured malware with VirusTotal links
+### Features
+
+- **📊 Dashboard** - Overview of attack statistics with top countries, credentials, commands, and attacking IPs
+- **🔍 Session Browser** - List all sessions with filtering by IP, username, and date range
+- **🎥 TTY Playback** - Watch recorded SSH sessions in real-time with asciinema-player
+- **📁 Malware Downloads** - Browse captured files with:
+  - VirusTotal threat intelligence (threat labels, categories, families)
+  - YARA rule matches from real-time scanning
+  - File type detection and categorization
+  - Direct links to VirusTotal analysis
+- **🌍 GeoIP Integration** - View attacker locations with ASN and organization data
+- **🔗 Email Integration** - Session links in daily reports link directly to TTY playback
+- **🔒 Security**:
+  - Only accessible via SSH tunnel or Tailscale VPN
+  - NOT exposed to public internet
+  - Docker container runs with capability dropping and read-only filesystem
+  - tmpfs for temporary files
 
 ### Enabling the Web Dashboard
 
@@ -388,6 +401,40 @@ Add to `master-config.toml`:
 enabled = true
 # Note: The base URL for session links in email reports is automatically
 # built from tailscale_name and tailscale_domain when Tailscale is enabled.
+```
+
+### Technical Implementation
+
+**Architecture:**
+- Flask web server running in Docker container
+- Reads Cowrie JSON logs directly (no database dependency)
+- Bind-mounted volumes for read-only access to logs, TTY recordings, and downloads
+- GeoIP lookup using MaxMind GeoLite2 databases
+- VirusTotal API integration with caching
+- YARA cache integration (reads from YARA scanner daemon's SQLite database)
+
+**Docker Networking:**
+- Runs on internal Docker network (`cowrie-internal`)
+- Exposed on `127.0.0.1:5000` (localhost only)
+- Tailscale Serve provides HTTPS access via Tailscale VPN
+
+**File Structure:**
+```
+web/
+├── app.py              # Flask application with all routes
+├── Dockerfile          # Container build definition
+├── docker-compose.web.yml  # Service configuration
+├── requirements.txt    # Python dependencies
+├── static/             # CSS, JavaScript, fonts
+│   ├── asciinema-player/  # TTY playback player
+│   └── styles.css
+├── templates/          # Jinja2 HTML templates
+│   ├── base.html       # Base template with navigation
+│   ├── index.html      # Dashboard overview
+│   ├── sessions.html   # Session list with filtering
+│   ├── session.html    # Individual session detail with TTY playback
+│   └── downloads.html  # Malware browser
+└── README.md           # Web dashboard documentation
 ```
 
 ### Accessing the Web Dashboard
@@ -535,6 +582,87 @@ Several other projects accept honeypot data contributions:
 - Ensure compliance with local privacy laws (GDPR, etc.)
 - Most services anonymize or aggregate data
 - You control what data is shared via Cowrie output modules
+
+## Real-Time YARA Malware Scanning
+
+The toolkit includes a background daemon that automatically scans downloaded malware with YARA rules as files are captured.
+
+### Features
+
+- **🔄 Real-Time Scanning** - Automatically scans files as they're downloaded by attackers
+- **📚 YARA Forge Ruleset** - Uses the comprehensive YARA Forge full ruleset (~1000+ rules)
+- **🗄️ SQLite Caching** - Caches scan results to avoid re-scanning files
+- **📊 File Type Detection** - Identifies file types, MIME types, and categories
+- **⚡ Inotify Monitoring** - Watches download directory for new files using Linux inotify
+- **🔁 Automatic Updates** - Daily cron job updates YARA rules (4 AM)
+- **🐧 Systemd Service** - Runs as a hardened systemd service with automatic restart
+
+### Technical Details
+
+**Implementation:**
+- Python daemon using `inotify` to watch `/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads`
+- Scans files with compiled YARA rules on detection
+- Stores results in SQLite database: `/opt/cowrie/var/yara-cache.db`
+- Used by both daily-report.py and web dashboard (app.py)
+- Handles race conditions during file writes
+
+**Database Schema:**
+```sql
+CREATE TABLE yara_cache (
+    sha256 TEXT PRIMARY KEY,
+    matches TEXT NOT NULL,           -- JSON array of matched rules
+    scan_timestamp INTEGER NOT NULL,
+    rules_version TEXT,
+    file_type TEXT,                  -- e.g., "ELF", "PE", "Shell Script"
+    file_mime TEXT,                  -- e.g., "application/x-executable"
+    file_category TEXT,              -- e.g., "Executable", "Script", "Archive"
+    is_previewable INTEGER DEFAULT 0 -- Whether file can be previewed as text
+);
+```
+
+**Systemd Service:**
+```ini
+[Unit]
+Description=Cowrie YARA Scanner Daemon
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=root
+Environment="COWRIE_DOWNLOAD_PATH=/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
+Environment="YARA_RULES_PATH=/opt/cowrie/yara-rules"
+Environment="YARA_CACHE_DB_PATH=/opt/cowrie/var/yara-cache.db"
+ExecStart=/opt/cowrie/.venv/bin/python scripts/yara-scanner-daemon.py
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/cowrie/var /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads
+```
+
+**Commands:**
+```bash
+# View daemon logs
+journalctl -u yara-scanner -f
+
+# Restart daemon
+systemctl restart yara-scanner
+
+# Check daemon status
+systemctl status yara-scanner
+
+# View cache statistics
+cd /opt/cowrie && uv run scripts/yara-scanner-daemon.py --stats
+
+# Manually scan existing files
+cd /opt/cowrie && uv run scripts/yara-scanner-daemon.py --scan-existing
+```
+
+**YARA Rules Update:**
+- Daily cron job: `/opt/cowrie/scripts/update-yara-rules.sh`
+- Downloads latest YARA Forge full ruleset
+- Runs at 4 AM daily
+- Logs to `/var/log/yara-update.log`
 
 ## Accessing the Deployed Honeypot
 

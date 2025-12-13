@@ -19,6 +19,9 @@
 
     <div class="downloads-info">
         <p>{{ downloads | length }} unique files downloaded</p>
+        <div class="alert alert-info" style="margin-top: 10px; padding: 10px; background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; color: #0c5460;">
+            <strong>Download Protection:</strong> Files are available as password-protected ZIP archives. Password: <code>infected</code>
+        </div>
     </div>
 
     <table class="data-table downloads-table sortable">
@@ -39,8 +42,14 @@
             {% for dl in downloads %}
             <tr>
                 <td>
+                    {% if dl.exists %}
+                    <a href="{{ url_for('download_zip', shasum=dl.shasum) }}"
+                       title="Download as password-protected ZIP (password: infected)&#10;Full hash: {{ dl.shasum }}"
+                       style="text-decoration: none; color: inherit;">
+                        <code>{{ dl.shasum | truncate_hash(20) }}</code>
+                    </a>
+                    {% else %}
                     <code title="{{ dl.shasum }}">{{ dl.shasum | truncate_hash(20) }}</code>
-                    {% if not dl.exists %}
                     <span class="badge badge-warning" title="File not found on disk">Missing</span>
                     {% endif %}
                 </td>

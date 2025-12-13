@@ -9,13 +9,15 @@ import json
 import os
 import sqlite3
 import struct
+import tempfile
 import time
+import zipfile
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import requests
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, send_file
 
 try:
     import geoip2.database
@@ -424,7 +426,7 @@ class SessionParser:
             "ip_locations": ip_locations,
             "top_countries": country_counter.most_common(10),
             "top_credentials": credential_counter.most_common(10),
-            "successful_credentials": successful_credentials,
+            "successful_credentials": list(successful_credentials),
             "top_commands": command_counter.most_common(20),
             "hourly_activity": sorted_hours[-48:],  # Last 48 hours
         }
@@ -606,7 +608,6 @@ class TTYLogParser:
             "env": {"SHELL": "/bin/bash", "TERM": "xterm256-color"},
             "stdout": stdout,
         }
-
 
 # Initialize parsers
 session_parser = SessionParser(CONFIG["log_path"])
@@ -808,6 +809,49 @@ def downloads():
     downloads_list = sorted(unique_downloads.values(), key=lambda x: x["timestamp"], reverse=True)
 
     return render_template("downloads.html", downloads=downloads_list, hours=hours, config=CONFIG)
+
+
+@app.route("/download/<shasum>.zip")
+def download_zip(shasum: str):
+    """Download a malware sample as a password-protected ZIP file.
+
+    Password: infected
+    """
+    download_path = CONFIG["download_path"]
+    file_path = os.path.join(download_path, shasum)
+
+    # Check if file exists
+    if not os.path.exists(file_path):
+        return render_template("404.html", message="File not found"), 404
+
+    # Create a temporary password-protected ZIP file
+    # Password is "infected" (standard for malware samples)
+    temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    temp_zip.close()
+
+    try:
+        # Create password-protected ZIP with AES encryption
+        with zipfile.ZipFile(
+            temp_zip.name,
+            "w"
+        ) as zipf:
+            # Add file with just the SHA256 as filename
+            zipf.write(file_path, arcname=shasum)
+
+        # Send the ZIP file and clean up after
+        return send_file(
+            temp_zip.name,
+            as_attachment=True,
+            download_name=f"{shasum}.zip",
+            mimetype="application/zip",
+        )
+    finally:
+        # Clean up temp file after sending
+        # Note: Flask will handle this after the response is sent
+        try:
+            os.unlink(temp_zip.name)
+        except Exception:
+            pass
 
 
 @app.route("/download/<shasum>/preview")

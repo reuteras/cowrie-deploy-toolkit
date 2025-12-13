@@ -4,12 +4,18 @@ Deploy realistic [Cowrie](https://github.com/cowrie/cowrie) SSH honeypots on Het
 
 ## Features
 
-- **Realistic filesystem** - Captures actual Debian filesystem, not generic templates
+- **Realistic filesystem** - Captures actual Debian filesystem with WordPress, MySQL, and services
 - **Anti-fingerprinting** - Removes all traces of Cowrie from the snapshot
-- **Authentic identity** - Uses real SSH banner, kernel version, and system files
+- **IP-locked authentication** - IPs locked to first successful credentials for enhanced realism
+- **Authentic identity** - Uses real SSH banner, kernel version, process list, and system files
 - **Automated deployment** - Single script deploys a production-ready honeypot
-- **Daily threat reports** - GeoIP, VirusTotal, YARA scanning with automated email delivery
-- **Security hardening** - Automatic updates, Docker isolation, capability dropping
+- **Daily threat reports** - GeoIP (with ASN), VirusTotal, YARA scanning with automated email delivery
+- **Web dashboard** - Session playback with asciinema-player, malware browser, attack statistics
+- **Threat intelligence** - DShield data sharing, GreyNoise IP reputation, VirusTotal integration
+- **Canary tokens** - Optional honeytokens for immediate exfiltration alerts
+- **Tailscale VPN** - Zero-trust management access with optional public SSH blocking
+- **Security hardening** - Automatic updates, Docker isolation, capability dropping, read-only containers
+- **Real-time YARA scanning** - Background daemon scans malware as it's downloaded
 
 ## Quick Start
 
@@ -123,33 +129,46 @@ hcloud server delete <SERVER_ID>
 ```text
 generate_cowrie_fs_from_hetzner.sh
 ├── Creates temporary Debian server
-├── Sets realistic hostname, installs nginx
+├── Sets realistic hostname (e.g., dmz-web01)
+├── Installs nginx, MariaDB, PHP, WordPress
+├── Loads fake WordPress database with blog content
+├── Copies Canary Token files to /root (optional)
 ├── Runs Cowrie's createfs.py for fs.pickle
 ├── Removes /root/cowrie from snapshot (anti-fingerprinting)
-├── Captures identity (kernel, SSH banner, /etc/passwd, ps output)
+├── Captures identity (kernel, SSH banner, /etc/passwd, ps output, txtcmds)
+├── Collects file contents (/etc/*, /proc/*, wp-config.php)
 └── Destroys temporary server
 
 deploy_cowrie_honeypot.sh <output_dir>
 ├── Creates production server
 ├── Moves real SSH to port 2222
 ├── Installs Docker, configures auto-updates
-├── Uploads fs.pickle, file contents, identity
+├── Sets up Tailscale VPN (optional)
+├── Uploads fs.pickle, file contents, identity, IP-lock plugin
 ├── Generates cowrie.cfg with captured identity
-└── Starts Cowrie container on port 22
+├── Starts Cowrie container on port 22
+├── Configures MaxMind GeoIP with weekly updates (optional)
+├── Sets up Postfix for email delivery (optional)
+├── Installs reporting system with uv (optional)
+├── Deploys web dashboard with Tailscale Serve (optional)
+└── Configures automatic Docker image updates
 ```
 
-## Daily Reporting (Phase 1) ✅
+## Daily Reporting ✅
 
 Automated daily reports with threat intelligence integration!
 
 **Features:**
 - 📊 Comprehensive attack statistics (connections, IPs, credentials, commands)
 - 🌍 GeoIP enrichment (MaxMind GeoLite2) - country, city, ASN, organization
-- 🦠 VirusTotal malware analysis with SQLite caching
-- 🔍 YARA rule scanning for malware classification
+- 🦠 VirusTotal malware analysis with extended threat intelligence:
+  - Popular threat label (e.g., `trojan.emotet`, `ransomware.wannacry`)
+  - Threat categories with detection counts
+  - Family labels/tags for malware classification
+- 🔍 YARA rule scanning for malware classification (YARA Forge ruleset)
+- 🔄 Real-time YARA scanning - Background daemon scans files as they're downloaded
 - 📧 Email delivery (SMTP, SendGrid, Mailgun) with beautiful HTML reports
-- 🚨 Real-time alerts via webhooks (Slack, Discord, Teams)
-- ⚡ Configurable thresholds for high attack volumes and malware downloads
+- 🌐 Session links - Direct links to web dashboard for TTY playback (if enabled)
 - 🤖 **Fully automated** - Configure once in `master-config.toml`, deploys automatically
 
 **Setup:**
@@ -166,11 +185,49 @@ ssh -p 2222 root@<SERVER_IP>
 # Test the report
 cd /opt/cowrie
 uv run scripts/daily-report.py --test
+
+# View YARA scanner status
+journalctl -u yara-scanner -f
 ```
 
 **Dependencies managed with [uv](https://github.com/astral-sh/uv)** - modern, fast Python package manager
 
 See [scripts/README.md](scripts/README.md) for detailed configuration options.
+
+## Web Dashboard ✅
+
+Interactive web interface for session playback and attack analysis!
+
+**Features:**
+- 🎥 **TTY Session Playback** - Watch recorded SSH sessions with asciinema-player
+- 📊 **Attack Dashboard** - Overview with top countries, credentials, commands, and IPs
+- 🔍 **Session Browser** - List all sessions with filtering by IP, username, and date range
+- 📁 **Malware Downloads** - Browse captured files with VirusTotal links and YARA matches
+- 🌍 **GeoIP Integration** - View attacker locations with ASN/organization data
+- 🔗 **Email Integration** - Session links in daily reports link directly to playback
+
+**Security:**
+- Only accessible via SSH tunnel or Tailscale VPN
+- NOT exposed to public internet
+- Docker container runs with capability dropping and read-only filesystem
+
+**Setup:**
+1. Enable in `master-config.toml`:
+   ```toml
+   [web_dashboard]
+   enabled = true
+
+   [tailscale]
+   enabled = true  # Recommended for HTTPS access
+   tailscale_domain = "your-tailnet.ts.net"
+   ```
+2. Deploy honeypot - web dashboard automatically configured
+3. Access via Tailscale: `https://<tailscale_name>.<tailscale_domain>`
+4. Or via SSH tunnel: `ssh -p 2222 -L 5000:localhost:5000 root@<SERVER_IP>`
+
+**Note:** When Tailscale is enabled with a configured domain, the web dashboard is automatically served via Tailscale Serve on HTTPS.
+
+See [web/README.md](web/README.md) for detailed documentation.
 
 ## Roadmap
 
