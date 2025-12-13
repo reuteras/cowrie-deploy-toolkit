@@ -231,3 +231,6 @@ scripts/report-cache.db
 # Test reports
 scripts/test-report.html
 scripts/test-report.txt
+
+# Canary Tokens (user-specific, contains unique tokens)
+canary-tokens/

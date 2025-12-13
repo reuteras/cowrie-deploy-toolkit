@@ -15,7 +15,9 @@ This project provides scripts to deploy realistic Cowrie SSH honeypots on Hetzne
 │     ┌─────────────────────────────────────────────────────────┐ │
 │     │ Creates temporary Hetzner server                        │ │
 │     │ → Sets realistic hostname (dmz-web01)                   │ │
-│     │ → Installs nginx for realistic process list             │ │
+│     │ → Installs nginx, MySQL, PHP, WordPress                 │ │
+│     │ → Loads fake WordPress database with blog posts         │ │
+│     │ → Copies Canary Token files to /root                    │ │
 │     │ → Generates fs.pickle (filesystem snapshot)             │ │
 │     │ → Captures identity metadata (kernel, SSH banner, etc)  │ │
 │     │ → Collects file contents (/etc/passwd, configs, etc)    │ │
@@ -58,7 +60,9 @@ Creates a realistic filesystem snapshot and identity from a fresh Hetzner Debian
 **What it does:**
 - Spins up a temporary cpx11 Debian 13 server
 - Sets a realistic hostname (configurable: `dmz-web01`)
-- Installs nginx to have realistic services in the process list
+- Installs nginx, MySQL/MariaDB, PHP, and WordPress
+- Loads fake WordPress database with realistic blog content
+- Copies Canary Token files (MySQL dump, Excel, PDF) to /root
 - Uses Cowrie's `createfs.py` to generate `fs.pickle`
 - Removes all traces of Cowrie from the snapshot (anti-fingerprinting)
 - Collects identity files: kernel version, SSH banner, /etc/passwd, etc.
@@ -94,11 +98,14 @@ Deploys a Cowrie honeypot using a previously generated output directory.
 
 1. **Real filesystem snapshot** - Uses actual Debian filesystem, not generic templates
 2. **Cowrie traces removed** - `/root/cowrie` and related paths excluded from snapshot
-3. **Realistic process list** - Captures `ps` output with nginx running
+3. **Realistic process list** - Captures `ps` output with nginx, MySQL running
 4. **Authentic SSH banner** - Uses the exact SSH banner from the source server
 5. **Real file contents** - `/etc/passwd`, `/etc/shadow`, configs are from real system
 6. **Matching kernel strings** - Kernel version, build string, and arch match source
 7. **IP-locked credentials** - Each IP is locked to the first credentials they successfully authenticate with
+8. **WordPress + MySQL** - Full WordPress installation with fake corporate blog database
+9. **Database credentials** - Realistic `wp-config.php` with working database connection strings
+10. **Canary Tokens** - Optional honeytokens for immediate exfiltration alerts
 
 ## IP-Locked Credential Authentication
 
@@ -183,6 +190,110 @@ enabled = false
 ```
 
 Then restart: `docker compose restart -d`
+
+## Enhanced Honeypot Realism
+
+The toolkit now includes advanced features to make the honeypot appear like a real production server, increasing the likelihood that attackers will interact with it naturally.
+
+### WordPress and MySQL/MariaDB
+
+**What's included:**
+- **MySQL/MariaDB database** running in the filesystem snapshot
+- **WordPress installation** with fake blog content
+- **Realistic configuration files** with database credentials
+- **Process list** shows MySQL and Apache/nginx services
+- **Fake blog database** with posts, users, and comments about "internal company updates"
+
+**Files visible to attackers:**
+- `/var/www/html/blog/wp-config.php` - WordPress config with DB credentials
+- `/etc/mysql/my.cnf` - MySQL configuration
+- `/var/lib/mysql/` - Database files
+- WordPress database with corporate blog content suggesting sensitive information
+
+**Benefits:**
+- Attackers see a realistic production environment
+- Database credentials in config files attract credential collection
+- Process list shows services that suggest valuable data
+- More convincing target for post-compromise activity
+
+### Canary Tokens Integration
+
+**Canary Tokens** are special files that trigger alerts when accessed, downloaded, or opened. This toolkit supports embedding Canary Tokens to get immediate alerts when attackers exfiltrate data.
+
+#### Setting Up Canary Tokens
+
+1. **Generate tokens** at https://canarytokens.org/nest/
+
+   **Recommended tokens:**
+   - **MySQL dump** - Get alerted when someone opens a database backup
+   - **Excel spreadsheet** - Triggers when opened (great for financial reports)
+   - **PDF document** - Alerts when the PDF is viewed
+
+2. **Save tokens locally** in the `canary-tokens/` directory:
+   ```bash
+   mkdir -p canary-tokens
+   # Place your generated token files here:
+   # - canary-tokens/mysql-backup.sql
+   # - canary-tokens/Q1-Financial-Report.xlsx (any .xlsx file)
+   # - canary-tokens/Network-Passwords.pdf (any .pdf file)
+   ```
+
+3. **Generate filesystem** - Run `generate_cowrie_fs_from_hetzner.sh` as normal:
+   ```bash
+   ./generate_cowrie_fs_from_hetzner.sh
+   ```
+
+   The script will automatically:
+   - Copy MySQL token to `/root/backup/mysql-backup.sql`
+   - Copy Excel token to `/root/Q1_Financial_Report.xlsx`
+   - Copy PDF token to `/root/Network_Passwords.pdf`
+
+4. **Deploy honeypot** - The tokens will be embedded in the filesystem snapshot
+
+**File naming strategy:**
+The toolkit uses enticing filenames to encourage attackers to download them:
+- `Q1_Financial_Report.xlsx` - Suggests financial data
+- `Network_Passwords.pdf` - Implies sensitive credentials
+- `mysql-backup.sql` - Database backup in `/root/backup/`
+
+**Example alert workflow:**
+1. Attacker compromises honeypot
+2. Explores `/root` directory
+3. Downloads `Q1_Financial_Report.xlsx`
+4. Opens the file on their machine
+5. **You receive immediate email/SMS alert** with:
+   - IP address of the opener
+   - Timestamp
+   - User agent / system information
+   - Geographic location
+
+**Privacy note:** The `canary-tokens/` directory is excluded from git via `.gitignore` since tokens are unique and user-specific.
+
+#### Creating Effective Canary Tokens
+
+**MySQL Dump Token:**
+- Choose "MySQL dump" token type at canarytokens.org
+- Save as `canary-tokens/mysql-backup.sql`
+- Attackers often look for database backups
+- Triggers when file is read/downloaded
+
+**Excel Document Token:**
+- Choose "Microsoft Excel / Word Document" type
+- Use an enticing filename related to your honeypot's theme
+- Example themes: financial reports, employee lists, network diagrams
+- Triggers when opened in Excel/Word
+
+**PDF Document Token:**
+- Choose "Adobe PDF" token type
+- Name it something that suggests sensitive information
+- Examples: passwords, VPN configs, architecture diagrams
+- Triggers when opened in any PDF reader
+
+**Best practices:**
+- Use realistic corporate file naming conventions
+- Set up email/SMS notifications for immediate alerts
+- Consider using webhook tokens for integration with SIEM
+- Place tokens in directories attackers are likely to explore (`/root`, `/backup`)
 
 ## Configuration
 
