@@ -1,3 +1,7 @@
+#checkov:skip=CKV_DOCKER_2: HEALTHCHECK in cowrie/cowrie
+#checkov:skip=CKV_DOCKER_7: We like the latest for this work
+# hadolint ignore=DL3007
+# hadolint ignore=SC1088
 FROM cowrie/cowrie:latest
 
 # Switch to root to install plugins and generate metadata

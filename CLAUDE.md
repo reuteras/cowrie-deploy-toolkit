@@ -8,9 +8,9 @@ This project provides scripts to deploy realistic Cowrie SSH honeypots on Hetzne
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Honeypot Deployment Flow                      │
+│                    Honeypot Deployment Flow                     │
 ├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
+│                                                                 │
 │  1. generate_cowrie_fs_from_hetzner.sh                          │
 │     ┌─────────────────────────────────────────────────────────┐ │
 │     │ Creates temporary Hetzner server                        │ │
@@ -23,7 +23,7 @@ This project provides scripts to deploy realistic Cowrie SSH honeypots on Hetzne
 │     │ → Collects file contents (/etc/passwd, configs, etc)    │ │
 │     │ → Destroys temporary server                             │ │
 │     └─────────────────────────────────────────────────────────┘ │
-│                            ↓                                     │
+│                            ↓                                    │
 │                   output_YYYYMMDD_HHMMSS/                       │
 │                   ├── fs.pickle                                 │
 │                   ├── identity/                                 │
@@ -36,7 +36,7 @@ This project provides scripts to deploy realistic Cowrie SSH honeypots on Hetzne
 │                       ├── etc/passwd                            │
 │                       ├── etc/shadow                            │
 │                       └── ...                                   │
-│                            ↓                                     │
+│                            ↓                                    │
 │  2. deploy_cowrie_honeypot.sh <output_directory>                │
 │     ┌─────────────────────────────────────────────────────────┐ │
 │     │ Creates production Hetzner server                       │ │
@@ -47,7 +47,7 @@ This project provides scripts to deploy realistic Cowrie SSH honeypots on Hetzne
 │     │ → Generates cowrie.cfg with captured identity           │ │
 │     │ → Deploys Cowrie container on port 22                   │ │
 │     └─────────────────────────────────────────────────────────┘ │
-│                                                                  │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -222,7 +222,7 @@ The toolkit now includes advanced features to make the honeypot appear like a re
 
 #### Setting Up Canary Tokens
 
-1. **Generate tokens** at https://canarytokens.org/nest/
+1. **Generate tokens** at <https://canarytokens.org/nest/>
 
    **Recommended tokens:**
    - **MySQL dump** - Get alerted when someone opens a database backup
@@ -314,7 +314,7 @@ REAL_SSH_PORT="2222"             # Management SSH
 
 For enhanced security, you can configure management SSH (port 2222) to be accessible only via Tailscale VPN, completely removing public SSH exposure.
 
-### Benefits
+### Benefits with Tailscale
 
 - **Zero Trust Access** - Management SSH only accessible through your private Tailscale network
 - **No Public SSH Exposure** - Port 2222 blocked by firewall for all public IPs
@@ -419,7 +419,7 @@ enabled = true
 - Tailscale Serve provides HTTPS access via Tailscale VPN
 
 **File Structure:**
-```
+```text
 web/
 ├── app.py              # Flask application with all routes
 ├── Dockerfile          # Container build definition
@@ -476,8 +476,8 @@ dshield_batch_size = 100  # Events to batch before sending
 ```
 
 **Getting Credentials:**
-1. Sign up at https://isc.sans.edu/ssh.html
-2. Get your credentials at https://isc.sans.edu/myaccount.html
+1. Sign up at <https://isc.sans.edu/ssh.html>
+2. Get your credentials at <https://isc.sans.edu/myaccount.html>
 3. Your data will appear in DShield's global threat database
 
 **What data is shared:** SSH connection attempts, authentication attempts, source IPs, timestamps
@@ -504,7 +504,7 @@ greynoise_debug = false
 
 **Getting an API Key:**
 - Free Community API: Works without a key (limited queries)
-- Free API Key: https://www.greynoise.io/ (5,000 queries/month)
+- Free API Key: <https://www.greynoise.io/> (5,000 queries/month)
 - Paid plans available for higher volume
 
 **What you get:**
@@ -542,40 +542,20 @@ Several other projects accept honeypot data contributions:
    - Open-source threat intelligence collection
    - Exports to STIX/TAXII formats for MISP integration
    - Focus: Web application attacks and SSH/telnet
-   - More info: https://github.com/OWASP/Honeypot-Project
+   - More info: <https://github.com/OWASP/Honeypot-Project>
 
-2. **MISP (Malware Information Sharing Platform)**
-   - Open-source threat intelligence platform
-   - Can import Cowrie JSON logs as MISP events
-   - Community-driven threat sharing
-   - Integration available via custom scripts
-   - More info: https://www.misp-project.org/
-
-3. **AlienVault OTX (Open Threat Exchange)**
+2. **AlienVault OTX (Open Threat Exchange)**
    - Free threat intelligence community
    - Accepts manual or automated threat submissions
    - Pulse-based sharing system
    - API available for automation
-   - Sign up: https://otx.alienvault.com/
+   - Sign up: <https://otx.alienvault.com/>
 
-4. **Shodan Honeyscore**
+3. **Shodan Honeyscore**
    - Query service (not data submission)
    - Check if your honeypot is detectable as a honeypot
-   - API: https://api.shodan.io/labs/honeyscore/{ip}
+   - API: <https://api.shodan.io/labs/honeyscore/{ip}>
    - Helps improve anti-fingerprinting
-
-5. **HoneyDB**
-   - Community honeypot data aggregation
-   - JSON-based API for submissions
-   - Provides visualization and analytics
-   - More info: https://honeydb.io/
-
-6. **CommunityHoneyNetwork (CHN)**
-   - Deployment framework with central management
-   - Built-in data aggregation and sharing
-   - Supports multiple honeypot types
-   - Self-hosted or cloud options
-   - More info: https://communityhoneynetwork.readthedocs.io/
 
 **Note on Privacy and Legal Compliance:**
 - Review each service's data handling policy
@@ -587,7 +567,7 @@ Several other projects accept honeypot data contributions:
 
 The toolkit includes a background daemon that automatically scans downloaded malware with YARA rules as files are captured.
 
-### Features
+### Features for YARA
 
 - **🔄 Real-Time Scanning** - Automatically scans files as they're downloaded by attackers
 - **📚 YARA Forge Ruleset** - Uses the comprehensive YARA Forge full ruleset (~1000+ rules)
@@ -597,7 +577,7 @@ The toolkit includes a background daemon that automatically scans downloaded mal
 - **🔁 Automatic Updates** - Daily cron job updates YARA rules (4 AM)
 - **🐧 Systemd Service** - Runs as a hardened systemd service with automatic restart
 
-### Technical Details
+### Technical Details for YARA
 
 **Implementation:**
 - Python daemon using `inotify` to watch `/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads`
