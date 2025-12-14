@@ -1,0 +1,5 @@
+# Ignore everything except what we need
+*
+
+# Allow custom plugins directory (even if empty)
+!cowrie-plugins/
