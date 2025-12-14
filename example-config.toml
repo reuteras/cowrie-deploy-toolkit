@@ -113,7 +113,7 @@ dshield_enabled = false
 dshield_userid = ""  # Your DShield user ID
 dshield_auth_key = ""  # Your DShield auth key from myaccount page
 # Or: "op read op://Personal/DShield/auth_key"
-dshield_batch_size = 100  # Number of events to batch before sending
+dshield_batch_size = 10  # Number of events to batch before sending
 
 # GreyNoise - Query threat intelligence for attacking IPs
 # Get a free API key at https://www.greynoise.io/
