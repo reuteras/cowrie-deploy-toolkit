@@ -269,6 +269,105 @@ if [ "$CANARY_UPLOADED" = false ]; then
 fi
 
 # ============================================================
+# STEP 3.7 — Generate realistic .bash_history and SSH keys
+# ============================================================
+
+echo_info " Generating realistic bash history and SSH keys..."
+
+ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOF'
+set -e
+
+# Generate SSH keys for root (without password)
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+
+# Generate RSA key (most common)
+ssh-keygen -t rsa -b 4096 -f /root/.ssh/id_rsa -N "" -C "root@${HOSTNAME}" > /dev/null 2>&1
+
+# Generate ED25519 key (modern, secure)
+ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -C "root@${HOSTNAME}" > /dev/null 2>&1
+
+# Set proper permissions
+chmod 600 /root/.ssh/id_rsa /root/.ssh/id_ed25519
+chmod 644 /root/.ssh/id_rsa.pub /root/.ssh/id_ed25519.pub
+
+echo "[remote] SSH keys generated in /root/.ssh/"
+
+# Create realistic .bash_history
+cat > /root/.bash_history << 'HISTEOF'
+ls -la
+cd /var/www/html
+ps aux | grep nginx
+systemctl status nginx
+systemctl restart nginx
+apt update
+apt list --upgradable
+apt upgrade -y
+df -h
+free -m
+top
+htop
+netstat -tulpn
+ss -tulpn
+journalctl -u nginx -n 50
+tail -f /var/log/nginx/access.log
+tail -f /var/log/nginx/error.log
+vim /etc/nginx/sites-available/default
+nginx -t
+systemctl reload nginx
+mysql -u root -p
+mysqldump -u wp_user -p wp_blog > /root/backup/mysql-backup.sql
+ls -la /root/backup/
+cd /root
+cat /etc/passwd
+w
+who
+last
+lastlog
+uname -a
+cat /etc/os-release
+ip a
+ip route
+iptables -L -n
+systemctl status ssh
+systemctl restart ssh
+vim /etc/ssh/sshd_config
+useradd -m -s /bin/bash webadmin
+passwd webadmin
+usermod -aG sudo webadmin
+cat /var/log/auth.log | grep Failed
+cat /var/log/auth.log | grep Accepted
+grep -i error /var/log/syslog
+dmesg | tail
+systemctl list-units --failed
+docker ps
+docker images
+docker-compose ps
+git status
+git pull
+git log --oneline -10
+cd /var/www/html/blog
+wp plugin list
+wp core update
+wp user list
+chown -R www-data:www-data /var/www/html
+chmod -R 755 /var/www/html
+find /var/www -type f -exec chmod 644 {} \;
+find /var/www -type d -exec chmod 755 {} \;
+crontab -l
+vim /etc/crontab
+systemctl status cron
+reboot
+shutdown -r now
+history
+clear
+HISTEOF
+
+chmod 600 /root/.bash_history
+echo "[remote] Realistic bash history created at /root/.bash_history"
+EOF
+
+# ============================================================
 # STEP 4 — Install createfs and requirements
 # ============================================================
 
@@ -303,8 +402,9 @@ cp -r /root/cowrie/.venv /tmp/.venv
 
 # CRITICAL: Remove Cowrie installation to prevent honeypot fingerprinting
 # Attackers can detect honeypots by finding /root/cowrie or similar directories
+# Note: We keep .bash_history as it was generated with realistic commands
 echo "[remote] Removing Cowrie installation from filesystem snapshot..."
-rm -rf /root/cowrie /root/.bash_history
+rm -rf /root/cowrie
 
 # Remove other potential honeypot indicators
 rm -rf /tmp/cowrie* /var/tmp/cowrie* /opt/cowrie* 2>/dev/null || true

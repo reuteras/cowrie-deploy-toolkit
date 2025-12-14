@@ -35,6 +35,10 @@ OUTPUT_DIR="$1"
 IDENTITY_DIR="$OUTPUT_DIR/identity"
 FS_PICKLE="$OUTPUT_DIR/fs.pickle"
 MASTER_CONFIG="./master-config.toml"
+DEPLOY_LOG="$OUTPUT_DIR/deploy-$(date +%Y%m%d-%H%M%S).log"
+
+# Set up logging - all output goes to both console and log file
+exec > >(tee -a "$DEPLOY_LOG") 2>&1
 
 # Verify the required files exist
 if [ ! -f "$FS_PICKLE" ]; then
@@ -433,6 +437,11 @@ if [ -f "$IDENTITY_DIR/ps.txt" ]; then
         # Upload cmdoutput.json
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
             "$CMDOUTPUT_TMP" "root@$SERVER_IP:/opt/cowrie/share/cowrie/cmdoutput.json" > /dev/null
+
+        # Set proper permissions (readable by Cowrie container)
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+            "chmod 644 /opt/cowrie/share/cowrie/cmdoutput.json"
+
         echo_info "fs.pickle and cmdoutput.json uploaded."
     else
         echo_warn " Warning: uv not found. Cannot generate cmdoutput.json."
@@ -486,23 +495,37 @@ else
 fi
 
 # ============================================================
-# STEP 6.5 — Upload IP-Lock Authentication Plugin
+# STEP 6.5 — Upload Custom Cowrie Build Context
 # ============================================================
 
-echo_info "Uploading IP-Lock authentication plugin..."
+echo_info "Uploading custom Cowrie build context..."
 
-# Create plugins directory
+# Create build directory on server
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-    "mkdir -p /opt/cowrie/plugins"
+    "mkdir -p /opt/cowrie/build/cowrie-plugins"
 
-# Upload the IP-lock plugin
-if [ -f "./cowrie-plugins/output_iplock.py" ]; then
+# Upload Dockerfile
+if [ -f "./cowrie/Dockerfile" ]; then
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-        ./cowrie-plugins/output_iplock.py "root@$SERVER_IP:/opt/cowrie/plugins/" > /dev/null
-    echo_info "IP-Lock plugin uploaded successfully"
+        ./cowrie/Dockerfile "root@$SERVER_IP:/opt/cowrie/build/" > /dev/null
+    echo_info "Dockerfile uploaded"
 else
-    echo_warn " Warning: IP-Lock plugin not found at ./cowrie-plugins/output_iplock.py"
+    echo_error "Error: Dockerfile not found at ./cowrie/Dockerfile"
+    exit 1
 fi
+
+# Upload custom plugins (if any exist)
+if [ -d "./cowrie-plugins" ] && [ "$(ls -A ./cowrie-plugins/*.py 2>/dev/null)" ]; then
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+        ./cowrie-plugins/*.py "root@$SERVER_IP:/opt/cowrie/build/cowrie-plugins/" > /dev/null 2>&1
+    echo_info "Custom plugins uploaded ($(ls -1 ./cowrie-plugins/*.py 2>/dev/null | wc -l | tr -d ' ') files)"
+else
+    echo_info "No custom plugins found (build will use defaults only)"
+fi
+
+# Ensure .gitkeep exists so directory isn't empty
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+    "touch /opt/cowrie/build/cowrie-plugins/.gitkeep"
 
 # ============================================================
 # ============================================================
@@ -597,9 +620,9 @@ scan_url = false
 debug = false
 # Optional: Collection name for organizing artifacts
 # If not set, no collection will be created
-collection = cowrie
+#collection = cowrie
 # Optional: Custom comment text (default: Cowrie attribution)
-commenttext = First seen by #Cowrie SSH/telnet Honeypot http://github.com/cowrie/cowrie
+#commenttext = First seen by #Cowrie SSH/telnet Honeypot http://github.com/cowrie/cowrie
 EOFVT
     echo_info "VirusTotal integration enabled in cowrie.cfg"
 fi
@@ -652,11 +675,14 @@ echo_info "Starting Cowrie container..."
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
 set -e
 
-# Create docker-compose.yml with named volumes and bind mounts
+# Create docker-compose.yml with custom build
 cat > /opt/cowrie/docker-compose.yml << 'DOCKEREOF'
 services:
   cowrie:
-    image: cowrie/cowrie:latest
+    build:
+      context: /opt/cowrie/build
+      dockerfile: Dockerfile
+    image: cowrie-custom:latest
     container_name: cowrie
     restart: unless-stopped
     ports:
@@ -668,7 +694,6 @@ services:
       - /opt/cowrie/share/cowrie/cmdoutput.json:/cowrie/cowrie-git/src/cowrie/data/cmdoutput.json:ro
       - /opt/cowrie/share/cowrie/txtcmds:/cowrie/cowrie-git/src/cowrie/data/txtcmds:ro
       - /opt/cowrie/share/cowrie/contents:/cowrie/cowrie-git/honeyfs:ro
-      - /opt/cowrie/plugins:/cowrie/cowrie-git/src/cowrie/output:ro
     environment:
       - COWRIE_HOSTNAME=server
     # Security hardening
@@ -676,7 +701,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    read_only: true
 
 volumes:
   cowrie-etc:
@@ -685,11 +709,23 @@ volumes:
     name: cowrie-var
 DOCKEREOF
 
+echo "[remote] Building custom Cowrie image with plugins..."
+cd /opt/cowrie
+if ! docker compose build > /dev/null 2>&1; then
+  echo "[remote] ERROR: Failed to build custom Cowrie image"
+  exit 1
+fi
+
+echo "[remote] Extracting metadata.json from built image..."
+docker run --rm cowrie-custom:latest -c "print(open('/cowrie/cowrie-git/metadata.json').read(), end='')" > /opt/cowrie/metadata.json
+
 echo "[remote] Initializing Cowrie volumes with custom configuration..."
 
 # Start container briefly to initialize volumes
-cd /opt/cowrie
-docker compose up -d > /dev/null 2>&1
+if ! docker compose up -d > /dev/null 2>&1; then
+  echo "[remote] ERROR: Failed to start Cowrie container"
+  exit 1
+fi
 sleep 10
 docker compose stop > /dev/null 2>&1
 
@@ -721,25 +757,24 @@ EOF
 echo_info "Cowrie container started."
 
 # ============================================================
-# STEP 9 — Test honeypot
+# STEP 9 — Verify honeypot status
 # ============================================================
 
-echo_info "Testing honeypot (this may take a moment)..."
+echo_info "Verifying honeypot container status..."
 sleep 5
 
-# Test if port 22 responds with SSH
-if timeout 15 bash -c "echo | nc $SERVER_IP 22" 2>/dev/null | grep -q "SSH"; then
-    echo_info "Honeypot is responding on port 22!"
-else
-    echo_warn " Warning: Honeypot may not be responding correctly on port 22"
-fi
+# Check container status instead of making a test connection
+# (nc test creates noise in logs)
+ssh -p "$REAL_SSH_PORT" root@"$SERVER_IP" "cd /opt/cowrie && docker compose ps | grep -q 'Up'" && \
+    echo_info "Honeypot container is running!" || \
+    echo_warn " Warning: Honeypot container may not be running correctly"
 
 # ============================================================
 # STEP 10 — Set up MaxMind GeoIP (if reporting enabled)
 # ============================================================
 
 if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
-    echo_info "Setting up MaxMind GeoIP auto-updates..."
+    echo_info "Setting up MaxMind GeoIP databases..."
 
     # Extract MaxMind credentials from master config
     MAXMIND_ACCOUNT_ID=$(grep "maxmind_account_id" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
@@ -754,14 +789,32 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     fi
 
     if [ -n "$MAXMIND_ACCOUNT_ID" ] && [ -n "$MAXMIND_LICENSE_KEY" ]; then
+        # Download databases to local cache (only if needed)
+        echo_info "Downloading MaxMind databases to local cache (if not cached)..."
+        if ! "$SCRIPT_DIR/scripts/download-maxmind-local.sh" "$MAXMIND_ACCOUNT_ID" "$MAXMIND_LICENSE_KEY"; then
+            echo_error "Failed to download MaxMind databases locally"
+            exit 1
+        fi
+
+        # Copy cached databases to server
+        CACHE_DIR="$SCRIPT_DIR/.maxmind-cache"
+        echo_info "Uploading cached MaxMind databases to server..."
+
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+            "mkdir -p /var/lib/GeoIP"
+
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+            "$CACHE_DIR"/GeoLite2-*.mmdb "root@$SERVER_IP:/var/lib/GeoIP/" > /dev/null
+
+        # Set up automatic updates on server (weekly)
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << MAXMINDEOF
 set -e
 
-# Install geoipupdate
+# Install geoipupdate for automatic updates
 DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
 DEBIAN_FRONTEND=noninteractive apt-get install -qq -y geoipupdate > /dev/null
 
-# Create GeoIP config using Debian default location
+# Create GeoIP config
 cat > /etc/GeoIP.conf << 'EOF'
 AccountID $MAXMIND_ACCOUNT_ID
 LicenseKey $MAXMIND_LICENSE_KEY
@@ -769,18 +822,14 @@ EditionIDs GeoLite2-City GeoLite2-ASN
 DatabaseDirectory /var/lib/GeoIP
 EOF
 
-# Create directory and download databases
-mkdir -p /var/lib/GeoIP
-geoipupdate
-
 # Set up weekly auto-updates (Wednesdays at 3 AM)
 (crontab -l 2>/dev/null || echo "") | grep -v geoipupdate | crontab -
 (crontab -l; echo "0 3 * * 3 /usr/bin/geoipupdate") | crontab -
 
-echo "[remote] MaxMind GeoIP databases downloaded and auto-update configured"
+echo "[remote] MaxMind GeoIP auto-update cron job configured"
 MAXMINDEOF
 
-        echo_info "MaxMind GeoIP configured successfully"
+        echo_info "MaxMind GeoIP databases uploaded and auto-update configured"
     else
         echo_warn " Warning: MaxMind credentials not found in master-config.toml"
         echo_warn " GeoIP enrichment will not be available"
@@ -985,7 +1034,10 @@ mkdir -p /var/lib/GeoIP
 cat > /opt/cowrie/docker-compose.yml << DOCKEREOF
 services:
   cowrie:
-    image: cowrie/cowrie:latest
+    build:
+      context: /opt/cowrie/build
+      dockerfile: Dockerfile
+    image: cowrie-custom:latest
     container_name: cowrie
     restart: unless-stopped
     ports:
@@ -997,14 +1049,12 @@ services:
       - /opt/cowrie/share/cowrie/cmdoutput.json:/cowrie/cowrie-git/src/cowrie/data/cmdoutput.json:ro
       - /opt/cowrie/share/cowrie/txtcmds:/cowrie/cowrie-git/src/cowrie/data/txtcmds:ro
       - /opt/cowrie/share/cowrie/contents:/cowrie/cowrie-git/honeyfs:ro
-      - /opt/cowrie/plugins:/cowrie/cowrie-git/src/cowrie/output:ro
     environment:
       - COWRIE_HOSTNAME=server
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
-    read_only: true
     networks:
       - cowrie-internal
 
@@ -1019,6 +1069,7 @@ services:
       - "127.0.0.1:5000:5000"
     volumes:
       - cowrie-var:/cowrie-data:ro
+      - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
       - /var/lib/GeoIP:/geoip:ro
       - /opt/cowrie/var:/yara-cache:ro
     environment:
@@ -1026,9 +1077,13 @@ services:
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
       - COWRIE_DOWNLOAD_PATH=/cowrie-data/lib/cowrie/downloads
       - GEOIP_DB_PATH=/geoip/GeoLite2-City.mmdb
+      - GEOIP_ASN_PATH=/geoip/GeoLite2-ASN.mmdb
       - YARA_CACHE_DB_PATH=/yara-cache/yara-cache.db
+      - COWRIE_METADATA_PATH=/cowrie-metadata/metadata.json
       - BASE_URL=$WEB_BASE_URL
       - VIRUSTOTAL_API_KEY=$VT_API_KEY
+      - SERVER_IP=$SERVER_IP
+      - HONEYPOT_HOSTNAME=$HOSTNAME
     depends_on:
       - cowrie
     networks:
@@ -1037,7 +1092,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    read_only: true
     tmpfs:
       - /tmp:size=10M,mode=1777
 

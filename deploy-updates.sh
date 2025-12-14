@@ -213,9 +213,17 @@ fi
 
 # Check if web dashboard is running and restart if updated
 if [ "$WEB_UPDATED" = "true" ]; then
-    echo_info "Rebuilding and restarting web dashboard..."
-    ssh_exec "root@$SERVER_IP" "cd /opt/cowrie && docker compose build --pull > /dev/null 2>&1 && docker compose pull > /dev/null 2>&1 && docker compose up -d > /dev/null 2>&1" "$SSH_PORT"
-    echo_info "Web dashboard restarted"
+    echo_info "Web files updated, triggering full Docker update..."
+    echo_info "This will rebuild custom Cowrie image and update containers..."
+
+    # Call the auto-update script which handles:
+    # - Rebuilding custom Cowrie image with latest base
+    # - Rebuilding web dashboard
+    # - Restarting containers
+    # - Health checks
+    ssh_exec "root@$SERVER_IP" "/opt/cowrie/scripts/auto-update-docker.sh" "$SSH_PORT"
+
+    echo_info "Docker images and containers updated successfully"
 fi
 
 # ============================================================
