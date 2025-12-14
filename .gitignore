@@ -224,6 +224,9 @@ scripts/report-cache.db
 # GeoIP databases (binary files, download separately)
 **/GeoLite2-*.mmdb
 
+# MaxMind local cache directory
+.maxmind-cache/
+
 # YARA rules (large, download separately)
 **/yara-rules/*.yar
 **/yara-rules/*.yara
