@@ -237,3 +237,6 @@ scripts/test-report.txt
 
 # Canary Tokens (user-specific, contains unique tokens)
 canary-tokens/
+
+# Cowrie userdb.txt
+cowrie/userdb.txt
