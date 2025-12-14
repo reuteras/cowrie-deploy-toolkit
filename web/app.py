@@ -31,12 +31,16 @@ CONFIG = {
     "log_path": os.getenv("COWRIE_LOG_PATH", "/cowrie-data/log/cowrie/cowrie.json"),
     "tty_path": os.getenv("COWRIE_TTY_PATH", "/cowrie-data/lib/cowrie/tty"),
     "download_path": os.getenv("COWRIE_DOWNLOAD_PATH", "/cowrie-data/lib/cowrie/downloads"),
+    "honeyfs_path": os.getenv("HONEYFS_PATH", "/cowrie-data/share/cowrie/contents"),
     "geoip_db_path": os.getenv("GEOIP_DB_PATH", "/cowrie-data/geoip/GeoLite2-City.mmdb"),
     "geoip_asn_path": os.getenv("GEOIP_ASN_PATH", "/cowrie-data/geoip/GeoLite2-ASN.mmdb"),
     "base_url": os.getenv("BASE_URL", ""),
     "virustotal_api_key": os.getenv("VIRUSTOTAL_API_KEY", ""),
     "cache_db_path": os.getenv("CACHE_DB_PATH", "/tmp/vt-cache.db"),
     "yara_cache_db_path": os.getenv("YARA_CACHE_DB_PATH", "/cowrie-data/var/yara-cache.db"),
+    "metadata_path": os.getenv("COWRIE_METADATA_PATH", "/cowrie-metadata/metadata.json"),
+    "server_ip": os.getenv("SERVER_IP", ""),
+    "honeypot_hostname": os.getenv("HONEYPOT_HOSTNAME", ""),
 }
 
 
@@ -49,15 +53,20 @@ class GeoIPLookup:
         if geoip2 and os.path.exists(db_path):
             try:
                 self.reader = geoip2.database.Reader(db_path)
-            except Exception:
-                pass
+                print(f"[GeoIP] Loaded City database from {db_path}")
+            except Exception as e:
+                print(f"[GeoIP] Failed to load City database from {db_path}: {e}")
 
         # Initialize ASN database if provided
-        if geoip2 and asn_db_path and os.path.exists(asn_db_path):
-            try:
-                self.asn_reader = geoip2.database.Reader(asn_db_path)
-            except Exception:
-                pass
+        if geoip2 and asn_db_path:
+            if os.path.exists(asn_db_path):
+                try:
+                    self.asn_reader = geoip2.database.Reader(asn_db_path)
+                    print(f"[GeoIP] Loaded ASN database from {asn_db_path}")
+                except Exception as e:
+                    print(f"[GeoIP] Failed to load ASN database from {asn_db_path}: {e}")
+            else:
+                print(f"[GeoIP] ASN database not found at {asn_db_path}")
 
     def lookup(self, ip: str) -> dict:
         """Lookup IP and return geo data with ASN information."""
@@ -272,9 +281,11 @@ class SessionParser:
                     if event_id == "cowrie.session.connect":
                         session["src_ip"] = entry.get("src_ip")
                         session["start_time"] = entry["timestamp"]
-                        session["client_version"] = entry.get("version")
                         if session["src_ip"]:
                             session["geo"] = self.geoip.lookup(session["src_ip"])
+
+                    elif event_id == "cowrie.client.version":
+                        session["client_version"] = entry.get("version")
 
                     elif event_id == "cowrie.login.success":
                         session["username"] = entry.get("username")
@@ -320,6 +331,69 @@ class SessionParser:
         sessions = self.parse_all(hours=720)  # Look back 30 days
         return sessions.get(session_id)
 
+    def get_session_events(self, session_id: str) -> list:
+        """Get all events for a specific session."""
+        events = []
+        if not os.path.exists(self.log_path):
+            return events
+
+        with open(self.log_path) as f:
+            for line in f:
+                try:
+                    entry = json.loads(line.strip())
+                    if entry.get("session") == session_id:
+                        events.append(entry)
+                except (json.JSONDecodeError, KeyError):
+                    continue
+
+        # Sort by timestamp
+        events.sort(key=lambda x: x.get("timestamp", ""))
+        return events
+
+    def get_threat_intel_for_ip(self, ip_address: str) -> dict:
+        """Get threat intelligence data for a specific IP address."""
+        result = {"greynoise": None, "dshield": None}
+
+        if not os.path.exists(self.log_path):
+            return result
+
+        with open(self.log_path) as f:
+            for line in f:
+                try:
+                    entry = json.loads(line.strip())
+                    event_id = entry.get("eventid", "")
+                    src_ip = entry.get("src_ip")
+
+                    if src_ip != ip_address:
+                        continue
+
+                    if event_id == "cowrie.greynoise.result":
+                        # Extract classification from message if available
+                        classification = entry.get("classification", "unknown")
+                        if not classification or classification == "unknown":
+                            message = entry.get("message", "")
+                            if "classification is malicious" in message.lower():
+                                classification = "malicious"
+                            elif "classification is benign" in message.lower():
+                                classification = "benign"
+
+                        result["greynoise"] = {
+                            "classification": classification,
+                            "message": entry.get("message", ""),
+                            "timestamp": entry["timestamp"],
+                        }
+
+                    elif event_id == "cowrie.dshield.result":
+                        result["dshield"] = {
+                            "message": entry.get("message", ""),
+                            "timestamp": entry["timestamp"],
+                        }
+
+                except (json.JSONDecodeError, KeyError):
+                    continue
+
+        return result
+
     def get_stats(self, hours: int = 24) -> dict:
         """Get statistics for the dashboard."""
         sessions = self.parse_all(hours=hours)
@@ -330,9 +404,16 @@ class SessionParser:
                 "unique_ips": 0,
                 "sessions_with_commands": 0,
                 "total_downloads": 0,
+                "unique_downloads": 0,
+                "ip_list": [],
+                "ip_locations": [],
                 "top_countries": [],
                 "top_credentials": [],
+                "successful_credentials": [],
                 "top_commands": [],
+                "top_clients": [],
+                "greynoise_ips": [],
+                "dshield_ips": [],
                 "hourly_activity": [],
             }
 
@@ -345,6 +426,9 @@ class SessionParser:
         credential_counter = Counter()
         successful_credentials = set()
         command_counter = Counter()
+        client_version_counter = Counter()
+        greynoise_results = {}  # IP -> {classification, message, timestamp}
+        dshield_results = {}  # IP -> {message, timestamp}
         sessions_with_cmds = 0
         total_downloads = 0
         unique_downloads = set()
@@ -393,6 +477,10 @@ class SessionParser:
                 for cmd in session["commands"]:
                     command_counter[cmd["command"]] += 1
 
+            # Track SSH client versions
+            if session.get("client_version"):
+                client_version_counter[session["client_version"]] += 1
+
             # Track downloads
             for download in session["downloads"]:
                 total_downloads += 1
@@ -408,12 +496,65 @@ class SessionParser:
                 except Exception:
                     pass
 
+        # Parse threat intelligence events (GreyNoise, DShield)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        if os.path.exists(self.log_path):
+            with open(self.log_path) as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line.strip())
+                        timestamp = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
+
+                        if timestamp < cutoff_time:
+                            continue
+
+                        event_id = entry.get("eventid", "")
+                        src_ip = entry.get("src_ip")
+
+                        if event_id == "cowrie.greynoise.result" and src_ip:
+                            # Extract classification from message if available
+                            classification = entry.get("classification", "unknown")
+                            if not classification or classification == "unknown":
+                                # Try to parse from message
+                                message = entry.get("message", "")
+                                if "classification is malicious" in message.lower():
+                                    classification = "malicious"
+                                elif "classification is benign" in message.lower():
+                                    classification = "benign"
+
+                            greynoise_results[src_ip] = {
+                                "classification": classification,
+                                "message": entry.get("message", ""),
+                                "timestamp": entry["timestamp"],
+                            }
+
+                        elif event_id == "cowrie.dshield.result" and src_ip:
+                            dshield_results[src_ip] = {
+                                "message": entry.get("message", ""),
+                                "timestamp": entry["timestamp"],
+                            }
+
+                    except (json.JSONDecodeError, KeyError, ValueError):
+                        continue
+
         # Sort hourly activity
         sorted_hours = sorted(hourly_activity.items())
 
         # Sort IP details by session count
         sorted_ips = sorted(
             [{"ip": ip, **details} for ip, details in ip_details.items()], key=lambda x: x["count"], reverse=True
+        )
+
+        # Convert threat intelligence dicts to sorted lists
+        greynoise_list = sorted(
+            [{"ip": ip, **data} for ip, data in greynoise_results.items()],
+            key=lambda x: x["timestamp"],
+            reverse=True,
+        )
+        dshield_list = sorted(
+            [{"ip": ip, **data} for ip, data in dshield_results.items()],
+            key=lambda x: x["timestamp"],
+            reverse=True,
         )
 
         return {
@@ -428,6 +569,9 @@ class SessionParser:
             "top_credentials": credential_counter.most_common(10),
             "successful_credentials": list(successful_credentials),
             "top_commands": command_counter.most_common(20),
+            "top_clients": client_version_counter.most_common(10),
+            "greynoise_ips": greynoise_list,
+            "dshield_ips": dshield_list,
             "hourly_activity": sorted_hours[-48:],  # Last 48 hours
         }
 
@@ -631,6 +775,53 @@ def index():
     return render_template("index.html", stats=stats, hours=hours, config=CONFIG)
 
 
+@app.route("/attack-map")
+def attack_map_page():
+    """Attack visualization map page."""
+    hours = request.args.get("hours", 24, type=int)
+    sessions = session_parser.parse_all(hours=hours)
+
+    # Get honeypot location from server IP
+    geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+    honeypot_location = None
+    if CONFIG["server_ip"]:
+        honeypot_geo = geoip.lookup(CONFIG["server_ip"])
+        if "latitude" in honeypot_geo and "longitude" in honeypot_geo:
+            honeypot_location = {
+                "lat": honeypot_geo["latitude"],
+                "lon": honeypot_geo["longitude"],
+                "city": honeypot_geo.get("city", "Unknown"),
+                "country": honeypot_geo.get("country", "Unknown"),
+            }
+
+    # Collect attack data with timestamps for animation
+    attacks = []
+    for session in sessions.values():
+        if session.get("src_ip") and session.get("geo"):
+            geo = session["geo"]
+            if "latitude" in geo and "longitude" in geo:
+                attacks.append(
+                    {
+                        "session_id": session["id"],
+                        "ip": session["src_ip"],
+                        "lat": geo["latitude"],
+                        "lon": geo["longitude"],
+                        "city": geo.get("city", "Unknown"),
+                        "country": geo.get("country", "Unknown"),
+                        "timestamp": session.get("start_time", ""),
+                        "username": session.get("username", ""),
+                        "login_success": session.get("login_success", False),
+                    }
+                )
+
+    # Sort by timestamp
+    attacks.sort(key=lambda x: x["timestamp"])
+
+    return render_template(
+        "attack_map.html", attacks=attacks, honeypot_location=honeypot_location, hours=hours, config=CONFIG
+    )
+
+
 @app.route("/sessions")
 def sessions():
     """Session listing page."""
@@ -645,15 +836,24 @@ def sessions():
 
     # Filter options
     ip_filter = request.args.get("ip", "")
+    country_filter = request.args.get("country", "")
+    credentials_filter = request.args.get("credentials", "")
     has_commands = request.args.get("has_commands", "")
     has_tty = request.args.get("has_tty", "")
+    successful_login = request.args.get("successful_login", "")
 
     if ip_filter:
         sorted_sessions = [s for s in sorted_sessions if s["src_ip"] == ip_filter]
+    if country_filter:
+        sorted_sessions = [s for s in sorted_sessions if s.get("geo", {}).get("country") == country_filter]
+    if credentials_filter:
+        sorted_sessions = [s for s in sorted_sessions if f"{s.get('username', '')}:{s.get('password', '')}" == credentials_filter]
     if has_commands == "1":
         sorted_sessions = [s for s in sorted_sessions if s["commands"]]
     if has_tty == "1":
         sorted_sessions = [s for s in sorted_sessions if s["tty_log"]]
+    if successful_login == "1":
+        sorted_sessions = [s for s in sorted_sessions if s.get("login_success")]
 
     # Paginate
     total = len(sorted_sessions)
@@ -669,8 +869,11 @@ def sessions():
         total=total,
         hours=hours,
         ip_filter=ip_filter,
+        country_filter=country_filter,
+        credentials_filter=credentials_filter,
         has_commands=has_commands,
         has_tty=has_tty,
+        successful_login=successful_login,
         config=CONFIG,
     )
 
@@ -688,7 +891,17 @@ def session_detail(session_id: str):
         tty_file = tty_parser.find_tty_file(session["tty_log"])
         has_tty = tty_file is not None
 
-    return render_template("session_detail.html", session=session, has_tty=has_tty, config=CONFIG)
+    # Get all events for this session
+    events = session_parser.get_session_events(session_id)
+
+    # Get threat intelligence for this IP
+    threat_intel = {}
+    if session.get("src_ip"):
+        threat_intel = session_parser.get_threat_intel_for_ip(session["src_ip"])
+
+    return render_template(
+        "session_detail.html", session=session, has_tty=has_tty, events=events, threat_intel=threat_intel, config=CONFIG
+    )
 
 
 @app.route("/session/<session_id>/playback")
@@ -750,6 +963,88 @@ def api_sessions():
     sorted_sessions = sorted(all_sessions.values(), key=lambda x: x["start_time"] or "", reverse=True)[:limit]
 
     return jsonify(sorted_sessions)
+
+
+@app.route("/api/system-info")
+def api_system_info():
+    """API endpoint for honeypot system information."""
+    info = {
+        "server_ip": CONFIG["server_ip"],
+        "honeypot_hostname": CONFIG["honeypot_hostname"],
+        "cowrie_version": "unknown",
+        "git_commit": None,
+        "build_date": None,
+        "uptime_seconds": None,
+    }
+
+    # Try to read metadata from Cowrie container
+    metadata_path = CONFIG["metadata_path"]
+    if os.path.exists(metadata_path):
+        try:
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+                info["cowrie_version"] = metadata.get("cowrie_version", "unknown")
+                info["git_commit"] = metadata.get("git_commit")
+                info["build_date"] = metadata.get("build_date")
+
+                # Calculate uptime from build timestamp
+                build_ts = metadata.get("build_timestamp")
+                if build_ts:
+                    info["uptime_seconds"] = int(time.time() - build_ts)
+        except Exception as e:
+            app.logger.warning(f"Failed to read metadata: {e}")
+
+    return jsonify(info)
+
+
+@app.route("/api/canary-tokens")
+def api_canary_tokens():
+    """API endpoint for Canary Token information."""
+    # Paths where Canary Tokens are placed (relative to honeyfs)
+    honeyfs_path = CONFIG.get("honeyfs_path", "/cowrie-data/share/cowrie/contents")
+
+    tokens = []
+
+    # Check for MySQL backup token
+    mysql_token_path = os.path.join(honeyfs_path, "root/backup/mysql-backup.sql")
+    if os.path.exists(mysql_token_path):
+        stat_info = os.stat(mysql_token_path)
+        tokens.append({
+            "type": "MySQL Dump",
+            "icon": "🗄️",
+            "path": "/root/backup/mysql-backup.sql",
+            "size": stat_info.st_size,
+            "description": "Database backup file"
+        })
+
+    # Check for Excel token
+    excel_token_path = os.path.join(honeyfs_path, "root/Q1_Financial_Report.xlsx")
+    if os.path.exists(excel_token_path):
+        stat_info = os.stat(excel_token_path)
+        tokens.append({
+            "type": "Excel Document",
+            "icon": "📊",
+            "path": "/root/Q1_Financial_Report.xlsx",
+            "size": stat_info.st_size,
+            "description": "Financial report spreadsheet"
+        })
+
+    # Check for PDF token
+    pdf_token_path = os.path.join(honeyfs_path, "root/Network_Passwords.pdf")
+    if os.path.exists(pdf_token_path):
+        stat_info = os.stat(pdf_token_path)
+        tokens.append({
+            "type": "PDF Document",
+            "icon": "📄",
+            "path": "/root/Network_Passwords.pdf",
+            "size": stat_info.st_size,
+            "description": "Password documentation"
+        })
+
+    return jsonify({
+        "tokens": tokens,
+        "total": len(tokens)
+    })
 
 
 @app.route("/downloads")
@@ -1009,6 +1304,13 @@ def format_duration(seconds):
     """Format duration in seconds to human readable string."""
     if not seconds:
         return "N/A"
+
+    # Convert to float if it's a string
+    try:
+        seconds = float(seconds)
+    except (TypeError, ValueError):
+        return "N/A"
+
     if seconds < 60:
         return f"{int(seconds)}s"
     elif seconds < 3600:

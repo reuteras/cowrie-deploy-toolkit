@@ -15,6 +15,8 @@
                     <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
                 </select>
                 <input type="text" name="ip" placeholder="Filter by IP" value="{{ ip_filter }}">
+                <input type="text" name="country" placeholder="Filter by Country" value="{{ country_filter }}">
+                <input type="text" name="credentials" placeholder="Filter by Credentials (user:pass)" value="{{ credentials_filter }}">
                 <label>
                     <input type="checkbox" name="has_commands" value="1"
                            {% if has_commands == '1' %}checked{% endif %}
@@ -26,6 +28,12 @@
                            {% if has_tty == '1' %}checked{% endif %}
                            onchange="this.form.submit()">
                     Has TTY recording
+                </label>
+                <label>
+                    <input type="checkbox" name="successful_login" value="1"
+                           {% if successful_login == '1' %}checked{% endif %}
+                           onchange="this.form.submit()">
+                    Successful login
                 </label>
                 <button type="submit">Filter</button>
             </form>
@@ -60,12 +68,20 @@
                 <td>
                     <a href="?ip={{ session.src_ip }}&hours={{ hours }}">{{ session.src_ip }}</a>
                 </td>
-                <td>{{ session.geo.country if session.geo else 'Unknown' }}</td>
+                <td>
+                    {% if session.geo and session.geo.country %}
+                    <a href="?country={{ session.geo.country }}&hours={{ hours }}">{{ session.geo.country }}</a>
+                    {% else %}
+                    Unknown
+                    {% endif %}
+                </td>
                 <td>{{ session.start_time | format_timestamp }}</td>
                 <td>{{ session.duration | format_duration }}</td>
                 <td>
                     {% if session.username %}
-                    <code>{{ session.username }}:{{ session.password or '***' }}</code>
+                    <a href="?credentials={{ session.username }}:{{ session.password or '***' }}&hours={{ hours }}">
+                        <code>{{ session.username }}:{{ session.password or '***' }}</code>
+                    </a>
                     {% else %}
                     <span class="no-data">N/A</span>
                     {% endif %}

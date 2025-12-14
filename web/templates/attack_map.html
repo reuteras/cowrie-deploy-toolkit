@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+
+{% block title %}Attack Map - Cowrie Honeypot{% endblock %}
+
+{% block head %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="attack-map-page">
+    <div class="page-header">
+        <h1>🎯 Live Attack Visualization</h1>
+        <div class="header-actions">
+            <select id="hours-selector" onchange="window.location.href='?hours='+this.value">
+                <option value="1" {% if hours == 1 %}selected{% endif %}>Last Hour</option>
+                <option value="6" {% if hours == 6 %}selected{% endif %}>Last 6 Hours</option>
+                <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 Hours</option>
+                <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 Days</option>
+            </select>
+            <button id="play-pause-btn" class="btn btn-primary">⏸ Pause</button>
+            <button id="reset-btn" class="btn">🔄 Reset</button>
+            <a href="{{ url_for('index') }}" class="btn">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <div class="map-stats" style="margin: 20px 0; padding: 15px; background: var(--bg-secondary); border-radius: 8px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+            <div>
+                <div style="font-size: 0.9em; color: var(--text-secondary);">Total Attacks</div>
+                <div style="font-size: 1.5em; font-weight: 600; color: var(--accent-color);">{{ attacks | length }}</div>
+            </div>
+            <div>
+                <div style="font-size: 0.9em; color: var(--text-secondary);">Honeypot Location</div>
+                <div style="font-size: 1.2em; font-weight: 600;">
+                    {% if honeypot_location %}
+                    {{ honeypot_location.city }}, {{ honeypot_location.country }}
+                    {% else %}
+                    Unknown
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <div style="font-size: 0.9em; color: var(--text-secondary);">Animation Progress</div>
+                <div style="font-size: 1.2em; font-weight: 600;" id="progress-text">0%</div>
+            </div>
+            <div>
+                <div style="font-size: 0.9em; color: var(--text-secondary);">Speed</div>
+                <input type="range" id="speed-slider" min="0.1" max="5" step="0.1" value="1" style="width: 100%;">
+                <div style="text-align: center; font-size: 0.9em;" id="speed-text">1x</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="attack-map" style="height: 700px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>
+
+    <div class="map-legend" style="margin-top: 20px; padding: 15px; background: var(--bg-secondary); border-radius: 8px;">
+        <strong>Legend:</strong>
+        <span style="margin-left: 15px;">🔴 Attacker</span>
+        <span style="margin-left: 15px;">🎯 Honeypot</span>
+        <span style="margin-left: 15px; color: #dc3545;">━━━</span> <span>Attack Path</span>
+        <span style="margin-left: 15px; color: #28a745;">━━━</span> <span>Successful Login</span>
+    </div>
+</div>
+
+<style>
+.attack-path {
+    stroke-width: 2;
+    fill: none;
+    stroke-dasharray: 5, 5;
+    animation: dash 20s linear infinite;
+}
+
+@keyframes dash {
+    to {
+        stroke-dashoffset: -1000;
+    }
+}
+
+.pew-marker {
+    animation: pew-pew 0.5s ease-out;
+}
+
+@keyframes pew-pew {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+    50% {
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.pulse-marker {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 1;
+    }
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const honeypotLocation = {{ honeypot_location | tojson }};
+    const attacks = {{ attacks | tojson }};
+
+    if (!honeypotLocation) {
+        document.getElementById('attack-map').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary);">Honeypot location not available. Please configure SERVER_IP in deployment.</div>';
+        return;
+    }
+
+    // Initialize map centered on honeypot
+    const map = L.map('attack-map').setView([honeypotLocation.lat, honeypotLocation.lon], 3);
+
+    // Add tile layer (dark theme for pew-pew effect)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap, © CartoDB',
+        maxZoom: 19,
+        subdomains: 'abcd'
+    }).addTo(map);
+
+    // Add honeypot marker (larger and more visible)
+    const honeypotIcon = L.divIcon({
+        className: 'honeypot-icon',
+        html: '<div style="font-size: 32px; text-shadow: 0 0 10px rgba(255, 193, 7, 0.8);">🎯</div>',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+    });
+
+    const honeypotMarker = L.marker([honeypotLocation.lat, honeypotLocation.lon], {
+        icon: honeypotIcon,
+        zIndexOffset: 1000
+    }).addTo(map);
+
+    honeypotMarker.bindPopup(`
+        <strong>🎯 Honeypot</strong><br>
+        ${honeypotLocation.city}, ${honeypotLocation.country}
+    `);
+
+    // Prepare migration data
+    const migrationData = attacks.map(attack => ({
+        lat: attack.lat,
+        lon: attack.lon,
+        from: [attack.lat, attack.lon],
+        to: [honeypotLocation.lat, honeypotLocation.lon],
+        labels: [`${attack.city}, ${attack.country}`, `${honeypotLocation.city}, ${honeypotLocation.country}`],
+        color: attack.login_success ? '#28a745' : '#dc3545',
+        value: 1,
+        sessionId: attack.session_id,
+        ip: attack.ip,
+        city: attack.city,
+        country: attack.country,
+        login_success: attack.login_success
+    }));
+
+    // Animation state
+    let currentIndex = 0;
+    let animationRunning = true;
+    let animationSpeed = 1;
+    let migrationLayer = null;
+    let animationInterval = null;
+
+    const arcLayers = [];
+    const pulseMarkers = [];
+
+    // Calculate points along a curved arc using quadratic bezier curve
+    function calculateArcPoints(start, end, numPoints = 50) {
+        const points = [];
+
+        // Calculate control point for bezier curve
+        // Midpoint between start and end
+        const midLat = (start[0] + end[0]) / 2;
+        const midLon = (start[1] + end[1]) / 2;
+
+        // Offset perpendicular to the line for curve effect
+        const dx = end[1] - start[1];
+        const dy = end[0] - start[0];
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const offset = distance * 0.3; // 30% offset for nice curve
+
+        // Control point perpendicular to midpoint
+        const controlLat = midLat + (-dx / distance) * offset;
+        const controlLon = midLon + (dy / distance) * offset;
+
+        // Generate points along quadratic bezier curve
+        for (let i = 0; i <= numPoints; i++) {
+            const t = i / numPoints;
+            const invT = 1 - t;
+
+            // Quadratic bezier formula: B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
+            const lat = invT * invT * start[0] +
+                       2 * invT * t * controlLat +
+                       t * t * end[0];
+            const lon = invT * invT * start[1] +
+                       2 * invT * t * controlLon +
+                       t * t * end[1];
+
+            points.push([lat, lon]);
+        }
+
+        return points;
+    }
+
+    function addAttackArc(attack) {
+        // Calculate curved path points
+        const arcPoints = calculateArcPoints(
+            [attack.lat, attack.lon],
+            [honeypotLocation.lat, honeypotLocation.lon]
+        );
+
+        // Create curved arc polyline
+        const arc = L.polyline(arcPoints, {
+            color: attack.login_success ? '#28a745' : '#dc3545',
+            weight: 2,
+            opacity: 0.7,
+            dashArray: '5, 10',
+            className: 'attack-path'
+        });
+
+        arc.addTo(map);
+        arcLayers.push(arc);
+
+        // Add popup to arc
+        arc.bindPopup(`
+            <strong>${attack.city}, ${attack.country}</strong><br>
+            IP: <a href="/sessions?ip=${attack.ip}" target="_blank">${attack.ip}</a><br>
+            <a href="/session/${attack.sessionId}" target="_blank">View Session →</a>
+        `);
+
+        // Add pulsing marker at attacker location
+        const pulseIcon = L.divIcon({
+            className: 'pulse-icon',
+            html: `<div style="
+                background: ${attack.login_success ? '#28a745' : '#dc3545'};
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                border: 2px solid #fff;
+                box-shadow: 0 0 10px ${attack.login_success ? '#28a745' : '#dc3545'};
+                animation: pulse 2s ease-in-out infinite;
+            "></div>`,
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
+        });
+
+        const marker = L.marker([attack.lat, attack.lon], {
+            icon: pulseIcon
+        }).addTo(map);
+
+        marker.bindPopup(`
+            <strong>${attack.city}, ${attack.country}</strong><br>
+            IP: <a href="/sessions?ip=${attack.ip}" target="_blank">${attack.ip}</a><br>
+            <a href="/session/${attack.sessionId}" target="_blank">View Session →</a>
+        `);
+
+        pulseMarkers.push(marker);
+
+        // Auto-fade and remove after 8 seconds
+        setTimeout(() => {
+            // Fade out animation
+            let opacity = 0.7;
+            const fadeInterval = setInterval(() => {
+                opacity -= 0.1;
+                if (opacity <= 0) {
+                    clearInterval(fadeInterval);
+                    // Remove from map
+                    map.removeLayer(arc);
+                    map.removeLayer(marker);
+                    // Remove from tracking arrays
+                    const arcIndex = arcLayers.indexOf(arc);
+                    if (arcIndex > -1) arcLayers.splice(arcIndex, 1);
+                    const markerIndex = pulseMarkers.indexOf(marker);
+                    if (markerIndex > -1) pulseMarkers.splice(markerIndex, 1);
+                } else {
+                    arc.setStyle({ opacity: opacity });
+                }
+            }, 200);
+        }, 8000);
+
+        return arc;
+    }
+
+    function animateAttacks() {
+        if (!animationRunning) return;
+
+        if (currentIndex < migrationData.length) {
+            addAttackArc(migrationData[currentIndex]);
+            currentIndex++;
+
+            const progress = Math.round((currentIndex / migrationData.length) * 100);
+            document.getElementById('progress-text').textContent = `${progress}%`;
+
+            animationInterval = setTimeout(animateAttacks, 500 / animationSpeed);
+        } else {
+            // Animation complete, pause for a moment then reset
+            setTimeout(() => {
+                if (animationRunning) {
+                    clearMap();
+                    currentIndex = 0;
+                    animateAttacks();
+                }
+            }, 3000);
+        }
+    }
+
+    function clearMap() {
+        // Remove all arcs and markers
+        arcLayers.forEach(arc => map.removeLayer(arc));
+        pulseMarkers.forEach(marker => map.removeLayer(marker));
+        arcLayers.length = 0;
+        pulseMarkers.length = 0;
+        document.getElementById('progress-text').textContent = '0%';
+    }
+
+    // Control buttons
+    document.getElementById('play-pause-btn').addEventListener('click', function() {
+        animationRunning = !animationRunning;
+        this.textContent = animationRunning ? '⏸ Pause' : '▶️ Play';
+        if (animationRunning) {
+            animateAttacks();
+        } else {
+            if (animationInterval) clearTimeout(animationInterval);
+        }
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', function() {
+        if (animationInterval) clearTimeout(animationInterval);
+        clearMap();
+        currentIndex = 0;
+        if (animationRunning) animateAttacks();
+    });
+
+    document.getElementById('speed-slider').addEventListener('input', function() {
+        animationSpeed = parseFloat(this.value);
+        document.getElementById('speed-text').textContent = `${animationSpeed.toFixed(1)}x`;
+    });
+
+    // Start animation
+    if (attacks.length > 0) {
+        animateAttacks();
+    } else {
+        const noDataDiv = document.createElement('div');
+        noDataDiv.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); padding: 20px; border-radius: 8px; color: white; text-align: center; z-index: 1000;';
+        noDataDiv.textContent = 'No attacks in selected time range';
+        document.getElementById('attack-map').appendChild(noDataDiv);
+    }
+});
+</script>
+{% endblock %}

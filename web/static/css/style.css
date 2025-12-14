@@ -652,3 +652,96 @@ code {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--border-color);
 }
+
+/* Events Timeline Styles */
+.events-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.event-entry {
+    background: var(--bg-secondary);
+    border-left: 3px solid var(--accent-color);
+    border-radius: 4px;
+    padding: 1rem;
+    transition: all 0.2s ease;
+}
+
+.event-entry:hover {
+    background: var(--bg-tertiary);
+    border-left-width: 5px;
+}
+
+.event-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.event-time {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+
+.event-type {
+    font-size: 0.85em;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+
+.event-details {
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.event-details p {
+    margin: 0.5rem 0;
+}
+
+.event-details code {
+    background: var(--bg-primary);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+.event-details pre {
+    background: var(--bg-primary);
+    padding: 1rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    margin: 0.5rem 0;
+}
+
+/* Event type specific colors */
+.event-entry.event-success {
+    border-left-color: #10b981;
+}
+
+.event-entry.event-failed {
+    border-left-color: #ef4444;
+}
+
+.event-entry.event-connect {
+    border-left-color: #3b82f6;
+}
+
+.event-entry.event-closed {
+    border-left-color: #6b7280;
+}
+
+.event-entry.event-input {
+    border-left-color: #8b5cf6;
+}
+
+.event-entry.event-download {
+    border-left-color: #f59e0b;
+}
+
+.event-entry.event-result {
+    border-left-color: #ec4899;
+}

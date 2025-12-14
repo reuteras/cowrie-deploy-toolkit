@@ -37,6 +37,37 @@
         </a>
     </div>
 
+    <!-- System Information Box -->
+    <div class="system-info-box" id="system-info" style="margin: 20px 0; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white; display: none;">
+        <h3 style="margin: 0 0 10px 0; font-size: 18px;">Honeypot System Information</h3>
+        <div class="system-info-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div>
+                <div style="opacity: 0.9; font-size: 12px;">Server IP</div>
+                <div style="font-weight: 600; font-size: 16px;" id="server-ip">Loading...</div>
+            </div>
+            <div>
+                <div style="opacity: 0.9; font-size: 12px;">Hostname</div>
+                <div style="font-weight: 600; font-size: 16px;" id="honeypot-hostname">Loading...</div>
+            </div>
+            <div>
+                <div style="opacity: 0.9; font-size: 12px;">Cowrie Version</div>
+                <div style="font-weight: 600; font-size: 16px;" id="cowrie-version">Loading...</div>
+            </div>
+            <div>
+                <div style="opacity: 0.9; font-size: 12px;">Container Built</div>
+                <div style="font-weight: 600; font-size: 16px;" id="build-date">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Canary Tokens Box -->
+    <div class="canary-tokens-box" id="canary-tokens" style="margin: 20px 0; padding: 15px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border-radius: 8px; color: white; display: none;">
+        <h3 style="margin: 0 0 10px 0; font-size: 18px;">🍯 Canary Tokens Deployed</h3>
+        <div id="canary-tokens-list" style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <div style="opacity: 0.8; font-size: 14px;">Loading...</div>
+        </div>
+    </div>
+
     <div class="dashboard-grid">
         <!-- Attack Map -->
         <div class="dashboard-card full-width">
@@ -58,7 +89,7 @@
                 <tbody>
                     {% for country, count in stats.top_countries %}
                     <tr>
-                        <td>{{ country }}</td>
+                        <td><a href="{{ url_for('sessions', country=country, hours=hours) }}">{{ country }}</a></td>
                         <td>{{ count }}</td>
                     </tr>
                     {% endfor %}
@@ -84,7 +115,7 @@
                 <tbody>
                     {% for cred, count in stats.top_credentials %}
                     <tr>
-                        <td><code>{{ cred }}</code></td>
+                        <td><a href="{{ url_for('sessions', credentials=cred, hours=hours) }}"><code>{{ cred }}</code></a></td>
                         <td>{{ count }}</td>
                         <td>
                             {% if cred in stats.successful_credentials %}
@@ -99,6 +130,31 @@
             </table>
             {% else %}
             <p class="no-data">No data available</p>
+            {% endif %}
+        </div>
+
+        <!-- Top SSH Clients -->
+        <div class="dashboard-card">
+            <h2>Top SSH Clients</h2>
+            {% if stats.top_clients %}
+            <table class="data-table sortable">
+                <thead>
+                    <tr>
+                        <th>Client Version</th>
+                        <th>Sessions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for client, count in stats.top_clients %}
+                    <tr>
+                        <td><code>{{ client }}</code></td>
+                        <td>{{ count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="no-data">No client data available</p>
             {% endif %}
         </div>
 
@@ -124,6 +180,72 @@
             </table>
             {% else %}
             <p class="no-data">No commands recorded</p>
+            {% endif %}
+        </div>
+
+        <!-- Threat Intelligence: GreyNoise -->
+        <div class="dashboard-card">
+            <h2>🔍 GreyNoise Intelligence</h2>
+            {% if stats.greynoise_ips %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>IP Address</th>
+                        <th>Classification</th>
+                        <th>Last Seen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for gn in stats.greynoise_ips[:10] %}
+                    <tr>
+                        <td><a href="{{ url_for('sessions', ip=gn.ip, hours=hours) }}">{{ gn.ip }}</a></td>
+                        <td>
+                            {% if gn.classification == 'malicious' %}
+                            <span class="badge badge-danger">Malicious</span>
+                            {% elif gn.classification == 'benign' %}
+                            <span class="badge badge-success">Benign</span>
+                            {% else %}
+                            <span class="badge badge-warning">Unknown</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ gn.timestamp | format_timestamp }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="no-data">No GreyNoise data available</p>
+            <p style="font-size: 0.9em; color: var(--text-secondary); margin-top: 0.5rem;">
+                GreyNoise identifies IPs engaged in mass internet scanning.
+            </p>
+            {% endif %}
+        </div>
+
+        <!-- Threat Intelligence: DShield -->
+        <div class="dashboard-card">
+            <h2>🔍 DShield Intelligence</h2>
+            {% if stats.dshield_ips %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>IP Address</th>
+                        <th>Last Seen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ds in stats.dshield_ips[:10] %}
+                    <tr>
+                        <td><a href="{{ url_for('sessions', ip=ds.ip, hours=hours) }}">{{ ds.ip }}</a></td>
+                        <td>{{ ds.timestamp | format_timestamp }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="no-data">No DShield data available</p>
+            <p style="font-size: 0.9em; color: var(--text-secondary); margin-top: 0.5rem;">
+                DShield aggregates firewall logs from thousands of sensors worldwide.
+            </p>
             {% endif %}
         </div>
     </div>
@@ -158,10 +280,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize map
     const map = L.map('attack-map').setView([20, 0], 2);
 
-    // Add tile layer
+    // Add tile layer (English labels)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
-        maxZoom: 18
+        maxZoom: 18,
+        language: 'en'
     }).addTo(map);
 
     // Add markers for attack origins
@@ -193,6 +316,66 @@ document.addEventListener('DOMContentLoaded', function() {
             Sessions: ${loc.count}
         `);
     });
+
+    // Fetch and display system information
+    fetch('/api/system-info')
+        .then(response => response.json())
+        .then(data => {
+            // Show the info box
+            document.getElementById('system-info').style.display = 'block';
+
+            // Populate fields
+            document.getElementById('server-ip').textContent = data.server_ip || 'N/A';
+            document.getElementById('honeypot-hostname').textContent = data.honeypot_hostname || 'N/A';
+            document.getElementById('cowrie-version').textContent = data.cowrie_version || 'Unknown';
+
+            // Format build date
+            if (data.build_date) {
+                const buildDate = new Date(data.build_date);
+                document.getElementById('build-date').textContent = buildDate.toLocaleString();
+            } else {
+                document.getElementById('build-date').textContent = 'Unknown';
+            }
+        })
+        .catch(error => {
+            console.error('Failed to load system info:', error);
+            // Hide the box if fetch fails
+            document.getElementById('system-info').style.display = 'none';
+        });
+
+    // Fetch and display Canary Token information
+    fetch('/api/canary-tokens')
+        .then(response => response.json())
+        .then(data => {
+            if (data.total > 0) {
+                // Show the Canary Tokens box
+                document.getElementById('canary-tokens').style.display = 'block';
+
+                // Build tokens list HTML
+                const tokensHTML = data.tokens.map(token => {
+                    const sizeKB = (token.size / 1024).toFixed(1);
+                    return `
+                        <div style="background: rgba(255,255,255,0.2); padding: 10px 15px; border-radius: 6px; flex: 1 1 200px; min-width: 200px;">
+                            <div style="font-size: 24px; margin-bottom: 5px;">${token.icon}</div>
+                            <div style="font-weight: 600; font-size: 14px; margin-bottom: 3px;">${token.type}</div>
+                            <div style="opacity: 0.9; font-size: 12px; margin-bottom: 2px;">${token.description}</div>
+                            <div style="opacity: 0.8; font-size: 11px; font-family: monospace;">${token.path}</div>
+                            <div style="opacity: 0.7; font-size: 11px; margin-top: 3px;">${sizeKB} KB</div>
+                        </div>
+                    `;
+                }).join('');
+
+                document.getElementById('canary-tokens-list').innerHTML = tokensHTML;
+            } else {
+                // Hide the box if no tokens
+                document.getElementById('canary-tokens').style.display = 'none';
+            }
+        })
+        .catch(error => {
+            console.error('Failed to load Canary Token info:', error);
+            // Hide the box if fetch fails
+            document.getElementById('canary-tokens').style.display = 'none';
+        });
 });
 </script>
 {% endblock %}

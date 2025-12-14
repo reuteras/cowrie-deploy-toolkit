@@ -50,6 +50,8 @@ services:
     volumes:
       # Mount Cowrie data read-only
       - cowrie-var:/cowrie-data:ro
+      # Mount honeypot filesystem contents (for Canary Token detection)
+      - /opt/cowrie/share:/cowrie-share:ro
       # Mount GeoIP database if available
       - /var/lib/GeoIP:/geoip:ro
       # Mount YARA/VT cache directory (from yara-scanner-daemon on host)
@@ -58,6 +60,7 @@ services:
       - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
       - COWRIE_DOWNLOAD_PATH=/cowrie-data/lib/cowrie/downloads
+      - HONEYFS_PATH=/cowrie-share/cowrie/contents
       - GEOIP_DB_PATH=/geoip/GeoLite2-City.mmdb
       - YARA_CACHE_DB_PATH=/yara-cache/yara-cache.db
       - BASE_URL=${WEB_BASE_URL:-}

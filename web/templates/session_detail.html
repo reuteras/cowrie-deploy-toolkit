@@ -38,8 +38,42 @@
                     {% endif %}
                 </dd>
 
+                <dt>ASN</dt>
+                <dd>
+                    {% if session.geo and session.geo.asn %}
+                    AS{{ session.geo.asn }}
+                    {% if session.geo.asn_org %} - {{ session.geo.asn_org }}{% endif %}
+                    {% else %}
+                    Unknown
+                    {% endif %}
+                </dd>
+
                 <dt>Client Version</dt>
                 <dd><code>{{ session.client_version or 'Unknown' }}</code></dd>
+
+                {% if threat_intel.greynoise %}
+                <dt>GreyNoise</dt>
+                <dd>
+                    {% if threat_intel.greynoise.classification == 'malicious' %}
+                    <span class="badge badge-danger">Malicious</span>
+                    {% elif threat_intel.greynoise.classification == 'benign' %}
+                    <span class="badge badge-success">Benign</span>
+                    {% else %}
+                    <span class="badge badge-warning">Unknown</span>
+                    {% endif %}
+                    <br>
+                    <small style="color: var(--text-secondary);">{{ threat_intel.greynoise.message }}</small>
+                </dd>
+                {% endif %}
+
+                {% if threat_intel.dshield %}
+                <dt>DShield</dt>
+                <dd>
+                    <span class="badge badge-warning">Reported</span>
+                    <br>
+                    <small style="color: var(--text-secondary);">{{ threat_intel.dshield.message }}</small>
+                </dd>
+                {% endif %}
 
                 <dt>Start Time</dt>
                 <dd>{{ session.start_time | format_timestamp }}</dd>
@@ -130,5 +164,94 @@
         </table>
     </div>
     {% endif %}
+
+    <!-- All Events Timeline -->
+    <div class="detail-card full-width">
+        <h2>Event Timeline ({{ events | length }} events)</h2>
+        {% if events %}
+        <div class="events-timeline">
+            {% for event in events %}
+            <div class="event-entry event-{{ event.eventid.split('.')[-1] }}">
+                <div class="event-header">
+                    <span class="event-time">{{ event.timestamp | format_timestamp }}</span>
+                    <span class="event-type badge">{{ event.eventid }}</span>
+                </div>
+                <div class="event-details">
+                    {% if event.eventid == 'cowrie.session.connect' %}
+                        <p><strong>Session connected</strong> from {{ event.src_ip }}:{{ event.src_port }}</p>
+                        {% if event.protocol %}<p>Protocol: <code>{{ event.protocol }}</code></p>{% endif %}
+
+                    {% elif event.eventid == 'cowrie.client.version' %}
+                        <p><strong>Client version:</strong> <code>{{ event.version }}</code></p>
+
+                    {% elif event.eventid == 'cowrie.client.kex' %}
+                        <p><strong>Key exchange:</strong></p>
+                        <p>Algorithms: <code>{{ event.kexAlgs | join(', ') if event.kexAlgs else 'N/A' }}</code></p>
+
+                    {% elif event.eventid == 'cowrie.login.success' %}
+                        <p><strong>✓ Login successful:</strong> <code>{{ event.username }}:{{ event.password }}</code></p>
+
+                    {% elif event.eventid == 'cowrie.login.failed' %}
+                        <p><strong>✗ Login failed:</strong> <code>{{ event.username }}:{{ event.password }}</code></p>
+
+                    {% elif event.eventid == 'cowrie.command.input' %}
+                        <p><strong>Command:</strong> <code>{{ event.input }}</code></p>
+
+                    {% elif event.eventid == 'cowrie.command.failed' %}
+                        <p><strong>Command failed:</strong> <code>{{ event.input }}</code></p>
+
+                    {% elif event.eventid == 'cowrie.session.file_download' %}
+                        <p><strong>File download:</strong></p>
+                        <p>URL: <code>{{ event.url }}</code></p>
+                        <p>SHA256: <code>{{ event.shasum }}</code></p>
+                        {% if event.outfile %}<p>Saved as: <code>{{ event.outfile }}</code></p>{% endif %}
+
+                    {% elif event.eventid == 'cowrie.session.params' %}
+                        <p><strong>Session parameters:</strong></p>
+                        {% if event.arch %}<p>Architecture: <code>{{ event.arch }}</code></p>{% endif %}
+
+                    {% elif event.eventid == 'cowrie.direct-tcpip.request' %}
+                        <p><strong>Direct TCP/IP request:</strong></p>
+                        <p>Destination: <code>{{ event.dst_ip }}:{{ event.dst_port }}</code></p>
+
+                    {% elif event.eventid == 'cowrie.direct-tcpip.data' %}
+                        <p><strong>Direct TCP/IP data:</strong> {{ event.data | length }} bytes</p>
+
+                    {% elif event.eventid == 'cowrie.direct-tcpip.ja4' %}
+                        <p><strong>JA4 fingerprint:</strong> <code>{{ event.ja4 }}</code></p>
+
+                    {% elif event.eventid == 'cowrie.direct-tcpip.ja4h' %}
+                        <p><strong>JA4H fingerprint:</strong> <code>{{ event.ja4h }}</code></p>
+
+                    {% elif event.eventid == 'cowrie.log.closed' %}
+                        <p><strong>TTY log closed:</strong></p>
+                        {% if event.ttylog %}<p>File: <code>{{ event.ttylog }}</code></p>{% endif %}
+                        {% if event.size %}<p>Size: {{ event.size }} bytes</p>{% endif %}
+
+                    {% elif event.eventid == 'cowrie.session.closed' %}
+                        <p><strong>Session closed</strong></p>
+                        {% if event.duration %}<p>Duration: {{ event.duration | format_duration }}</p>{% endif %}
+
+                    {% elif event.eventid == 'cowrie.greynoise.result' %}
+                        <p><strong>🔍 GreyNoise Intelligence:</strong></p>
+                        <p>{{ event.message }}</p>
+                        {% if event.classification %}<p>Classification: <span class="badge badge-{{ 'danger' if event.classification == 'malicious' else 'warning' }}">{{ event.classification }}</span></p>{% endif %}
+
+                    {% elif event.eventid == 'cowrie.dshield.result' %}
+                        <p><strong>🔍 DShield Intelligence:</strong></p>
+                        <p>{{ event.message }}</p>
+
+                    {% else %}
+                        <p><strong>Event data:</strong></p>
+                        <pre style="font-size: 0.85em; overflow-x: auto;">{{ event | tojson(indent=2) }}</pre>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="no-data">No events found for this session</p>
+        {% endif %}
+    </div>
 </div>
 {% endblock %}
