@@ -10,6 +10,7 @@
 # Load common functions library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/common.sh
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/scripts/common.sh"
 
 # ============================================================
@@ -251,6 +252,7 @@ echo_info "SSH is ready."
 
 echo_info "Moving SSH to port $REAL_SSH_PORT..."
 
+# shellcheck disable=SC2087
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "root@$SERVER_IP" bash << EOF
 set -e
 # Change SSH port - remove any existing Port directives and add new one
@@ -289,6 +291,7 @@ if [ "$ENABLE_TAILSCALE" = "true" ]; then
 
     echo_info "Setting up Tailscale for secure management access..."
 
+    # shellcheck disable=SC2087
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << TAILSCALEEOF
 set -e
 
@@ -454,7 +457,7 @@ fi
 
 # Upload contents directory for real file content
 CONTENTS_DIR="$OUTPUT_DIR/contents"
-if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A $CONTENTS_DIR 2>/dev/null)" ]; then
+if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A "$CONTENTS_DIR" 2>/dev/null)" ]; then
     echo_info "Uploading file contents..."
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
         "mkdir -p /opt/cowrie/share/cowrie/contents"
@@ -475,7 +478,7 @@ fi
 
 # Upload txtcmds directory for real command output
 CONTENTS_DIR="$OUTPUT_DIR/txtcmds"
-if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A $CONTENTS_DIR 2>/dev/null)" ]; then
+if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A "$CONTENTS_DIR" 2>/dev/null)" ]; then
     echo_info "Uploading txtcmds contents..."
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
         "mkdir -p /opt/cowrie/share/cowrie/txtcmds"
@@ -512,6 +515,17 @@ if [ -f "./cowrie/Dockerfile" ]; then
 else
     echo_error "Error: Dockerfile not found at ./cowrie/Dockerfile"
     exit 1
+fi
+
+# Upload userdb.txt (if exists) else upload userdb.txt.default as fallback
+if [ -f "./cowrie/userdb.txt" ]; then
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+        ./cowrie/userdb.txt "root@$SERVER_IP:/opt/cowrie/etc/userdb.txt" > /dev/null
+    echo_info "Custom userdb.txt uploaded"
+else
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+        ./cowrie/userdb.txt.default "root@$SERVER_IP:/opt/cowrie/etc/userdb.txt" > /dev/null
+    echo_info "Default userdb.txt uploaded"
 fi
 
 # Upload custom plugins (if any exist)
@@ -736,6 +750,13 @@ docker run --rm \
   -v /opt/cowrie/etc/cowrie.cfg:/src/cowrie.cfg:ro \
   alpine cp /src/cowrie.cfg /dest/ > /dev/null 2>&1
 
+# Copy userdb.txt into etc volume
+echo "[remote] Copying userdb.txt to volume..."
+docker run --rm \
+  -v cowrie-etc:/dest \
+  -v /opt/cowrie/etc/userdb.txt:/src/userdb.txt:ro \
+  alpine cp /src/userdb.txt /dest/ > /dev/null 2>&1
+
 # Set proper ownership (UID 999 = cowrie user)
 docker run --rm \
   -v cowrie-etc:/etc \
@@ -807,6 +828,7 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
             "$CACHE_DIR"/GeoLite2-*.mmdb "root@$SERVER_IP:/var/lib/GeoIP/" > /dev/null
 
         # Set up automatic updates on server (weekly)
+        # shellcheck disable=SC2087
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << MAXMINDEOF
 set -e
 
@@ -860,6 +882,7 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     fi
 
     if [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASSWORD" ]; then
+        # shellcheck disable=SC2087
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << POSTFIXEOF
 set -e
 
@@ -917,6 +940,7 @@ POSTFIXEOF
         EMAIL_FROM=$(grep "email_from" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
 
         if [ -n "$EMAIL_TO" ] && [ -n "$EMAIL_FROM" ]; then
+            # shellcheck disable=SC2087
             ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << TESTEMAILEOF
 set -e
 
@@ -1016,6 +1040,7 @@ if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
         }
 
     # Set up web dashboard on server
+    # shellcheck disable=SC2087
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << WEBEOF
 set -e
 
@@ -1237,15 +1262,6 @@ Identity used:
   Architecture:    $ARCH
   SSH Banner:      $SSH_BANNER
 EOFINFO2
-
-# Add web dashboard info if enabled
-if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
-    # Use appropriate IP based on Tailscale configuration
-    DASHBOARD_IP="$SERVER_IP"
-    if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
-        DASHBOARD_IP="$TAILSCALE_IP"
-    fi
-fi
 
 cat << UPDATEINFO
 

@@ -16,6 +16,6 @@ root:x:!root
 root:x:!12345
 root:x:!123456
 root:x:!/honeypot/i
-root:x:tor
-root:x:!/^....$/
+root:x:toor
+root:x:!/^.{1,4}/
 root:x:*
