@@ -251,7 +251,8 @@ class SessionParser:
                 "password": None,
                 "commands": [],
                 "downloads": [],
-                "tty_log": None,
+                "tty_logs": [],  # Changed to list to collect all TTY files
+                "tty_log": None,  # Keep for backwards compatibility (last TTY file)
                 "client_version": None,
                 "geo": {},
                 "login_success": False,
@@ -312,6 +313,14 @@ class SessionParser:
                     elif event_id == "cowrie.log.closed":
                         tty_log = entry.get("ttylog")
                         if tty_log:
+                            # Append to list of all TTY logs for this session
+                            session["tty_logs"].append({
+                                "ttylog": tty_log,
+                                "timestamp": entry["timestamp"],
+                                "duration": entry.get("duration", "0"),
+                                "size": entry.get("size", 0)
+                            })
+                            # Keep last one for backwards compatibility
                             session["tty_log"] = tty_log
 
                     elif event_id == "cowrie.session.closed":
@@ -699,7 +708,6 @@ class TTYLogParser:
         duration = 0.0
         currtty = 0
         prevtime = 0
-        prefdir = 0  # Preferred direction (first stream seen)
 
         # Cowrie ttylog format: <iLiiLL = op, tty, length, direction, sec, usec
         record_size = struct.calcsize("<iLiiLL")
@@ -750,12 +758,9 @@ class TTYLogParser:
                                 pass
 
                         elif op == self.OP_WRITE:
-                            # The first stream seen is considered 'output' (prefdir)
-                            if prefdir == 0:
-                                prefdir = direction
-
-                            # Only include events matching the preferred direction
-                            if direction == prefdir:
+                            # Only include TYPE_OUTPUT (2) which contains prompts, echoed commands, and output
+                            # TYPE_INPUT (1) is just raw keystrokes and should be excluded
+                            if direction == self.TYPE_OUTPUT:
                                 # Calculate timestamp
                                 curtime = float(sec) + float(usec) / 1000000.0
                                 if prevtime != 0:
@@ -764,10 +769,8 @@ class TTYLogParser:
                                     sleeptime = 0.0
                                 prevtime = curtime
 
-                                # Convert newlines to carriage return + newline
-                                # This prevents upload mangling in asciinema
-                                data = data.replace(b"\n", b"\r\n")
-
+                                # Decode the data without modifying newlines
+                                # Asciinema player handles terminal control characters correctly
                                 try:
                                     text = data.decode("utf-8", errors="replace")
                                 except Exception:
@@ -797,6 +800,83 @@ class TTYLogParser:
             "title": "Cowrie Recording",
             "env": {"SHELL": "/bin/bash", "TERM": "xterm256-color"},
             "stdout": stdout,
+        }
+
+    def merge_tty_logs(self, session: dict, hostname: str = "dmz-web01") -> Optional[dict]:
+        """Merge multiple TTY log files from a session into a single asciicast.
+
+        Args:
+            session: Session dict containing tty_logs list and commands list
+            hostname: Honeypot hostname for the prompt
+
+        Returns:
+            Merged asciicast dict in v1 format
+        """
+        tty_logs = session.get("tty_logs", [])
+        commands = session.get("commands", [])
+        username = session.get("username", "root")
+
+        print(f"[DEBUG] merge_tty_logs: Found {len(tty_logs)} TTY logs and {len(commands)} commands")
+
+        if not tty_logs:
+            print(f"[DEBUG] merge_tty_logs: No TTY logs found, returning None")
+            return None
+
+        merged_stdout = []
+        total_duration = 0.0
+        width = 120
+        height = 30
+
+        # Create prompt string (e.g., "root@dmz-web01:~# ")
+        prompt = f"{username}@{hostname}:~# "
+
+        # Match TTY logs with commands by timestamp
+        # Sort both by timestamp for correlation
+        sorted_ttys = sorted(tty_logs, key=lambda x: x.get("timestamp", ""))
+        sorted_cmds = sorted(commands, key=lambda x: x.get("timestamp", ""))
+
+        for i, tty_entry in enumerate(sorted_ttys):
+            # Add realistic delay before next command (simulate attacker thinking/typing)
+            delay = 0.5 if i > 0 else 0.0
+
+            # Add prompt before command
+            merged_stdout.append([total_duration, prompt])
+
+            # Get corresponding command if available
+            if i < len(sorted_cmds):
+                cmd_text = sorted_cmds[i].get("command", "")
+                # Echo the command (what user typed) with a newline
+                merged_stdout.append([total_duration, cmd_text + "\r\n"])
+                total_duration += 0.05
+
+            # Parse and add the TTY log output
+            tty_log_name = tty_entry.get("ttylog")
+            if tty_log_name:
+                asciicast = self.parse_tty_log(tty_log_name)
+                if asciicast:
+                    # Update dimensions if needed
+                    width = max(width, asciicast.get("width", 120))
+                    height = max(height, asciicast.get("height", 30))
+
+                    # Add the command output with timing from original TTY file
+                    # Scale timing slightly to make it more readable
+                    for event in asciicast.get("stdout", []):
+                        # Scale the timing by 1.5x to slow down fast output
+                        scaled_time = event[0] * 1.5
+                        merged_stdout.append([scaled_time, event[1].replace("\n", "\r\n")])
+                        total_duration += scaled_time
+
+        print(f"[DEBUG] merge_tty_logs: Created asciicast with {len(merged_stdout)} events, duration={total_duration:.2f}s")
+
+        return {
+            "version": 1,
+            "width": min(width, 200),
+            "height": min(height, 50),
+            "duration": total_duration,
+            "command": "/bin/bash",
+            "title": "Cowrie Recording (Merged)",
+            "env": {"SHELL": "/bin/bash", "TERM": "xterm256-color"},
+            "stdout": merged_stdout,
         }
 
 # Initialize parsers
@@ -939,9 +1019,13 @@ def session_detail(session_id: str):
     if not session:
         return render_template("404.html", message="Session not found"), 404
 
-    # Check if TTY log exists
+    # Check if TTY log exists (new multi-file format or old single-file format)
     has_tty = False
-    if session["tty_log"]:
+    if session.get("tty_logs"):
+        # New format: check if we have any TTY logs
+        has_tty = len(session["tty_logs"]) > 0
+    elif session.get("tty_log"):
+        # Old format: check if single TTY file exists
         tty_file = tty_parser.find_tty_file(session["tty_log"])
         has_tty = tty_file is not None
 
@@ -965,13 +1049,20 @@ def session_playback(session_id: str):
     if not session:
         return render_template("404.html", message="Session not found"), 404
 
-    if not session["tty_log"]:
+    # Check for TTY logs (new format) or tty_log (old format)
+    if not session.get("tty_logs") and not session.get("tty_log"):
         return render_template("404.html", message="No TTY recording for this session"), 404
 
-    # Parse TTY log for width and height
-    asciicast = tty_parser.parse_tty_log(session["tty_log"])
+    # Use merged TTY logs if available (multiple commands), otherwise fall back to single file
+    hostname = CONFIG.get("honeypot_hostname", "dmz-web01")
+    if session.get("tty_logs") and len(session["tty_logs"]) > 0:
+        asciicast = tty_parser.merge_tty_logs(session, hostname=hostname)
+    else:
+        # Fallback to single TTY file for backwards compatibility
+        asciicast = tty_parser.parse_tty_log(session["tty_log"])
+
     if not asciicast:
-        print(f"[!] Failed to parse TTY log for playback: {session['tty_log']}")
+        print(f"[!] Failed to parse TTY log for playback: {session.get('tty_logs', session.get('tty_log'))}")
         return render_template("404.html", message="Failed to parse TTY log for playback"), 404
 
     return render_template("playback.html", session=session, asciicast=asciicast, config=CONFIG)
@@ -981,19 +1072,28 @@ def session_playback(session_id: str):
 def session_asciicast(session_id: str):
     """Return asciicast data for a session."""
     session = session_parser.get_session(session_id)
-    if not session or not session["tty_log"]:
+    if not session:
+        print(f"[!] Session not found: {session_id}")
+        return jsonify({"error": "Session not found"}), 404
+
+    if not session.get("tty_logs") and not session.get("tty_log"):
         print(f"[!] No TTY recording for session {session_id}")
         return jsonify({"error": "No TTY recording"}), 404
 
-    # Check if TTY file exists
-    tty_file = tty_parser.find_tty_file(session["tty_log"])
-    if not tty_file:
-        print(f"[!] TTY file not found: {session['tty_log']}")
-        return jsonify({"error": "TTY recording file not found"}), 404
+    # Use merged TTY logs if available, otherwise fall back to single file
+    hostname = CONFIG.get("honeypot_hostname", "dmz-web01")
+    if session.get("tty_logs") and len(session["tty_logs"]) > 0:
+        asciicast = tty_parser.merge_tty_logs(session, hostname=hostname)
+    else:
+        # Fallback to single TTY file for backwards compatibility
+        tty_file = tty_parser.find_tty_file(session["tty_log"])
+        if not tty_file:
+            print(f"[!] TTY file not found: {session['tty_log']}")
+            return jsonify({"error": "TTY recording file not found"}), 404
+        asciicast = tty_parser.parse_tty_log(session["tty_log"])
 
-    asciicast = tty_parser.parse_tty_log(session["tty_log"])
     if not asciicast:
-        print(f"[!] Failed to parse TTY log: {session['tty_log']}")
+        print(f"[!] Failed to parse TTY log: {session_id}")
         return jsonify({"error": "Failed to parse TTY log"}), 404
 
     return jsonify(asciicast)

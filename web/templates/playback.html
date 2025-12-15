@@ -87,16 +87,6 @@
     </div>
 
     <div class="player-controls">
-        <div class="speed-control">
-            <label for="speed">Playback Speed:</label>
-            <select id="speed" onchange="updateSpeed(this.value)">
-                <option value="0.5">0.5x</option>
-                <option value="1" selected>1x</option>
-                <option value="2">2x</option>
-                <option value="5">5x</option>
-                <option value="10">10x</option>
-            </select>
-        </div>
         <button class="btn" onclick="player.play()">Play</button>
         <button class="btn" onclick="player.pause()">Pause</button>
         <button class="btn" onclick="player.seek(0)">Restart</button>
@@ -116,26 +106,25 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.6.3/dist/bundle/asciinema-player.min.js"></script>
 <script>
-    var player = AsciinemaPlayer.create(
-        '{{ url_for("session_asciicast", session_id=session.id) }}',
-        document.getElementById('player'),
-        {
-            cols: {{ asciicast.width | default(120) }},
-            rows: {{ asciicast.height | default(30) }},
-            autoPlay: false,
-            loop: false,
-            speed: 1,
-            idleTimeLimit: 2,
-            theme: 'monokai',
-            fit: 'width',
-            controls: true,
-            pauseOnMarkers: false,
-            terminalFontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace",
-        }
-    );
-
-    function updateSpeed(speed) {
-        player.setSpeed(parseFloat(speed));
+    try {
+        var player = AsciinemaPlayer.create(
+            '{{ url_for("session_asciicast", session_id=session.id) }}',
+            document.getElementById('player'),
+            {
+                cols: {{ asciicast.width | default(120) }},
+                rows: {{ asciicast.height | default(30) }},
+                autoPlay: false,
+                loop: false,
+                idleTimeLimit: 3,
+                theme: 'monokai',
+                fit: 'width',
+                controls: true,
+                pauseOnMarkers: false,
+                terminalFontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace",
+            }
+        );
+    } catch (error) {
+        console.error('[ERROR] Failed to create player:', error);
     }
 </script>
 {% endblock %}
