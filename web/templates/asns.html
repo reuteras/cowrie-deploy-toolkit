@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}All ASNs - Cowrie Honeypot{% endblock %}
+
+{% block content %}
+<div class="page">
+    <div class="page-header">
+        <h1>All Attacking ASNs</h1>
+        <div class="header-actions">
+            <div class="time-filter">
+                <label>Time range:</label>
+                <select onchange="window.location.href='?hours=' + this.value">
+                    <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
+                    <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
+                    <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
+                    <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
+                </select>
+            </div>
+            <a href="{{ url_for('index', hours=hours) }}" class="btn">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <div class="info-box" style="margin: 20px 0;">
+        <p>{{ asns | length }} unique ASNs detected</p>
+    </div>
+
+    <table class="data-table sortable">
+        <thead>
+            <tr>
+                <th>Rank</th>
+                <th>ASN</th>
+                <th>Organization</th>
+                <th>Sessions</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for asn_data in asns %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td><code>{{ asn_data.asn }}</code></td>
+                <td>{{ asn_data.asn_org }}</td>
+                <td>{{ asn_data.count }}</td>
+                <td>
+                    <a href="{{ url_for('ip_list', asn=asn_data.asn, hours=hours) }}" class="btn btn-sm">View IPs</a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" class="no-data">No ASN data recorded</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

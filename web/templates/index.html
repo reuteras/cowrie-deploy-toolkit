@@ -77,7 +77,7 @@
 
         <!-- Top Countries -->
         <div class="dashboard-card">
-            <h2>Top Attacking Countries</h2>
+            <h2>Top Attacking Countries <a href="{{ url_for('countries', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.top_countries %}
             <table class="data-table sortable">
                 <thead>
@@ -102,7 +102,7 @@
 
         <!-- Top Credentials -->
         <div class="dashboard-card">
-            <h2>Top Credentials Attempted</h2>
+            <h2>Top Credentials Attempted <a href="{{ url_for('credentials', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.top_credentials %}
             <table class="data-table sortable">
                 <thead>
@@ -135,7 +135,7 @@
 
         <!-- Top SSH Clients -->
         <div class="dashboard-card">
-            <h2>Top SSH Clients</h2>
+            <h2>Top SSH Clients <a href="{{ url_for('clients', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.top_clients %}
             <table class="data-table sortable">
                 <thead>
@@ -147,7 +147,7 @@
                 <tbody>
                     {% for client, count in stats.top_clients %}
                     <tr>
-                        <td><code>{{ client }}</code></td>
+                        <td><a href="{{ url_for('sessions', client_version=client, hours=hours) }}"><code>{{ client }}</code></a></td>
                         <td>{{ count }}</td>
                     </tr>
                     {% endfor %}
@@ -160,7 +160,7 @@
 
         <!-- Top Commands -->
         <div class="dashboard-card full-width">
-            <h2>Top Commands Executed</h2>
+            <h2>Top Commands Executed <a href="{{ url_for('commands', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.top_commands %}
             <table class="data-table sortable">
                 <thead>
@@ -172,7 +172,7 @@
                 <tbody>
                     {% for command, count in stats.top_commands %}
                     <tr>
-                        <td>{{ count }}</td>
+                        <td><a href="{{ url_for('sessions', command=command, hours=hours) }}">{{ count }}</a></td>
                         <td><code class="command-text">{{ command }}</code></td>
                     </tr>
                     {% endfor %}
@@ -185,7 +185,7 @@
 
         <!-- Threat Intelligence: GreyNoise -->
         <div class="dashboard-card">
-            <h2>🔍 GreyNoise Intelligence</h2>
+            <h2>🔍 GreyNoise Intelligence <a href="{{ url_for('ip_list', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.greynoise_ips %}
             <table class="data-table">
                 <thead>
@@ -221,30 +221,72 @@
             {% endif %}
         </div>
 
-        <!-- Threat Intelligence: DShield -->
+        <!-- Threat Intelligence: AbuseIPDB -->
         <div class="dashboard-card">
-            <h2>🔍 DShield Intelligence</h2>
-            {% if stats.dshield_ips %}
+            <h2>🔍 AbuseIPDB Intelligence <a href="{{ url_for('ip_list', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
+            {% if stats.abuseipdb_ips %}
             <table class="data-table">
                 <thead>
                     <tr>
                         <th>IP Address</th>
+                        <th>Abuse Score</th>
+                        <th>Total Reports</th>
                         <th>Last Seen</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for ds in stats.dshield_ips[:10] %}
+                    {% for ab in stats.abuseipdb_ips[:10] %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', ip=ds.ip, hours=hours) }}">{{ ds.ip }}</a></td>
-                        <td>{{ ds.timestamp | format_timestamp }}</td>
+                        <td><a href="{{ url_for('sessions', ip=ab.ip, hours=hours) }}">{{ ab.ip }}</a></td>
+                        <td>
+                            {% if ab.abuse_confidence_score >= 75 %}
+                            <span class="badge badge-danger">{{ ab.abuse_confidence_score }}%</span>
+                            {% elif ab.abuse_confidence_score >= 25 %}
+                            <span class="badge badge-warning">{{ ab.abuse_confidence_score }}%</span>
+                            {% else %}
+                            <span class="badge badge-info">{{ ab.abuse_confidence_score }}%</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ ab.total_reports }}</td>
+                        <td>{{ ab.timestamp | format_timestamp }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
             {% else %}
-            <p class="no-data">No DShield data available</p>
+            <p class="no-data">No AbuseIPDB data available</p>
             <p style="font-size: 0.9em; color: var(--text-secondary); margin-top: 0.5rem;">
-                DShield aggregates firewall logs from thousands of sensors worldwide.
+                AbuseIPDB provides IP reputation data from reports submitted by network administrators worldwide.
+            </p>
+            {% endif %}
+        </div>
+
+        <!-- Top Attacking ASNs -->
+        <div class="dashboard-card">
+            <h2>🌐 Top Attacking ASNs <a href="{{ url_for('asns', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
+            {% if stats.top_asns %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ASN</th>
+                        <th>Organization</th>
+                        <th>Sessions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for asn_data in stats.top_asns %}
+                    <tr>
+                        <td><a href="{{ url_for('ip_list', asn=asn_data.asn, hours=hours) }}"><code>{{ asn_data.asn }}</code></a></td>
+                        <td>{{ asn_data.asn_org }}</td>
+                        <td>{{ asn_data.count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="no-data">No ASN data available</p>
+            <p style="font-size: 0.9em; color: var(--text-secondary); margin-top: 0.5rem;">
+                ASN (Autonomous System Number) identifies the network organization hosting the attacking IP.
             </p>
             {% endif %}
         </div>
@@ -280,11 +322,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize map
     const map = L.map('attack-map').setView([20, 0], 2);
 
-    // Add tile layer (English labels)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 18,
-        language: 'en'
+    // Add dark theme tile layer (CartoDB Dark Matter)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap contributors © CARTO',
+        maxZoom: 19,
+        subdomains: 'abcd'
     }).addTo(map);
 
     // Add markers for attack origins

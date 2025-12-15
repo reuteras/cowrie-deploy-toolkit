@@ -352,7 +352,7 @@ class SessionParser:
 
     def get_threat_intel_for_ip(self, ip_address: str) -> dict:
         """Get threat intelligence data for a specific IP address."""
-        result = {"greynoise": None, "dshield": None}
+        result = {"greynoise": None, "abuseipdb": None}
 
         if not os.path.exists(self.log_path):
             return result
@@ -383,8 +383,18 @@ class SessionParser:
                             "timestamp": entry["timestamp"],
                         }
 
-                    elif event_id == "cowrie.dshield.result":
-                        result["dshield"] = {
+                    elif event_id == "cowrie.abuseipdb.reportedip":
+                        # AbuseIPDB report event
+                        result["abuseipdb"] = {
+                            "abuse_confidence_score": entry.get("abuseConfidenceScore", 0),
+                            "is_whitelisted": entry.get("isWhitelisted", False),
+                            "country_code": entry.get("countryCode", ""),
+                            "usage_type": entry.get("usageType", ""),
+                            "isp": entry.get("isp", ""),
+                            "domain": entry.get("domain", ""),
+                            "total_reports": entry.get("totalReports", 0),
+                            "num_distinct_users": entry.get("numDistinctUsers", 0),
+                            "last_reported_at": entry.get("lastReportedAt", ""),
                             "message": entry.get("message", ""),
                             "timestamp": entry["timestamp"],
                         }
@@ -412,8 +422,9 @@ class SessionParser:
                 "successful_credentials": [],
                 "top_commands": [],
                 "top_clients": [],
+                "top_asns": [],
                 "greynoise_ips": [],
-                "dshield_ips": [],
+                "abuseipdb_ips": [],
                 "hourly_activity": [],
             }
 
@@ -427,8 +438,10 @@ class SessionParser:
         successful_credentials = set()
         command_counter = Counter()
         client_version_counter = Counter()
+        asn_counter = Counter()  # Track sessions by ASN
+        asn_details = {}  # ASN -> {asn_org, asn_number}
         greynoise_results = {}  # IP -> {classification, message, timestamp}
-        dshield_results = {}  # IP -> {message, timestamp}
+        abuseipdb_results = {}  # IP -> {abuse_confidence_score, total_reports, etc.}
         sessions_with_cmds = 0
         total_downloads = 0
         unique_downloads = set()
@@ -465,6 +478,18 @@ class SessionParser:
                 country = session.get("geo", {}).get("country", "Unknown")
                 country_counter[country] += 1
 
+                # Track ASN data
+                asn = session.get("geo", {}).get("asn")
+                asn_org = session.get("geo", {}).get("asn_org")
+                if asn:
+                    asn_key = f"AS{asn}"
+                    asn_counter[asn_key] += 1
+                    if asn_key not in asn_details:
+                        asn_details[asn_key] = {
+                            "asn_number": asn,
+                            "asn_org": asn_org or "Unknown Organization"
+                        }
+
             if session["username"] and session["password"]:
                 cred = f"{session['username']}:{session['password']}"
                 credential_counter[cred] += 1
@@ -496,7 +521,7 @@ class SessionParser:
                 except Exception:
                     pass
 
-        # Parse threat intelligence events (GreyNoise, DShield)
+        # Parse threat intelligence events (GreyNoise, AbuseIPDB)
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
         if os.path.exists(self.log_path):
             with open(self.log_path) as f:
@@ -528,8 +553,17 @@ class SessionParser:
                                 "timestamp": entry["timestamp"],
                             }
 
-                        elif event_id == "cowrie.dshield.result" and src_ip:
-                            dshield_results[src_ip] = {
+                        elif event_id == "cowrie.abuseipdb.reportedip" and src_ip:
+                            abuseipdb_results[src_ip] = {
+                                "abuse_confidence_score": entry.get("abuseConfidenceScore", 0),
+                                "is_whitelisted": entry.get("isWhitelisted", False),
+                                "country_code": entry.get("countryCode", ""),
+                                "usage_type": entry.get("usageType", ""),
+                                "isp": entry.get("isp", ""),
+                                "domain": entry.get("domain", ""),
+                                "total_reports": entry.get("totalReports", 0),
+                                "num_distinct_users": entry.get("numDistinctUsers", 0),
+                                "last_reported_at": entry.get("lastReportedAt", ""),
                                 "message": entry.get("message", ""),
                                 "timestamp": entry["timestamp"],
                             }
@@ -551,11 +585,22 @@ class SessionParser:
             key=lambda x: x["timestamp"],
             reverse=True,
         )
-        dshield_list = sorted(
-            [{"ip": ip, **data} for ip, data in dshield_results.items()],
+        abuseipdb_list = sorted(
+            [{"ip": ip, **data} for ip, data in abuseipdb_results.items()],
             key=lambda x: x["timestamp"],
             reverse=True,
         )
+
+        # Build top ASNs list with details
+        top_asns = []
+        for asn_key, count in asn_counter.most_common(10):
+            details = asn_details.get(asn_key, {})
+            top_asns.append({
+                "asn": asn_key,
+                "asn_number": details.get("asn_number", 0),
+                "asn_org": details.get("asn_org", "Unknown"),
+                "count": count
+            })
 
         return {
             "total_sessions": len(sessions),
@@ -570,8 +615,9 @@ class SessionParser:
             "successful_credentials": list(successful_credentials),
             "top_commands": command_counter.most_common(20),
             "top_clients": client_version_counter.most_common(10),
+            "top_asns": top_asns,
             "greynoise_ips": greynoise_list,
-            "dshield_ips": dshield_list,
+            "abuseipdb_ips": abuseipdb_list,
             "hourly_activity": sorted_hours[-48:],  # Last 48 hours
         }
 
@@ -838,6 +884,8 @@ def sessions():
     ip_filter = request.args.get("ip", "")
     country_filter = request.args.get("country", "")
     credentials_filter = request.args.get("credentials", "")
+    client_version_filter = request.args.get("client_version", "")
+    command_filter = request.args.get("command", "")
     has_commands = request.args.get("has_commands", "")
     has_tty = request.args.get("has_tty", "")
     successful_login = request.args.get("successful_login", "")
@@ -848,6 +896,10 @@ def sessions():
         sorted_sessions = [s for s in sorted_sessions if s.get("geo", {}).get("country") == country_filter]
     if credentials_filter:
         sorted_sessions = [s for s in sorted_sessions if f"{s.get('username', '')}:{s.get('password', '')}" == credentials_filter]
+    if client_version_filter:
+        sorted_sessions = [s for s in sorted_sessions if s.get("client_version") == client_version_filter]
+    if command_filter:
+        sorted_sessions = [s for s in sorted_sessions if any(cmd["command"] == command_filter for cmd in s["commands"])]
     if has_commands == "1":
         sorted_sessions = [s for s in sorted_sessions if s["commands"]]
     if has_tty == "1":
@@ -871,6 +923,8 @@ def sessions():
         ip_filter=ip_filter,
         country_filter=country_filter,
         credentials_filter=credentials_filter,
+        client_version_filter=client_version_filter,
+        command_filter=command_filter,
         has_commands=has_commands,
         has_tty=has_tty,
         successful_login=successful_login,
@@ -1296,7 +1350,130 @@ def ip_list():
     hours = request.args.get("hours", 168, type=int)
     stats = session_parser.get_stats(hours=hours)
 
-    return render_template("ips.html", ips=stats["ip_list"], hours=hours, config=CONFIG)
+    # Get filter parameters
+    asn_filter = request.args.get("asn", "")
+    country_filter = request.args.get("country", "")
+    city_filter = request.args.get("city", "")
+
+    # Apply filters
+    filtered_ips = stats["ip_list"]
+    if asn_filter:
+        filtered_ips = [ip for ip in filtered_ips if ip.get("geo", {}).get("asn") and f"AS{ip['geo']['asn']}" == asn_filter]
+    if country_filter:
+        filtered_ips = [ip for ip in filtered_ips if ip.get("geo", {}).get("country") == country_filter]
+    if city_filter:
+        filtered_ips = [ip for ip in filtered_ips if ip.get("geo", {}).get("city") == city_filter]
+
+    return render_template(
+        "ips.html",
+        ips=filtered_ips,
+        hours=hours,
+        asn_filter=asn_filter,
+        country_filter=country_filter,
+        city_filter=city_filter,
+        config=CONFIG
+    )
+
+
+@app.route("/countries")
+def countries():
+    """All countries listing page."""
+    hours = request.args.get("hours", 168, type=int)
+    stats = session_parser.get_stats(hours=hours)
+
+    # Get all countries (not just top 10)
+    sessions = session_parser.parse_all(hours=hours)
+    country_counter = Counter()
+    for session in sessions.values():
+        if session.get("src_ip"):
+            country = session.get("geo", {}).get("country", "Unknown")
+            country_counter[country] += 1
+
+    all_countries = country_counter.most_common()
+
+    return render_template("countries.html", countries=all_countries, hours=hours, config=CONFIG)
+
+
+@app.route("/credentials")
+def credentials():
+    """All credentials listing page."""
+    hours = request.args.get("hours", 168, type=int)
+    stats = session_parser.get_stats(hours=hours)
+
+    # Get all credentials (not just top 10)
+    sessions = session_parser.parse_all(hours=hours)
+    credential_counter = Counter()
+    successful_credentials = set()
+    for session in sessions.values():
+        if session["username"] and session["password"]:
+            cred = f"{session['username']}:{session['password']}"
+            credential_counter[cred] += 1
+            if session.get("login_success"):
+                successful_credentials.add(cred)
+
+    all_credentials = credential_counter.most_common()
+
+    return render_template(
+        "credentials.html",
+        credentials=all_credentials,
+        successful_credentials=successful_credentials,
+        hours=hours,
+        config=CONFIG
+    )
+
+
+@app.route("/clients")
+def clients():
+    """All SSH clients listing page."""
+    hours = request.args.get("hours", 168, type=int)
+
+    # Get all client versions (not just top 10)
+    sessions = session_parser.parse_all(hours=hours)
+    client_version_counter = Counter()
+    for session in sessions.values():
+        if session.get("client_version"):
+            client_version_counter[session["client_version"]] += 1
+
+    all_clients = client_version_counter.most_common()
+
+    return render_template("clients.html", clients=all_clients, hours=hours, config=CONFIG)
+
+
+@app.route("/asns")
+def asns():
+    """All ASNs listing page."""
+    hours = request.args.get("hours", 168, type=int)
+    stats = session_parser.get_stats(hours=hours)
+
+    # Get all ASNs (not just top 10)
+    sessions = session_parser.parse_all(hours=hours)
+    asn_counter = Counter()
+    asn_details = {}
+    for session in sessions.values():
+        if session.get("src_ip"):
+            asn = session.get("geo", {}).get("asn")
+            asn_org = session.get("geo", {}).get("asn_org")
+            if asn:
+                asn_key = f"AS{asn}"
+                asn_counter[asn_key] += 1
+                if asn_key not in asn_details:
+                    asn_details[asn_key] = {
+                        "asn_number": asn,
+                        "asn_org": asn_org or "Unknown Organization"
+                    }
+
+    # Build full ASNs list with details
+    all_asns = []
+    for asn_key, count in asn_counter.most_common():
+        details = asn_details.get(asn_key, {})
+        all_asns.append({
+            "asn": asn_key,
+            "asn_number": details.get("asn_number", 0),
+            "asn_org": details.get("asn_org", "Unknown"),
+            "count": count
+        })
+
+    return render_template("asns.html", asns=all_asns, hours=hours, config=CONFIG)
 
 
 @app.template_filter("format_duration")

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}All Countries - Cowrie Honeypot{% endblock %}
+
+{% block content %}
+<div class="page">
+    <div class="page-header">
+        <h1>All Attacking Countries</h1>
+        <div class="header-actions">
+            <div class="time-filter">
+                <label>Time range:</label>
+                <select onchange="window.location.href='?hours=' + this.value">
+                    <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
+                    <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
+                    <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
+                    <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
+                </select>
+            </div>
+            <a href="{{ url_for('index', hours=hours) }}" class="btn">Back to Dashboard</a>
+        </div>
+    </div>
+
+    <div class="info-box" style="margin: 20px 0;">
+        <p>{{ countries | length }} countries detected</p>
+    </div>
+
+    <table class="data-table sortable">
+        <thead>
+            <tr>
+                <th>Rank</th>
+                <th>Country</th>
+                <th>Sessions</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for country, count in countries %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ country }}</td>
+                <td>{{ count }}</td>
+                <td>
+                    <a href="{{ url_for('sessions', country=country, hours=hours) }}" class="btn btn-sm">View Sessions</a>
+                    <a href="{{ url_for('ip_list', country=country, hours=hours) }}" class="btn btn-sm">View IPs</a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" class="no-data">No countries recorded</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -17,6 +17,32 @@
         </div>
     </div>
 
+    <!-- Filters -->
+    {% if asn_filter or country_filter or city_filter %}
+    <div class="filter-badges" style="margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap;">
+        <span style="font-weight: 600; color: var(--text-primary);">Active Filters:</span>
+        {% if country_filter %}
+        <span class="badge badge-info" style="display: inline-flex; align-items: center; gap: 5px;">
+            Country: {{ country_filter }}
+            <a href="{{ url_for('ip_list', hours=hours, asn=asn_filter, city=city_filter) }}" style="color: inherit; text-decoration: none; margin-left: 3px;">✕</a>
+        </span>
+        {% endif %}
+        {% if city_filter %}
+        <span class="badge badge-info" style="display: inline-flex; align-items: center; gap: 5px;">
+            City: {{ city_filter }}
+            <a href="{{ url_for('ip_list', hours=hours, asn=asn_filter, country=country_filter) }}" style="color: inherit; text-decoration: none; margin-left: 3px;">✕</a>
+        </span>
+        {% endif %}
+        {% if asn_filter %}
+        <span class="badge badge-info" style="display: inline-flex; align-items: center; gap: 5px;">
+            ASN: {{ asn_filter }}
+            <a href="{{ url_for('ip_list', hours=hours, country=country_filter, city=city_filter) }}" style="color: inherit; text-decoration: none; margin-left: 3px;">✕</a>
+        </span>
+        {% endif %}
+        <a href="{{ url_for('ip_list', hours=hours) }}" class="badge" style="background: var(--danger); color: white; text-decoration: none;">Clear All Filters</a>
+    </div>
+    {% endif %}
+
     <div class="ips-info">
         <p>{{ ips | length }} unique IP addresses</p>
     </div>
@@ -45,21 +71,21 @@
                 </td>
                 <td>
                     {% if ip_data.geo and ip_data.geo.country %}
-                    {{ ip_data.geo.country }}
+                    <a href="{{ url_for('ip_list', country=ip_data.geo.country, city=city_filter, asn=asn_filter, hours=hours) }}" title="Filter by country">{{ ip_data.geo.country }}</a>
                     {% else %}
                     Unknown
                     {% endif %}
                 </td>
                 <td>
                     {% if ip_data.geo and ip_data.geo.city %}
-                    {{ ip_data.geo.city }}
+                    <a href="{{ url_for('ip_list', city=ip_data.geo.city, country=country_filter or ip_data.geo.country, asn=asn_filter, hours=hours) }}" title="Filter by city">{{ ip_data.geo.city }}</a>
                     {% else %}
                     Unknown
                     {% endif %}
                 </td>
                 <td>
                     {% if ip_data.geo and ip_data.geo.asn %}
-                    <code>AS{{ ip_data.geo.asn }}</code>
+                    <a href="{{ url_for('ip_list', asn='AS' + ip_data.geo.asn|string, country=country_filter, city=city_filter, hours=hours) }}" title="Filter by ASN"><code>AS{{ ip_data.geo.asn }}</code></a>
                     {% else %}
                     <span class="text-muted">-</span>
                     {% endif %}
