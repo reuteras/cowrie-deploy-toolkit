@@ -107,6 +107,16 @@ enabled = false
 # Example: https://<tailscale_name>.<tailscale_domain>
 
 [data_sharing]
+# AbuseIPDB - Report and query IP reputation data
+# Sign up at https://www.abuseipdb.com/ and get your API key from https://www.abuseipdb.com/account/api
+# Free tier: 1,000 requests/day for reporting and checking IPs
+abuseipdb_enabled = false
+abuseipdb_api_key = ""  # Your AbuseIPDB API key
+# Or: "op read op://Personal/AbuseIPDB/api_key"
+abuseipdb_tolerance_attempts = 10  # Report IPs after this many failed login attempts
+abuseipdb_tolerance_window = 120   # Time window in minutes for tracking attempts
+abuseipdb_rereport_after = 24       # Hours before re-reporting the same IP
+
 # DShield (SANS Internet Storm Center) - Contribute to global threat intelligence
 # Sign up at https://isc.sans.edu/ssh.html and get your credentials at https://isc.sans.edu/myaccount.html
 dshield_enabled = false
