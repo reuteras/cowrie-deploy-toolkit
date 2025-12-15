@@ -461,9 +461,53 @@ open http://localhost:5000
 
 The toolkit supports sharing honeypot data with global threat intelligence communities and querying IP reputation services. This helps improve collective security and provides context about attackers.
 
+### AbuseIPDB
+
+**What it does:** Reports malicious IPs to AbuseIPDB and queries the AbuseIPDB database to get reputation data for attacking IPs. The web dashboard displays AbuseIPDB threat intelligence instead of DShield for richer IP reputation information.
+
+**Configuration in `master-config.toml`:**
+```toml
+[data_sharing]
+abuseipdb_enabled = true
+abuseipdb_api_key = "YOUR_ABUSEIPDB_API_KEY"
+# Or: "op read op://Personal/AbuseIPDB/api_key"
+abuseipdb_tolerance_attempts = 10  # Report IPs after this many failed login attempts
+abuseipdb_tolerance_window = 120   # Time window in minutes for tracking attempts
+abuseipdb_rereport_after = 24       # Hours before re-reporting the same IP
+```
+
+**Getting an API Key:**
+1. Sign up at <https://www.abuseipdb.com/>
+2. Get your API key from <https://www.abuseipdb.com/account/api>
+3. Free tier: 1,000 requests/day for reporting and checking IPs
+
+**What you get:**
+- Abuse Confidence Score (0-100%): Likelihood that an IP is malicious
+- Total Reports: Number of times the IP has been reported
+- IP details: ISP, usage type (Commercial, Data Center, etc.), country
+- Whitelisting status: Whether the IP is on AbuseIPDB's whitelist
+- Data displayed in the web dashboard's threat intelligence section
+
+**What data is reported:**
+- Source IP addresses
+- Failed login attempts that exceed the tolerance threshold
+- Attack timestamps and patterns
+
+**Benefits:**
+- Contribute to global IP reputation database
+- Get real-time abuse confidence scores for attacking IPs
+- Identify known malicious IPs vs first-time offenders
+- Free API with generous daily limits
+- Richer threat intelligence than report-only services
+
+**Web Dashboard Integration:**
+The web dashboard displays AbuseIPDB data with abuse confidence scores, total reports, and ISP information. This replaces the DShield display and provides more actionable intelligence for threat assessment.
+
 ### DShield (SANS Internet Storm Center)
 
-**What it does:** Automatically shares attack data with the SANS Internet Storm Center's DShield project, contributing to global threat intelligence.
+**What it does:** Automatically shares attack data with the SANS Internet Storm Center's DShield project, contributing to global threat intelligence. This is a report-only plugin - it sends data but doesn't query for threat intelligence.
+
+**Note:** The web dashboard displays AbuseIPDB threat intelligence instead of DShield because AbuseIPDB provides bidirectional data (both reporting and querying), while DShield is report-only. Both plugins can be enabled simultaneously to contribute to multiple threat intelligence sources.
 
 **Configuration in `master-config.toml`:**
 ```toml

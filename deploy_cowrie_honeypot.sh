@@ -138,7 +138,12 @@ if [ -f "$MASTER_CONFIG" ]; then
         echo_info "Web dashboard is enabled in master config"
     fi
 
-    # Check if data sharing is enabled (DShield and GreyNoise)
+    # Check if data sharing is enabled (AbuseIPDB, DShield, and GreyNoise)
+    ABUSEIPDB_ENABLED="false"
+    ABUSEIPDB_API_KEY=""
+    ABUSEIPDB_TOLERANCE_ATTEMPTS="10"
+    ABUSEIPDB_TOLERANCE_WINDOW="120"
+    ABUSEIPDB_REREPORT_AFTER="24"
     DSHIELD_ENABLED="false"
     DSHIELD_USERID=""
     DSHIELD_AUTH_KEY=""
@@ -147,6 +152,28 @@ if [ -f "$MASTER_CONFIG" ]; then
     GREYNOISE_API_KEY=""
     GREYNOISE_TAGS="all"
     GREYNOISE_DEBUG="false"
+
+    # AbuseIPDB configuration
+    CONFIG_ABUSEIPDB_ENABLED=$(read_toml_value "$MASTER_CONFIG" "data_sharing.abuseipdb_enabled")
+    if [ "$CONFIG_ABUSEIPDB_ENABLED" = "true" ]; then
+        ABUSEIPDB_ENABLED="true"
+        echo_info "AbuseIPDB reporting and threat intelligence lookup is enabled"
+
+        # Extract AbuseIPDB settings
+        ABUSEIPDB_API_KEY=$(read_toml_value "$MASTER_CONFIG" "data_sharing.abuseipdb_api_key")
+        CONFIG_ABUSEIPDB_TOLERANCE_ATTEMPTS=$(read_toml_value "$MASTER_CONFIG" "data_sharing.abuseipdb_tolerance_attempts")
+        CONFIG_ABUSEIPDB_TOLERANCE_WINDOW=$(read_toml_value "$MASTER_CONFIG" "data_sharing.abuseipdb_tolerance_window")
+        CONFIG_ABUSEIPDB_REREPORT_AFTER=$(read_toml_value "$MASTER_CONFIG" "data_sharing.abuseipdb_rereport_after")
+
+        # Execute command if it looks like "op read" command
+        if echo "$ABUSEIPDB_API_KEY" | grep -q "^op read"; then
+            ABUSEIPDB_API_KEY=$(eval "$ABUSEIPDB_API_KEY" 2>/dev/null || echo "")
+        fi
+
+        [ -n "$CONFIG_ABUSEIPDB_TOLERANCE_ATTEMPTS" ] && ABUSEIPDB_TOLERANCE_ATTEMPTS="$CONFIG_ABUSEIPDB_TOLERANCE_ATTEMPTS"
+        [ -n "$CONFIG_ABUSEIPDB_TOLERANCE_WINDOW" ] && ABUSEIPDB_TOLERANCE_WINDOW="$CONFIG_ABUSEIPDB_TOLERANCE_WINDOW"
+        [ -n "$CONFIG_ABUSEIPDB_REREPORT_AFTER" ] && ABUSEIPDB_REREPORT_AFTER="$CONFIG_ABUSEIPDB_REREPORT_AFTER"
+    fi
 
     # DShield configuration
     CONFIG_DSHIELD_ENABLED=$(read_toml_value "$MASTER_CONFIG" "data_sharing.dshield_enabled")
@@ -639,6 +666,21 @@ debug = false
 #commenttext = First seen by #Cowrie SSH/telnet Honeypot http://github.com/cowrie/cowrie
 EOFVT
     echo_info "VirusTotal integration enabled in cowrie.cfg"
+fi
+
+# Add AbuseIPDB configuration if enabled
+if [ "$ABUSEIPDB_ENABLED" = "true" ] && [ -n "$ABUSEIPDB_API_KEY" ]; then
+    cat >> /tmp/cowrie.cfg << EOFABUSEIPDB
+
+[output_abuseipdb]
+enabled = true
+api_key = $ABUSEIPDB_API_KEY
+tolerance_attempts = $ABUSEIPDB_TOLERANCE_ATTEMPTS
+tolerance_window = $ABUSEIPDB_TOLERANCE_WINDOW
+rereport_after = $ABUSEIPDB_REREPORT_AFTER
+dump_path = var/lib/cowrie
+EOFABUSEIPDB
+    echo_info "AbuseIPDB reporting and threat intelligence enabled in cowrie.cfg"
 fi
 
 # Add DShield configuration if enabled
