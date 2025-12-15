@@ -168,7 +168,7 @@ wait_for_ssh() {
     local timeout="${3:-60}"
     local elapsed=0
 
-    echo_n_info "$(echo_info "Waiting for SSH to become available")"
+    echo_n_info "Waiting for SSH to become available"
     while ! ssh $SSH_OPTS -p "$port" -o ConnectTimeout=3 "$host" "exit" 2>/dev/null; do
         printf "."
         sleep 3
