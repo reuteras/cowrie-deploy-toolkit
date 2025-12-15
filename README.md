@@ -206,6 +206,8 @@ Interactive web interface for session playback and attack analysis!
 - 🌍 **GeoIP Integration** - View attacker locations with ASN/organization data
 - 🔗 **Email Integration** - Session links in daily reports link directly to playback
 
+![Example image of running instance](resources/demo.png)
+
 **Security:**
 - Only accessible via SSH tunnel or Tailscale VPN
 - NOT exposed to public internet
