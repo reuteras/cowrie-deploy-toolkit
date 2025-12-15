@@ -146,6 +146,7 @@ echo "::1 localhost ip6-localhost ip6-loopback $HONEYPOT_HOSTNAME" >> /etc/hosts
 
 # Install nginx, MySQL/MariaDB, PHP and WordPress for realistic services
 echo "[remote] Installing nginx, MariaDB, PHP, and WordPress..."
+DEBIAN_FRONTEND=noninteractive apt-get clean -qq > /dev/null
 DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
 DEBIAN_FRONTEND=noninteractive apt-get install -qq -y nginx mariadb-server php-fpm php-mysql wordpress > /dev/null
 
@@ -501,7 +502,8 @@ tar --no-xattrs -cf /tmp/contents.tar \
     root/*.pdf \
     2>/dev/null || true
 
-mkdir -p tmp/proc/1 proc/net
+mkdir -p tmp/proc/1 tmp/proc/net
+cd tmp || exit 1
 
 cp /proc/cpuinfo \
     /proc/meminfo \
@@ -509,13 +511,13 @@ cp /proc/cpuinfo \
     /proc/modules \
     /proc/uptime \
     /proc/version \
-    tmp/proc
+    proc/
 
-cp /proc/1/mounts tmp/proc/1
-cp /proc/net/arp tmp/proc/net
+cp /proc/1/mounts proc/1
+cp /proc/net/arp proc/net
 
 tar --no-xattrs -rf /tmp/contents.tar \
-    tmp/proc \
+    proc \
     2>/dev/null || true
 gzip /tmp/contents.tar
 EOFCONTENTS
