@@ -533,6 +533,8 @@ echo_info "Uploading custom Cowrie build context..."
 # Create build directory on server
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
     "mkdir -p /opt/cowrie/build/cowrie-plugins"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+    "mkdir -p /opt/cowrie/build/cowrie-core"
 
 # Upload Dockerfile
 if [ -f "./cowrie/Dockerfile" ]; then
@@ -562,6 +564,15 @@ if [ -d "./cowrie-plugins" ] && [ "$(ls -A ./cowrie-plugins/*.py 2>/dev/null)" ]
     echo_info "Custom plugins uploaded ($(ls -1 ./cowrie-plugins/*.py 2>/dev/null | wc -l | tr -d ' ') files)"
 else
     echo_info "No custom plugins found (build will use defaults only)"
+fi
+
+# Upload custom core files (if any exist)
+if [ -d "./cowrie-core" ] && [ "$(ls -A ./cowrie-core/*.py 2>/dev/null)" ]; then
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+        ./cowrie-core/*.py "root@$SERVER_IP:/opt/cowrie/build/cowrie-core/" > /dev/null 2>&1
+    echo_info "Custom core file(s) uploaded ($(ls -1 ./cowrie-core/*.py 2>/dev/null | wc -l | tr -d ' ') files)"
+else
+    echo_info "No custom core files found (build will use defaults only)"
 fi
 
 # Ensure .gitkeep exists so directory isn't empty
@@ -615,6 +626,8 @@ ttylog_path = var/lib/cowrie/tty
 logtype = plain
 # For https://github.com/cowrie/cowrie/blob/main/src/cowrie/commands/nc.py
 out_addr = $SERVER_IP
+auth_class = IPUserDB
+userdb_path = var/lib/cowrie/userip.db
 
 [shell]
 arch = $ARCH
@@ -644,9 +657,6 @@ logfile = var/log/cowrie/cowrie.json
 enabled = true
 logfile = var/log/cowrie/cowrie.log
 
-[output_iplock]
-enabled = true
-db_path = var/lib/cowrie/iplock.db
 EOFCFG
 
 # Add VirusTotal configuration if API key is available
