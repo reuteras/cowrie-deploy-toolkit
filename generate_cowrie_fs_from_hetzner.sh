@@ -57,7 +57,7 @@ validate_safe_string "$HONEYPOT_HOSTNAME" || fatal_error "Invalid hostname: $HON
 echo_info "Using config: $SERVER_TYPE, $SERVER_IMAGE, hostname=$HONEYPOT_HOSTNAME"
 
 # Output directory setup
-SERVER_NAME="cowrie-source-$(date +%s)"
+SERVER_NAME="$HONEYPOT_HOSTNAME"
 OUTPUT_DIR="./output_$(date +%Y%m%d_%H%M%S)"
 IDENTITY_DIR="$OUTPUT_DIR/identity"
 
