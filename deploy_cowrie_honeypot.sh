@@ -612,6 +612,7 @@ hostname = $HOSTNAME
 log_path = var/log/cowrie
 download_path = var/lib/cowrie/downloads
 ttylog_path = var/lib/cowrie/tty
+logtype = plain
 # For https://github.com/cowrie/cowrie/blob/main/src/cowrie/commands/nc.py
 out_addr = $SERVER_IP
 
@@ -678,7 +679,7 @@ api_key = $ABUSEIPDB_API_KEY
 tolerance_attempts = $ABUSEIPDB_TOLERANCE_ATTEMPTS
 tolerance_window = $ABUSEIPDB_TOLERANCE_WINDOW
 rereport_after = $ABUSEIPDB_REREPORT_AFTER
-dump_path = var/lib/cowrie
+dump_path = var/lib/cowrie/abuseipdb
 EOFABUSEIPDB
     echo_info "AbuseIPDB reporting and threat intelligence enabled in cowrie.cfg"
 fi
@@ -828,7 +829,8 @@ sleep 5
 
 # Check container status instead of making a test connection
 # (nc test creates noise in logs)
-ssh -p "$REAL_SSH_PORT" root@"$SERVER_IP" "cd /opt/cowrie && docker compose ps | grep -q 'Up'" && \
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+    "cd /opt/cowrie && docker compose ps | grep -q 'Up'" && \
     echo_info "Honeypot container is running!" || \
     echo_warn " Warning: Honeypot container may not be running correctly"
 
