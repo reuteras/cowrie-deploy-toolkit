@@ -1629,7 +1629,6 @@ def attack_stream():
     def generate():
         """Generate SSE events from Cowrie log file."""
         import subprocess
-        import select
 
         log_path = CONFIG["log_path"]
 
