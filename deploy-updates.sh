@@ -39,7 +39,7 @@ if [ $# -lt 1 ]; then
 fi
 
 SERVER_IP="$1"
-SSH_PORT="${2:-2222}"  # Default to 2222
+SSH_PORT="${2:-22}"  # Default to 22
 
 # Validate inputs
 validate_ip "$SERVER_IP" || fatal_error "Invalid IP address: $SERVER_IP"

@@ -15,6 +15,7 @@ import zipfile
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from pathlib import Path
 
 import requests
 from flask import Flask, Response, jsonify, render_template, request, send_file
@@ -262,76 +263,77 @@ class SessionParser:
         if not os.path.exists(self.log_path):
             return {}
 
-        with open(self.log_path) as f:
-            for line in f:
-                try:
-                    entry = json.loads(line.strip())
-                    timestamp = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
+        for logfile in Path(self.log_path).rglob("**"):
+            with open(logfile) as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line.strip())
+                        timestamp = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
 
-                    if timestamp < cutoff_time:
-                        continue
+                        if timestamp < cutoff_time:
+                            continue
 
-                    session_id = entry.get("session")
-                    if not session_id:
-                        continue
+                        session_id = entry.get("session")
+                        if not session_id:
+                            continue
 
-                    event_id = entry.get("eventid", "")
-                    session = sessions[session_id]
-                    session["id"] = session_id
+                        event_id = entry.get("eventid", "")
+                        session = sessions[session_id]
+                        session["id"] = session_id
 
-                    if event_id == "cowrie.session.connect":
-                        session["src_ip"] = entry.get("src_ip")
-                        session["start_time"] = entry["timestamp"]
-                        if session["src_ip"]:
-                            session["geo"] = self.geoip.lookup(session["src_ip"])
+                        if event_id == "cowrie.session.connect":
+                            session["src_ip"] = entry.get("src_ip")
+                            session["start_time"] = entry["timestamp"]
+                            if session["src_ip"]:
+                                session["geo"] = self.geoip.lookup(session["src_ip"])
 
-                    elif event_id == "cowrie.client.version":
-                        session["client_version"] = entry.get("version")
+                        elif event_id == "cowrie.client.version":
+                            session["client_version"] = entry.get("version")
 
-                    elif event_id == "cowrie.login.success":
-                        session["username"] = entry.get("username")
-                        session["password"] = entry.get("password")
-                        session["login_success"] = True
-
-                    elif event_id == "cowrie.login.failed":
-                        if not session["username"]:
+                        elif event_id == "cowrie.login.success":
                             session["username"] = entry.get("username")
                             session["password"] = entry.get("password")
+                            session["login_success"] = True
 
-                    elif event_id == "cowrie.command.input":
-                        session["commands"].append({"command": entry.get("input", ""), "timestamp": entry["timestamp"]})
+                        elif event_id == "cowrie.login.failed":
+                            if not session["username"]:
+                                session["username"] = entry.get("username")
+                                session["password"] = entry.get("password")
 
-                    elif event_id == "cowrie.session.file_download":
-                        session["downloads"].append(
-                            {
-                                "url": entry.get("url", ""),
-                                "shasum": entry.get("shasum", ""),
-                                "timestamp": entry["timestamp"],
-                            }
-                        )
+                        elif event_id == "cowrie.command.input":
+                            session["commands"].append({"command": entry.get("input", ""), "timestamp": entry["timestamp"]})
 
-                    elif event_id == "cowrie.log.closed":
-                        tty_log = entry.get("ttylog")
-                        if tty_log:
-                            # Append to list of all TTY logs for this session
-                            session["tty_logs"].append({
-                                "ttylog": tty_log,
-                                "timestamp": entry["timestamp"],
-                                "duration": entry.get("duration", "0"),
-                                "size": entry.get("size", 0)
-                            })
-                            # Keep last one for backwards compatibility
-                            session["tty_log"] = tty_log
+                        elif event_id == "cowrie.session.file_download":
+                            session["downloads"].append(
+                                {
+                                    "url": entry.get("url", ""),
+                                    "shasum": entry.get("shasum", ""),
+                                    "timestamp": entry["timestamp"],
+                                }
+                            )
 
-                    elif event_id == "cowrie.session.closed":
-                        session["end_time"] = entry["timestamp"]
-                        if session["start_time"]:
-                            start = datetime.fromisoformat(session["start_time"].replace("Z", "+00:00"))
-                            end = datetime.fromisoformat(session["end_time"].replace("Z", "+00:00"))
-                            session["duration"] = (end - start).total_seconds()
+                        elif event_id == "cowrie.log.closed":
+                            tty_log = entry.get("ttylog")
+                            if tty_log:
+                                # Append to list of all TTY logs for this session
+                                session["tty_logs"].append({
+                                    "ttylog": tty_log,
+                                    "timestamp": entry["timestamp"],
+                                    "duration": entry.get("duration", "0"),
+                                    "size": entry.get("size", 0)
+                                })
+                                # Keep last one for backwards compatibility
+                                session["tty_log"] = tty_log
 
-                except (json.JSONDecodeError, KeyError, ValueError):
-                    continue
+                        elif event_id == "cowrie.session.closed":
+                            session["end_time"] = entry["timestamp"]
+                            if session["start_time"]:
+                                start = datetime.fromisoformat(session["start_time"].replace("Z", "+00:00"))
+                                end = datetime.fromisoformat(session["end_time"].replace("Z", "+00:00"))
+                                session["duration"] = (end - start).total_seconds()
+
+                    except (json.JSONDecodeError, KeyError, ValueError):
+                        continue
 
         return dict(sessions)
 
@@ -1286,6 +1288,7 @@ def download_zip(shasum: str):
         ) as zipf:
             # Add file with just the SHA256 as filename
             zipf.write(file_path, arcname=shasum)
+            zipf.setpassword(b"infected")
 
         # Send the ZIP file and clean up after
         return send_file(

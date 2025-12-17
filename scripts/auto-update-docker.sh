@@ -95,6 +95,10 @@ fi
 # ============================================================
 log "Running health check..."
 
+
+# Wait before check
+sleep 5
+
 # Check if Cowrie container is running
 if docker ps --filter "name=cowrie" --filter "status=running" | grep -q cowrie; then
     log "✓ Cowrie container is running"

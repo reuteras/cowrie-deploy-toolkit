@@ -623,7 +623,7 @@ hostname = $HOSTNAME
 log_path = var/log/cowrie
 download_path = var/lib/cowrie/downloads
 ttylog_path = var/lib/cowrie/tty
-logtype = plain
+logtype = rotating
 # For https://github.com/cowrie/cowrie/blob/main/src/cowrie/commands/nc.py
 out_addr = $SERVER_IP
 auth_class = IPUserDB
