@@ -613,6 +613,57 @@ class SessionParser:
                 "count": count
             })
 
+        # Collect malicious downloads with VT scores
+        download_path = CONFIG["download_path"]
+        all_downloads = []
+        for session in sessions.values():
+            for download in session["downloads"]:
+                all_downloads.append({
+                    "session_id": session["id"],
+                    "src_ip": session["src_ip"],
+                    "shasum": download["shasum"],
+                    "url": download.get("url", ""),
+                    "timestamp": download["timestamp"],
+                })
+
+        # Deduplicate by shasum and get VT scores
+        unique_malicious = {}
+        for dl in all_downloads:
+            shasum = dl["shasum"]
+            if shasum and shasum not in unique_malicious:
+                file_path = os.path.join(download_path, shasum)
+                dl["exists"] = os.path.exists(file_path)
+                if dl["exists"]:
+                    dl["size"] = os.path.getsize(file_path)
+                else:
+                    dl["size"] = 0
+
+                # Get YARA matches and file type
+                yara_result = yara_cache.get_result(shasum)
+                if yara_result:
+                    dl["file_type"] = yara_result.get("file_type")
+                    dl["file_category"] = yara_result.get("file_category")
+                    dl["yara_matches"] = yara_result.get("matches", [])
+
+                # Get VirusTotal score
+                if vt_scanner:
+                    vt_result = vt_scanner.scan_file(shasum)
+                    if vt_result:
+                        dl["vt_detections"] = vt_result["detections"]
+                        dl["vt_total"] = vt_result["total_engines"]
+                        dl["vt_link"] = vt_result["link"]
+                        dl["vt_threat_label"] = vt_result.get("threat_label", "")
+                        # Only include files with VT detections
+                        if dl["vt_detections"] > 0:
+                            unique_malicious[shasum] = dl
+
+        # Sort by VT detections (most malicious first)
+        top_malicious = sorted(
+            unique_malicious.values(),
+            key=lambda x: x.get("vt_detections", 0),
+            reverse=True
+        )[:10]
+
         return {
             "total_sessions": len(sessions),
             "unique_ips": len(ips),
@@ -629,6 +680,7 @@ class SessionParser:
             "top_asns": top_asns,
             "greynoise_ips": greynoise_list,
             "abuseipdb_ips": abuseipdb_list,
+            "top_malicious_downloads": top_malicious,
             "hourly_activity": sorted_hours[-48:],  # Last 48 hours
         }
 

@@ -223,40 +223,71 @@
 
         <!-- Threat Intelligence: AbuseIPDB -->
         <div class="dashboard-card">
-            <h2>🔍 AbuseIPDB Intelligence <a href="{{ url_for('ip_list', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
-            {% if stats.abuseipdb_ips %}
+            <h2>🔍 AbuseIPDB Intelligence <a href="{{ url_for('downloads', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
+            {% if stats.top_malicious_downloads %}
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>IP Address</th>
-                        <th>Abuse Score</th>
-                        <th>Total Reports</th>
-                        <th>Last Seen</th>
+                        <th>SHA256</th>
+                        <th>File Type</th>
+                        <th>VT Score</th>
+                        <th>Threat Label</th>
+                        <th>First Seen</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for ab in stats.abuseipdb_ips[:10] %}
+                    {% for dl in stats.top_malicious_downloads %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', ip=ab.ip, hours=hours) }}">{{ ab.ip }}</a></td>
                         <td>
-                            {% if ab.abuse_confidence_score >= 75 %}
-                            <span class="badge badge-danger">{{ ab.abuse_confidence_score }}%</span>
-                            {% elif ab.abuse_confidence_score >= 25 %}
-                            <span class="badge badge-warning">{{ ab.abuse_confidence_score }}%</span>
+                            <a href="https://www.virustotal.com/gui/file/{{ dl.shasum }}" target="_blank"
+                               title="{{ dl.shasum }}">
+                                <code>{{ dl.shasum | truncate_hash(16) }}</code>
+                            </a>
+                        </td>
+                        <td>
+                            {% if dl.file_category %}
+                                {% set category_colors = {
+                                    'executable': 'badge-danger',
+                                    'script': 'badge-warning',
+                                    'archive': 'badge-info',
+                                    'document': 'badge-primary',
+                                    'data': 'badge-secondary'
+                                } %}
+                                <span class="badge {{ category_colors.get(dl.file_category, 'badge-secondary') }}"
+                                      title="{{ dl.file_type or 'Unknown' }}">
+                                    {{ dl.file_category }}
+                                </span>
                             {% else %}
-                            <span class="badge badge-info">{{ ab.abuse_confidence_score }}%</span>
+                            <span class="text-muted">—</span>
                             {% endif %}
                         </td>
-                        <td>{{ ab.total_reports }}</td>
-                        <td>{{ ab.timestamp | format_timestamp }}</td>
+                        <td>
+                            {% if dl.vt_detections >= 40 %}
+                            <span class="badge badge-danger">{{ dl.vt_detections }}/{{ dl.vt_total }}</span>
+                            {% elif dl.vt_detections >= 10 %}
+                            <span class="badge badge-warning">{{ dl.vt_detections }}/{{ dl.vt_total }}</span>
+                            {% else %}
+                            <span class="badge badge-info">{{ dl.vt_detections }}/{{ dl.vt_total }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if dl.vt_threat_label %}
+                            <span class="badge badge-warning" style="background: #fff3cd; color: #856404;">
+                                {{ dl.vt_threat_label }}
+                            </span>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ dl.timestamp | format_timestamp }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
             {% else %}
-            <p class="no-data">No AbuseIPDB data available</p>
+            <p class="no-data">No malicious downloads detected</p>
             <p style="font-size: 0.9em; color: var(--text-secondary); margin-top: 0.5rem;">
-                AbuseIPDB provides IP reputation data from reports submitted by network administrators worldwide.
+                VirusTotal threat intelligence for downloaded malware samples, showing detection counts across antivirus engines.
             </p>
             {% endif %}
         </div>
