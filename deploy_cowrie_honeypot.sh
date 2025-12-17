@@ -628,6 +628,7 @@ logtype = rotating
 out_addr = $SERVER_IP
 auth_class = IPUserDB
 userdb_path = var/lib/cowrie/userip.db
+minimum_password_len = 4
 
 [shell]
 arch = $ARCH

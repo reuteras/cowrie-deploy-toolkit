@@ -196,7 +196,7 @@ class IPUserDB:
         self, thelogin: bytes, thepasswd: bytes, src_ip: str = "0.0.0.0"
     ) -> bool:
 
-        if len(thepasswd) < self.min_len:
+        if len(thepasswd) <= self.min_len:
             log.msg("Password to short")
             self.log_attempt(src_ip, thelogin, thepasswd, False, False)
             return False
