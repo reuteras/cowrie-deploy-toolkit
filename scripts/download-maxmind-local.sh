@@ -10,6 +10,7 @@ set -euo pipefail
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/common.sh"
 
 if [ $# -ne 2 ]; then
@@ -18,7 +19,6 @@ if [ $# -ne 2 ]; then
     exit 1
 fi
 
-ACCOUNT_ID="$1"
 LICENSE_KEY="$2"
 
 # Cache directory in project root
@@ -49,7 +49,9 @@ download_database() {
     fi
 
     # Download to temp directory
-    local temp_dir=$(mktemp -d)
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    # shellcheck disable=SC2064
     trap "rm -rf $temp_dir" EXIT
 
     if ! curl -fsSL "$download_url" -o "$temp_dir/${db_name}.tar.gz" 2>/dev/null; then
@@ -61,7 +63,8 @@ download_database() {
     tar -xzf "$temp_dir/${db_name}.tar.gz" -C "$temp_dir"
 
     # Find and move the .mmdb file
-    local mmdb_file=$(find "$temp_dir" -name "*.mmdb" -type f)
+    local mmdb_file
+    mmdb_file=$(find "$temp_dir" -name "*.mmdb" -type f)
     if [ -z "$mmdb_file" ]; then
         echo_error "Failed to find .mmdb file in archive"
         return 1
@@ -87,4 +90,5 @@ done
 echo_info "✓ All databases ready in cache"
 echo_info "Cache location: $CACHE_DIR"
 echo_info "Cached files:"
+# shellcheck disable=SC2012
 ls -lh "$CACHE_DIR"/*.mmdb 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'

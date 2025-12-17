@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load common functions library
 if [ -f "$SCRIPT_DIR/scripts/common.sh" ]; then
+    # shellcheck disable=SC1091
     source "$SCRIPT_DIR/scripts/common.sh"
 else
     echo "ERROR: Cannot find scripts/common.sh"

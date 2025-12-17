@@ -9,7 +9,7 @@
 
 # Load common functions library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/common.sh
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/scripts/common.sh"
 
 # ============================================================
@@ -137,6 +137,7 @@ wait_for_ssh "root@$SERVER_IP" 22 120
 
 echo_info " Setting hostname to $HONEYPOT_HOSTNAME and installing services..."
 
+# shellcheck disable=SC2086,SC2087
 ssh $SSH_OPTS "root@$SERVER_IP" bash << EOF
 set -e
 # Set hostname
@@ -170,12 +171,14 @@ echo_info " Setting up WordPress with fake database..."
 # Upload fake WordPress database SQL file
 FAKE_WP_DB="./fake-data/wordpress-db.sql"
 if [ -f "$FAKE_WP_DB" ]; then
+    # shellcheck disable=SC2086
     scp $SSH_OPTS "$FAKE_WP_DB" "root@$SERVER_IP:/tmp/wordpress-db.sql" > /dev/null
     echo_info " Uploaded fake WordPress database"
 else
     echo_warn " Warning: $FAKE_WP_DB not found, skipping WordPress database setup"
 fi
 
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOF'
 set -e
 
@@ -231,6 +234,7 @@ EOF
 echo_info " Setting up Canary Token files in /root/backup..."
 
 # Create /root/backup directory on remote server
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" "mkdir -p /root/backup"
 
 # Check for Canary Token files locally
@@ -239,6 +243,7 @@ CANARY_UPLOADED=false
 
 # MySQL dump Canary Token
 if [ -f "$CANARY_DIR/mysql-backup.sql" ]; then
+    # shellcheck disable=SC2086
     scp $SSH_OPTS "$CANARY_DIR/mysql-backup.sql" "root@$SERVER_IP:/root/backup/mysql-backup.sql" > /dev/null
     echo_info " Uploaded MySQL backup Canary Token to /root/backup/mysql-backup.sql"
     CANARY_UPLOADED=true
@@ -247,6 +252,7 @@ fi
 # Excel Canary Token (look for any .xlsx file)
 EXCEL_TOKEN=$(find "$CANARY_DIR" -maxdepth 1 -name "*.xlsx" -type f 2>/dev/null | head -1)
 if [ -n "$EXCEL_TOKEN" ]; then
+    # shellcheck disable=SC2086
     scp $SSH_OPTS "$EXCEL_TOKEN" "root@$SERVER_IP:/root/Q1_Financial_Report.xlsx" > /dev/null
     echo_info " Uploaded Excel Canary Token to /root/Q1_Financial_Report.xlsx"
     CANARY_UPLOADED=true
@@ -255,6 +261,7 @@ fi
 # PDF Canary Token (look for any .pdf file)
 PDF_TOKEN=$(find "$CANARY_DIR" -maxdepth 1 -name "*.pdf" -type f 2>/dev/null | head -1)
 if [ -n "$PDF_TOKEN" ]; then
+    # shellcheck disable=SC2086
     scp $SSH_OPTS "$PDF_TOKEN" "root@$SERVER_IP:/root/Network_Passwords.pdf" > /dev/null
     echo_info " Uploaded PDF Canary Token to /root/Network_Passwords.pdf"
     CANARY_UPLOADED=true
@@ -274,6 +281,7 @@ fi
 
 echo_info " Generating realistic bash history and SSH keys..."
 
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOF'
 set -e
 
@@ -373,6 +381,7 @@ EOF
 
 echo_info " Installing requirements and createfs on remote host..."
 
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOF'
 set -e
 DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
@@ -391,6 +400,7 @@ EOF
 
 echo_info " Running createfs (this may take a few minutes)..."
 
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOF'
 # Save createfs script to temp location before cleanup
 cp /root/cowrie/src/cowrie/scripts/createfs.py /tmp/createfs.py
@@ -451,12 +461,19 @@ echo_info " Filesystem pickle created (Cowrie directories excluded)."
 
 echo_info " Collecting identity metadata..."
 
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" "uname -a"            > "$IDENTITY_DIR/kernel.txt"
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" "cat /proc/version"   > "$IDENTITY_DIR/proc-version"
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" "cat /etc/os-release" > "$IDENTITY_DIR/os-release"
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" "cat /etc/debian_version" > "$IDENTITY_DIR/debian_version"
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" "hostname"            > "$IDENTITY_DIR/hostname"
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" "dpkg -l"             > "$IDENTITY_DIR/dpkg_list.txt"
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" "cat /root/ps.txt"    > "$IDENTITY_DIR/ps.txt"
 
 # SSH banner
@@ -475,6 +492,7 @@ CONTENTS_DIR="$OUTPUT_DIR/contents"
 mkdir -p "$CONTENTS_DIR"
 
 # Create tarball of important files on remote server
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOFCONTENTS'
 cd /
 tar --no-xattrs -cf /tmp/contents.tar \
@@ -527,9 +545,10 @@ gzip /tmp/contents.tar
 EOFCONTENTS
 
 # Download and extract contents
+# shellcheck disable=SC2086
 scp $SSH_OPTS "root@$SERVER_IP:/tmp/contents.tar.gz" "$CONTENTS_DIR/" > /dev/null 2>&1 || true
 if [ -f "$CONTENTS_DIR/contents.tar.gz" ]; then
-    cd "$CONTENTS_DIR"
+    cd "$CONTENTS_DIR" || exit 1
     tar xzf contents.tar.gz 2>/dev/null || true
     rm contents.tar.gz
     touch etc/issue.net
@@ -543,9 +562,10 @@ fi
 echo_info " Collecting cmd output for Cowrie txtcmds directory..."
 
 # Copy defaults
-cp -r txtcmds $OUTPUT_DIR
+cp -r txtcmds "$OUTPUT_DIR"
 
-# Create tarball of txtcmd output
+# Create tarball of txtcmds output
+# shellcheck disable=SC2086
 ssh $SSH_OPTS "root@$SERVER_IP" bash << 'EOFTXTCMDS'
 cd /root
 tar --no-xattrs -czf /tmp/txtcmds.tar.gz \
@@ -553,10 +573,11 @@ tar --no-xattrs -czf /tmp/txtcmds.tar.gz \
     2>/dev/null || true
 EOFTXTCMDS
 
-# Download and extract txtcmd outputs
+# Download and extract txtcmds outputs
+# shellcheck disable=SC2086
 scp $SSH_OPTS "root@$SERVER_IP:/tmp/txtcmds.tar.gz" "$OUTPUT_DIR/" > /dev/null 2>&1 || true
 if [ -f "$OUTPUT_DIR/txtcmds.tar.gz" ]; then
-    cd "$OUTPUT_DIR"
+    cd "$OUTPUT_DIR" || exit 1
     tar xzf txtcmds.tar.gz 2>/dev/null || true
     rm txtcmds.tar.gz
     echo_info " Command output contents collected ($(find txtcmds -type f | wc -l) files)"
@@ -572,6 +593,7 @@ fi
 # ============================================================
 
 echo_info " Downloading fs.pickle..."
+# shellcheck disable=SC2086
 scp $SSH_OPTS "root@$SERVER_IP:/root/fs.pickle" "$OUTPUT_DIR/fs.pickle" > /dev/null
 
 echo_info " fs.pickle downloaded."
@@ -589,7 +611,7 @@ echo_info " Temporary server deleted."
 # DONE
 # ============================================================
 
-CLEAN_OUTPUT_DIR=$(echo $OUTPUT_DIR | tr -d "./")
+CLEAN_OUTPUT_DIR=$(echo "$OUTPUT_DIR" | tr -d "./")
 
 echo ""
 echo "==========================================================="

@@ -370,7 +370,7 @@ class LogParser:
             "successful_credentials": self.successful_credentials,
             "commands": self.commands,
             "top_commands": self.command_counts.most_common(20),  # Top 20 commands with counts
-            "sessions_with_commands": len(set(cmd["session"] for cmd in self.commands if cmd["session"])),
+            "sessions_with_commands": len({cmd["session"] for cmd in self.commands if cmd["session"]}),
             "sessions_by_activity": sessions_by_activity,  # Sessions sorted by command count
             "downloads": self.downloads,
             "unique_downloads": unique_downloads,  # Deduplicated downloads

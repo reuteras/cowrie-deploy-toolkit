@@ -561,6 +561,7 @@ fi
 if [ -d "./cowrie-plugins" ] && [ "$(ls -A ./cowrie-plugins/*.py 2>/dev/null)" ]; then
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
         ./cowrie-plugins/*.py "root@$SERVER_IP:/opt/cowrie/build/cowrie-plugins/" > /dev/null 2>&1
+    # shellcheck disable=SC2012
     echo_info "Custom plugins uploaded ($(ls -1 ./cowrie-plugins/*.py 2>/dev/null | wc -l | tr -d ' ') files)"
 else
     echo_info "No custom plugins found (build will use defaults only)"
@@ -570,6 +571,7 @@ fi
 if [ -d "./cowrie-core" ] && [ "$(ls -A ./cowrie-core/*.py 2>/dev/null)" ]; then
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
         ./cowrie-core/*.py "root@$SERVER_IP:/opt/cowrie/build/cowrie-core/" > /dev/null 2>&1
+    # shellcheck disable=SC2012
     echo_info "Custom core file(s) uploaded ($(ls -1 ./cowrie-core/*.py 2>/dev/null | wc -l | tr -d ' ') files)"
 else
     echo_info "No custom core files found (build will use defaults only)"
@@ -840,10 +842,12 @@ sleep 5
 
 # Check container status instead of making a test connection
 # (nc test creates noise in logs)
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-    "cd /opt/cowrie && docker compose ps | grep -q 'Up'" && \
-    echo_info "Honeypot container is running!" || \
+if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+    "cd /opt/cowrie && docker compose ps | grep -q 'Up'" ; then
+    echo_info "Honeypot container is running!"
+else
     echo_warn " Warning: Honeypot container may not be running correctly"
+fi
 
 # ============================================================
 # STEP 10 — Set up MaxMind GeoIP (if reporting enabled)
