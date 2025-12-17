@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 import requests
-from flask import Flask, Response, jsonify, render_template, request, send_file
+from flask import Flask, Response, jsonify, render_template, request, send_file, stream_with_context
 
 try:
     import geoip2.database
@@ -363,7 +363,7 @@ class SessionParser:
 
     def get_threat_intel_for_ip(self, ip_address: str) -> dict:
         """Get threat intelligence data for a specific IP address."""
-        result = {"greynoise": None, "abuseipdb": None}
+        result = {"greynoise": None}
 
         if not os.path.exists(self.log_path):
             return result
@@ -419,8 +419,13 @@ class SessionParser:
                 "top_clients": [],
                 "top_asns": [],
                 "greynoise_ips": [],
-                "abuseipdb_ips": [],
                 "hourly_activity": [],
+                "vt_stats": {
+                    "total_scanned": 0,
+                    "total_malicious": 0,
+                    "avg_detection_rate": 0.0,
+                    "total_threat_families": 0,
+                },
             }
 
         # Calculate stats
@@ -436,7 +441,6 @@ class SessionParser:
         asn_counter = Counter()  # Track sessions by ASN
         asn_details = {}  # ASN -> {asn_org, asn_number}
         greynoise_results = {}  # IP -> {classification, message, timestamp}
-        abuseipdb_results = {}  # IP -> {abuse_confidence_score, total_reports, etc.}
         sessions_with_cmds = 0
         total_downloads = 0
         unique_downloads = set()
@@ -516,7 +520,7 @@ class SessionParser:
                 except Exception:
                     pass
 
-        # Parse threat intelligence events (GreyNoise, AbuseIPDB)
+        # Parse threat intelligence events (GreyNoise)
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
         if os.path.exists(self.log_path):
             with open(self.log_path) as f:
@@ -565,11 +569,6 @@ class SessionParser:
             key=lambda x: x["timestamp"],
             reverse=True,
         )
-        abuseipdb_list = sorted(
-            [{"ip": ip, **data} for ip, data in abuseipdb_results.items()],
-            key=lambda x: x["timestamp"],
-            reverse=True,
-        )
 
         # Build top ASNs list with details
         top_asns = []
@@ -596,10 +595,16 @@ class SessionParser:
                 })
 
         # Deduplicate by shasum and get VT scores
-        unique_malicious = {}
+        all_scanned_files = {}
+        vt_total_scanned = 0
+        vt_total_malicious = 0
+        vt_total_detections = 0
+        vt_total_engines = 0
+        vt_threat_families = set()
+
         for dl in all_downloads:
             shasum = dl["shasum"]
-            if shasum and shasum not in unique_malicious:
+            if shasum and shasum not in all_scanned_files:
                 file_path = os.path.join(download_path, shasum)
                 dl["exists"] = os.path.exists(file_path)
                 if dl["exists"]:
@@ -618,17 +623,41 @@ class SessionParser:
                 if vt_scanner:
                     vt_result = vt_scanner.scan_file(shasum)
                     if vt_result:
-                        dl["vt_detections"] = vt_result["detections"]
-                        dl["vt_total"] = vt_result["total_engines"]
+                        vt_total_scanned += 1
+                        detections = vt_result["detections"]
+                        total_eng = vt_result["total_engines"]
+
+                        dl["vt_detections"] = detections
+                        dl["vt_total"] = total_eng
                         dl["vt_link"] = vt_result["link"]
                         dl["vt_threat_label"] = vt_result.get("threat_label", "")
-                        # Only include files with VT detections
-                        if dl["vt_detections"] > 0:
-                            unique_malicious[shasum] = dl
 
-        # Sort by VT detections (most malicious first)
-        top_malicious = sorted(
-            unique_malicious.values(),
+                        # Aggregate stats
+                        vt_total_detections += detections
+                        vt_total_engines += total_eng
+
+                        # Track all scanned files (including clean files with 0 detections)
+                        all_scanned_files[shasum] = dl
+
+                        if detections > 0:
+                            vt_total_malicious += 1
+
+                            # Track threat families
+                            threat_label = vt_result.get("threat_label", "")
+                            if threat_label:
+                                vt_threat_families.add(threat_label)
+
+        # Calculate VirusTotal statistics
+        vt_stats = {
+            "total_scanned": vt_total_scanned,
+            "total_malicious": vt_total_malicious,
+            "avg_detection_rate": (vt_total_detections / vt_total_engines * 100) if vt_total_engines > 0 else 0.0,
+            "total_threat_families": len(vt_threat_families),
+        }
+
+        # Sort by VT detections (most detected first, but include all files)
+        top_downloads = sorted(
+            all_scanned_files.values(),
             key=lambda x: x.get("vt_detections", 0),
             reverse=True
         )[:10]
@@ -648,8 +677,8 @@ class SessionParser:
             "top_clients": client_version_counter.most_common(10),
             "top_asns": top_asns,
             "greynoise_ips": greynoise_list,
-            "abuseipdb_ips": abuseipdb_list,
-            "top_malicious_downloads": top_malicious,
+            "top_malicious_downloads": top_downloads,
+            "vt_stats": vt_stats,
             "hourly_activity": sorted_hours[-48:],  # Last 48 hours
         }
 
@@ -1592,6 +1621,110 @@ def asns():
         })
 
     return render_template("asns.html", asns=all_asns, hours=hours, config=CONFIG)
+
+
+@app.route("/api/attack-stream")
+def attack_stream():
+    """Server-Sent Events endpoint for real-time attack feed."""
+    def generate():
+        """Generate SSE events from Cowrie log file."""
+        import subprocess
+        import select
+
+        log_path = CONFIG["log_path"]
+
+        # Use tail -F to follow the log file
+        proc = subprocess.Popen(
+            ["tail", "-F", "-n", "0", log_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
+        )
+
+        geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+        active_sessions = {}  # Track active sessions
+
+        try:
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    time.sleep(0.1)
+                    continue
+
+                try:
+                    entry = json.loads(line.strip())
+                    event_id = entry.get("eventid", "")
+                    session_id = entry.get("session")
+
+                    # Track session.connect events
+                    if event_id == "cowrie.session.connect":
+                        src_ip = entry.get("src_ip")
+                        if src_ip and session_id:
+                            geo = geoip.lookup(src_ip)
+                            active_sessions[session_id] = {
+                                "src_ip": src_ip,
+                                "geo": geo,
+                                "start_time": entry.get("timestamp"),
+                                "login_success": False
+                            }
+
+                            # Send connect event
+                            event_data = {
+                                "event": "connect",
+                                "session_id": session_id,
+                                "ip": src_ip,
+                                "lat": geo.get("latitude"),
+                                "lon": geo.get("longitude"),
+                                "city": geo.get("city", "Unknown"),
+                                "country": geo.get("country", "Unknown"),
+                                "timestamp": entry.get("timestamp"),
+                                "asn": geo.get("asn"),
+                                "asn_org": geo.get("asn_org")
+                            }
+                            yield f"data: {json.dumps(event_data)}\n\n"
+
+                    # Track successful logins
+                    elif event_id == "cowrie.login.success" and session_id in active_sessions:
+                        active_sessions[session_id]["login_success"] = True
+                        active_sessions[session_id]["username"] = entry.get("username")
+                        active_sessions[session_id]["password"] = entry.get("password")
+
+                        # Send login success event
+                        session = active_sessions[session_id]
+                        event_data = {
+                            "event": "login_success",
+                            "session_id": session_id,
+                            "ip": session["src_ip"],
+                            "username": entry.get("username"),
+                            "timestamp": entry.get("timestamp")
+                        }
+                        yield f"data: {json.dumps(event_data)}\n\n"
+
+                    # Track session closures
+                    elif event_id == "cowrie.session.closed" and session_id in active_sessions:
+                        session = active_sessions[session_id]
+
+                        # Send close event
+                        event_data = {
+                            "event": "session_closed",
+                            "session_id": session_id,
+                            "ip": session["src_ip"],
+                            "login_success": session["login_success"],
+                            "timestamp": entry.get("timestamp")
+                        }
+                        yield f"data: {json.dumps(event_data)}\n\n"
+
+                        # Clean up
+                        del active_sessions[session_id]
+
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    continue
+
+        except GeneratorExit:
+            proc.terminate()
+            proc.wait()
+
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
 
 @app.template_filter("format_duration")

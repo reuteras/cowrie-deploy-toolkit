@@ -20,17 +20,27 @@
                 <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 Hours</option>
                 <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 Days</option>
             </select>
+            <button id="mode-toggle-btn" class="btn btn-success">📡 Go Live</button>
             <button id="play-pause-btn" class="btn btn-primary">⏸ Pause</button>
             <button id="reset-btn" class="btn">🔄 Reset</button>
+            <button id="fullscreen-btn" class="btn">⛶ Fullscreen</button>
             <a href="{{ url_for('index') }}" class="btn">Back to Dashboard</a>
         </div>
     </div>
 
     <div class="map-stats" style="margin: 20px 0; padding: 15px; background: var(--bg-secondary); border-radius: 8px;">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">
             <div>
                 <div style="font-size: 0.9em; color: var(--text-secondary);">Total Attacks</div>
                 <div style="font-size: 1.5em; font-weight: 600; color: var(--accent-color);">{{ attacks | length }}</div>
+            </div>
+            <div>
+                <div style="font-size: 0.9em; color: var(--text-secondary);">Unique IPs</div>
+                <div style="font-size: 1.5em; font-weight: 600; color: #17a2b8;" id="unique-ips">-</div>
+            </div>
+            <div>
+                <div style="font-size: 0.9em; color: var(--text-secondary);">High-Volume Attackers</div>
+                <div style="font-size: 1.5em; font-weight: 600; color: #ffc107;" id="high-volume-count">-</div>
             </div>
             <div>
                 <div style="font-size: 0.9em; color: var(--text-secondary);">Honeypot Location</div>
@@ -40,6 +50,16 @@
                     {% else %}
                     Unknown
                     {% endif %}
+                </div>
+            </div>
+            <div>
+                <div style="font-size: 0.9em; color: var(--text-secondary);">Current Attack Time</div>
+                <div style="font-size: 1.1em; font-weight: 600; color: #ffc107;" id="current-time">--</div>
+            </div>
+            <div>
+                <div style="font-size: 0.9em; color: var(--text-secondary);">Mode</div>
+                <div style="font-size: 1.1em; font-weight: 600;" id="mode-indicator">
+                    <span style="color: var(--text-secondary);">📼 Replay</span>
                 </div>
             </div>
             <div>
@@ -54,23 +74,60 @@
         </div>
     </div>
 
-    <div id="attack-map" style="height: 700px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>
+    <div style="display: grid; grid-template-columns: 1fr 400px; gap: 20px;">
+        <div id="attack-map" style="height: 700px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></div>
+
+        <!-- Live Attack Feed -->
+        <div class="attack-feed-container" style="background: var(--bg-secondary); border-radius: 8px; padding: 15px; height: 700px; display: flex; flex-direction: column;">
+            <h3 style="margin: 0 0 15px 0; font-size: 1.1em;">📡 Live Attack Feed</h3>
+            <div style="flex: 1; overflow-y: auto; overflow-x: hidden;" id="attack-feed">
+                <div style="color: var(--text-secondary); text-align: center; padding: 20px;">
+                    Waiting for attacks...
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="map-legend" style="margin-top: 20px; padding: 15px; background: var(--bg-secondary); border-radius: 8px;">
-        <strong>Legend:</strong>
-        <span style="margin-left: 15px;">🔴 Attacker</span>
-        <span style="margin-left: 15px;">🎯 Honeypot</span>
-        <span style="margin-left: 15px; color: #dc3545;">━━━</span> <span>Attack Path</span>
-        <span style="margin-left: 15px; color: #28a745;">━━━</span> <span>Successful Login</span>
+        <div style="margin-bottom: 10px;">
+            <strong>Legend:</strong>
+            <span style="margin-left: 15px;">🔴 Attacker</span>
+            <span style="margin-left: 15px;">🎯 Honeypot</span>
+            <span style="margin-left: 15px; color: #dc3545;">━━━</span> <span>Attack Path</span>
+            <span style="margin-left: 15px; color: #28a745;">━━━</span> <span>Successful Login</span>
+        </div>
+        <div style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 10px;">
+            <strong>Visual Intensity Scale (attacks from same IP):</strong>
+            <span style="margin-left: 15px;">1-9: Regular</span>
+            <span style="margin-left: 15px;">🔥 10-19: High Volume</span>
+            <span style="margin-left: 15px;">⚡ 20-39: Heavy</span>
+            <span style="margin-left: 15px;">💀 40+: MEGA</span>
+        </div>
+        <div style="font-size: 0.9em; color: var(--text-secondary);">
+            <strong>Visual Cues:</strong>
+            <span style="margin-left: 15px;">💥 Thicker lines & larger markers = More attacks</span>
+            <span style="margin-left: 15px;">✨ Stronger glow = Higher intensity</span>
+            <span style="margin-left: 15px;">🎆 Explosion size = Attack volume</span>
+            <span style="margin-left: 15px;">⚡ Faster pulse = Persistent attacker</span>
+        </div>
     </div>
 </div>
 
 <style>
+/* Honeypot marker - keep it static and visible */
+.honeypot-marker-icon {
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+    position: relative !important;
+    pointer-events: auto !important;
+}
+
 .attack-path {
-    stroke-width: 2;
     fill: none;
     stroke-dasharray: 5, 5;
     animation: dash 20s linear infinite;
+    transition: all 0.3s ease;
 }
 
 @keyframes dash {
@@ -107,9 +164,105 @@
         opacity: 0.8;
     }
     50% {
-        transform: scale(1.2);
+        transform: scale(1.3);
         opacity: 1;
     }
+}
+
+/* Dramatic explosion effect at honeypot */
+@keyframes explosion {
+    0% {
+        transform: scale(0);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(2);
+        opacity: 0;
+    }
+}
+
+/* Honeypot hit flash - no transform to prevent movement */
+@keyframes honeypot-flash {
+    0%, 100% {
+        filter: drop-shadow(0 0 10px rgba(255, 193, 7, 0.8));
+    }
+    50% {
+        filter: drop-shadow(0 0 30px rgba(255, 193, 7, 1))
+                drop-shadow(0 0 50px rgba(255, 255, 255, 0.8))
+                brightness(1.5);
+    }
+}
+
+/* Enhanced glow for high-volume attacks */
+.high-volume-attack {
+    filter: drop-shadow(0 0 20px currentColor)
+            drop-shadow(0 0 40px currentColor);
+    animation: intense-glow 1s ease-in-out infinite;
+}
+
+@keyframes intense-glow {
+    0%, 100% {
+        opacity: 0.8;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+/* Slide-in animation for attack feed entries */
+@keyframes slideIn {
+    from {
+        transform: translateX(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Fullscreen mode adjustments */
+.attack-map-page:fullscreen {
+    background: var(--bg-primary);
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.attack-map-page:-webkit-full-screen {
+    background: var(--bg-primary);
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.attack-map-page:-moz-full-screen {
+    background: var(--bg-primary);
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.attack-map-page:-ms-fullscreen {
+    background: var(--bg-primary);
+    padding: 20px;
+    overflow-y: auto;
+}
+
+/* Make map and feed larger in fullscreen */
+.attack-map-page:fullscreen #attack-map,
+.attack-map-page:-webkit-full-screen #attack-map,
+.attack-map-page:-moz-full-screen #attack-map,
+.attack-map-page:-ms-fullscreen #attack-map {
+    height: calc(100vh - 300px) !important;
+}
+
+.attack-map-page:fullscreen .attack-feed-container,
+.attack-map-page:-webkit-full-screen .attack-feed-container,
+.attack-map-page:-moz-full-screen .attack-feed-container,
+.attack-map-page:-ms-fullscreen .attack-feed-container {
+    height: calc(100vh - 300px) !important;
 }
 </style>
 
@@ -123,22 +276,36 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
-    // Initialize map centered on honeypot
-    const map = L.map('attack-map').setView([honeypotLocation.lat, honeypotLocation.lon], 3);
+    // Initialize map centered on honeypot with explicit options to prevent jumping
+    const map = L.map('attack-map', {
+        center: [honeypotLocation.lat, honeypotLocation.lon],
+        zoom: 3,
+        zoomControl: true,
+        preferCanvas: true,  // Use canvas for better performance
+        worldCopyJump: false,  // Prevent world wrapping jumps
+        maxBounds: null,  // No bounds restriction
+        renderer: L.canvas(),  // Canvas renderer for smoother animations
+        zoomAnimation: false,  // Disable zoom animation to prevent jumping
+        fadeAnimation: false,  // Disable fade animation
+        markerZoomAnimation: false  // Disable marker zoom animation
+    });
 
     // Add tile layer (dark theme for pew-pew effect)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '© OpenStreetMap, © CartoDB',
         maxZoom: 19,
-        subdomains: 'abcd'
+        subdomains: 'abcd',
+        updateWhenIdle: false,
+        updateWhenZooming: false,
+        keepBuffer: 2
     }).addTo(map);
 
-    // Add honeypot marker (larger and more visible)
+    // Add honeypot marker - simple and static, never moves
     const honeypotIcon = L.divIcon({
-        className: 'honeypot-icon',
-        html: '<div style="font-size: 32px; text-shadow: 0 0 10px rgba(255, 193, 7, 0.8);">🎯</div>',
+        className: '',  // No custom class that might interfere
+        html: '<div class="honeypot-marker-icon" style="font-size: 32px; text-shadow: 0 0 10px rgba(255, 193, 7, 0.8); display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">🎯</div>',
         iconSize: [40, 40],
-        iconAnchor: [20, 20]
+        iconAnchor: [20, 20]  // This centers the icon on the coordinate
     });
 
     const honeypotMarker = L.marker([honeypotLocation.lat, honeypotLocation.lon], {
@@ -151,21 +318,86 @@ document.addEventListener('DOMContentLoaded', function() {
         ${honeypotLocation.city}, ${honeypotLocation.country}
     `);
 
-    // Prepare migration data
-    const migrationData = attacks.map(attack => ({
-        lat: attack.lat,
-        lon: attack.lon,
-        from: [attack.lat, attack.lon],
-        to: [honeypotLocation.lat, honeypotLocation.lon],
-        labels: [`${attack.city}, ${attack.country}`, `${honeypotLocation.city}, ${honeypotLocation.country}`],
-        color: attack.login_success ? '#28a745' : '#dc3545',
-        value: 1,
-        sessionId: attack.session_id,
-        ip: attack.ip,
-        city: attack.city,
-        country: attack.country,
-        login_success: attack.login_success
-    }));
+    // Aggregate attacks by IP to determine line thickness
+    const ipAttackCounts = {};
+    const ipDetails = {};
+
+    attacks.forEach(attack => {
+        if (!ipAttackCounts[attack.ip]) {
+            ipAttackCounts[attack.ip] = 0;
+            ipDetails[attack.ip] = {
+                lat: attack.lat,
+                lon: attack.lon,
+                city: attack.city,
+                country: attack.country,
+                sessions: [],
+                successCount: 0,
+                asn: null,
+                asn_org: null
+            };
+        }
+        ipAttackCounts[attack.ip]++;
+        ipDetails[attack.ip].sessions.push(attack.session_id);
+        if (attack.login_success) {
+            ipDetails[attack.ip].successCount++;
+        }
+    });
+
+    // Calculate statistics with new thresholds (10, 20, 40+)
+    const uniqueIPCount = Object.keys(ipAttackCounts).length;
+    const highVolumeAttackers = Object.values(ipAttackCounts).filter(count => count >= 10).length;
+
+    // Update stats display
+    document.getElementById('unique-ips').textContent = uniqueIPCount;
+    document.getElementById('high-volume-count').textContent = highVolumeAttackers;
+
+    // Prepare migration data with attack count information
+    const migrationData = attacks.map(attack => {
+        const attackCount = ipAttackCounts[attack.ip];
+
+        // Scale visual properties based on new thresholds: 1, 10, 20, 40+
+        let lineWidth, glowIntensity, isHighVolume;
+
+        if (attackCount >= 40) {
+            lineWidth = 12;           // Mega attackers get massive lines
+            glowIntensity = 30;       // Intense glow
+            isHighVolume = true;
+        } else if (attackCount >= 20) {
+            lineWidth = 9;            // Heavy attackers
+            glowIntensity = 22;
+            isHighVolume = true;
+        } else if (attackCount >= 10) {
+            lineWidth = 6;            // High-volume attackers
+            glowIntensity = 15;
+            isHighVolume = true;
+        } else {
+            lineWidth = 3;            // Regular attackers
+            glowIntensity = 8;
+            isHighVolume = false;
+        }
+
+        return {
+            lat: attack.lat,
+            lon: attack.lon,
+            from: [attack.lat, attack.lon],
+            to: [honeypotLocation.lat, honeypotLocation.lon],
+            labels: [`${attack.city}, ${attack.country}`, `${honeypotLocation.city}, ${honeypotLocation.country}`],
+            color: attack.login_success ? '#28a745' : '#dc3545',
+            value: 1,
+            sessionId: attack.session_id,
+            ip: attack.ip,
+            city: attack.city,
+            country: attack.country,
+            timestamp: attack.timestamp,  // Attack timestamp for display
+            login_success: attack.login_success,
+            attackCount: attackCount,  // Total attacks from this IP
+            isHighVolume: isHighVolume,  // Flag for high-volume attackers (10+)
+            lineWidth: lineWidth,
+            glowIntensity: glowIntensity,
+            asn: ipDetails[attack.ip]?.asn,  // ASN number
+            asn_org: ipDetails[attack.ip]?.asn_org  // ASN organization
+        };
+    });
 
     // Animation state
     let currentIndex = 0;
@@ -173,9 +405,17 @@ document.addEventListener('DOMContentLoaded', function() {
     let animationSpeed = 1;
     let migrationLayer = null;
     let animationInterval = null;
+    let clockInterval = null;
+    let currentSimulatedTime = null;
+    let attackFeedCount = 0;
 
     const arcLayers = [];
-    const pulseMarkers = [];
+
+    // Live mode state
+    let liveMode = false;
+    let eventSource = null;
+    let liveSessions = {};  // Track live sessions: session_id -> {arc, attack_data, closeTimer}
+    let liveAttackCount = 0;
 
     // Calculate points along a curved arc using quadratic bezier curve
     function calculateArcPoints(start, end, numPoints = 50) {
@@ -215,6 +455,58 @@ document.addEventListener('DOMContentLoaded', function() {
         return points;
     }
 
+    function addImpactExplosion(attack) {
+        // Create dramatic impact explosion at honeypot location (scaled to new thresholds)
+        let explosionSize;
+        if (attack.attackCount >= 40) {
+            explosionSize = 100;  // MEGA explosion
+        } else if (attack.attackCount >= 20) {
+            explosionSize = 75;   // Heavy explosion
+        } else if (attack.attackCount >= 10) {
+            explosionSize = 50;   // High-volume explosion
+        } else {
+            explosionSize = 35;   // Regular explosion
+        }
+
+        const explosionIcon = L.divIcon({
+            className: 'impact-explosion',
+            html: `<div style="
+                width: ${explosionSize}px;
+                height: ${explosionSize}px;
+                border-radius: 50%;
+                background: radial-gradient(circle, ${attack.color} 0%, transparent 70%);
+                box-shadow: 0 0 ${explosionSize}px ${attack.color},
+                           0 0 ${explosionSize * 0.5}px ${attack.color},
+                           inset 0 0 ${explosionSize * 0.3}px ${attack.color};
+                animation: explosion 0.6s ease-out;
+                opacity: 0;
+            "></div>`,
+            iconSize: [explosionSize, explosionSize],
+            iconAnchor: [explosionSize / 2, explosionSize / 2]
+        });
+
+        const explosionMarker = L.marker([honeypotLocation.lat, honeypotLocation.lon], {
+            icon: explosionIcon,
+            zIndexOffset: 999
+        }).addTo(map);
+
+        // Flash the honeypot marker on impact
+        if (honeypotMarker && honeypotMarker._icon) {
+            const iconDiv = honeypotMarker._icon.querySelector('.honeypot-marker-icon');
+            if (iconDiv) {
+                iconDiv.style.animation = 'honeypot-flash 0.6s ease-out';
+                setTimeout(() => {
+                    iconDiv.style.animation = '';
+                }, 600);
+            }
+        }
+
+        // Remove explosion after animation
+        setTimeout(() => {
+            map.removeLayer(explosionMarker);
+        }, 600);
+    }
+
     function addAttackArc(attack) {
         // Calculate curved path points
         const arcPoints = calculateArcPoints(
@@ -222,83 +514,156 @@ document.addEventListener('DOMContentLoaded', function() {
             [honeypotLocation.lat, honeypotLocation.lon]
         );
 
-        // Create curved arc polyline
+        // Determine visual properties based on attack volume
+        const lineWidth = attack.lineWidth || 2;
+        const glowIntensity = attack.glowIntensity || 5;
+        const isHighVolume = attack.isHighVolume || false;
+
+        // Create curved arc polyline with dynamic styling
         const arc = L.polyline(arcPoints, {
             color: attack.login_success ? '#28a745' : '#dc3545',
-            weight: 2,
-            opacity: 0.7,
-            dashArray: '5, 10',
+            weight: lineWidth,  // Thicker lines for more attacks
+            opacity: 0.8,
+            dashArray: isHighVolume ? '10, 5' : '5, 10',  // Different dash pattern for high volume
             className: 'attack-path'
         });
+
+        // Add glow effect using SVG filter
+        if (arc._path) {
+            arc._path.style.filter = `drop-shadow(0 0 ${glowIntensity}px ${attack.color})`;
+        }
 
         arc.addTo(map);
         arcLayers.push(arc);
 
-        // Add popup to arc
+        // Add popup to arc with attack count
         arc.bindPopup(`
             <strong>${attack.city}, ${attack.country}</strong><br>
             IP: <a href="/sessions?ip=${attack.ip}" target="_blank">${attack.ip}</a><br>
+            ${attack.attackCount > 1 ? `<span style="color: #ffc107; font-weight: bold;">⚡ ${attack.attackCount} attacks from this IP</span><br>` : ''}
             <a href="/session/${attack.sessionId}" target="_blank">View Session →</a>
         `);
 
-        // Add pulsing marker at attacker location
-        const pulseIcon = L.divIcon({
-            className: 'pulse-icon',
-            html: `<div style="
-                background: ${attack.login_success ? '#28a745' : '#dc3545'};
-                width: 12px;
-                height: 12px;
-                border-radius: 50%;
-                border: 2px solid #fff;
-                box-shadow: 0 0 10px ${attack.login_success ? '#28a745' : '#dc3545'};
-                animation: pulse 2s ease-in-out infinite;
-            "></div>`,
-            iconSize: [16, 16],
-            iconAnchor: [8, 8]
-        });
+        // Add impact explosion at honeypot location
+        addImpactExplosion(attack);
 
-        const marker = L.marker([attack.lat, attack.lon], {
-            icon: pulseIcon
-        }).addTo(map);
+        // Successful attacks stay longer (10 seconds) so they're not missed
+        const displayDuration = attack.login_success ? 10000 : 8000;
 
-        marker.bindPopup(`
-            <strong>${attack.city}, ${attack.country}</strong><br>
-            IP: <a href="/sessions?ip=${attack.ip}" target="_blank">${attack.ip}</a><br>
-            <a href="/session/${attack.sessionId}" target="_blank">View Session →</a>
-        `);
-
-        pulseMarkers.push(marker);
-
-        // Auto-fade and remove after 8 seconds
+        // Auto-fade and remove after displayDuration
         setTimeout(() => {
             // Fade out animation
-            let opacity = 0.7;
+            let opacity = 0.8;
             const fadeInterval = setInterval(() => {
                 opacity -= 0.1;
                 if (opacity <= 0) {
                     clearInterval(fadeInterval);
                     // Remove from map
                     map.removeLayer(arc);
-                    map.removeLayer(marker);
                     // Remove from tracking arrays
                     const arcIndex = arcLayers.indexOf(arc);
                     if (arcIndex > -1) arcLayers.splice(arcIndex, 1);
-                    const markerIndex = pulseMarkers.indexOf(marker);
-                    if (markerIndex > -1) pulseMarkers.splice(markerIndex, 1);
                 } else {
                     arc.setStyle({ opacity: opacity });
                 }
             }, 200);
-        }, 8000);
+        }, displayDuration);
 
         return arc;
+    }
+
+    function startContinuousClock(startTime) {
+        // Stop any existing clock
+        if (clockInterval) clearInterval(clockInterval);
+
+        currentSimulatedTime = new Date(startTime);
+
+        // Update clock every 100ms, incrementing based on animation speed
+        clockInterval = setInterval(() => {
+            if (animationRunning && currentSimulatedTime) {
+                // Increment time based on animation speed (faster = more time passes)
+                currentSimulatedTime = new Date(currentSimulatedTime.getTime() + (100 * animationSpeed));
+
+                const formattedTime = currentSimulatedTime.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                });
+                document.getElementById('current-time').textContent = formattedTime;
+            }
+        }, 100);
+    }
+
+    function addToAttackFeed(attack) {
+        const feed = document.getElementById('attack-feed');
+
+        // Clear "waiting" message on first attack
+        if (attackFeedCount === 0) {
+            feed.innerHTML = '';
+        }
+
+        attackFeedCount++;
+
+        const date = new Date(attack.timestamp);
+        const timeStr = date.toLocaleTimeString('en-US', { hour12: false });
+        const statusBadge = attack.login_success
+            ? '<span style="background: #28a745; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-weight: 600;">SUCCESS</span>'
+            : '<span style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-weight: 600;">FAILED</span>';
+
+        // Get ASN info if available
+        const asnInfo = attack.asn ? `AS${attack.asn}` : 'Unknown';
+        const asnOrg = attack.asn_org || '';
+
+        const entry = document.createElement('div');
+        entry.style.cssText = `
+            padding: 10px;
+            margin-bottom: 8px;
+            background: var(--bg-primary);
+            border-left: 4px solid ${attack.login_success ? '#28a745' : '#dc3545'};
+            border-radius: 4px;
+            font-size: 0.85em;
+            animation: slideIn 0.3s ease-out;
+        `;
+
+        entry.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <strong style="color: var(--accent-color);">${attack.ip}</strong>
+                ${statusBadge}
+            </div>
+            <div style="color: var(--text-secondary); font-size: 0.9em;">
+                <div>${attack.city}, ${attack.country}</div>
+                <div style="margin-top: 3px;">${asnInfo} ${asnOrg ? '- ' + asnOrg.substring(0, 25) : ''}</div>
+                <div style="margin-top: 3px; color: var(--text-tertiary);">${timeStr}</div>
+            </div>
+        `;
+
+        // Add to top of feed
+        feed.insertBefore(entry, feed.firstChild);
+
+        // Keep only last 20 entries
+        while (feed.children.length > 20) {
+            feed.removeChild(feed.lastChild);
+        }
     }
 
     function animateAttacks() {
         if (!animationRunning) return;
 
         if (currentIndex < migrationData.length) {
-            addAttackArc(migrationData[currentIndex]);
+            const currentAttack = migrationData[currentIndex];
+            addAttackArc(currentAttack);
+
+            // Start continuous clock on first attack
+            if (currentIndex === 0 && currentAttack.timestamp) {
+                startContinuousClock(currentAttack.timestamp);
+            }
+
+            // Add to attack feed
+            addToAttackFeed(currentAttack);
+
             currentIndex++;
 
             const progress = Math.round((currentIndex / migrationData.length) * 100);
@@ -307,10 +672,16 @@ document.addEventListener('DOMContentLoaded', function() {
             animationInterval = setTimeout(animateAttacks, 500 / animationSpeed);
         } else {
             // Animation complete, pause for a moment then reset
+            if (clockInterval) clearInterval(clockInterval);
+
             setTimeout(() => {
                 if (animationRunning) {
                     clearMap();
                     currentIndex = 0;
+                    attackFeedCount = 0;
+                    currentSimulatedTime = null;
+                    document.getElementById('current-time').textContent = '--';
+                    document.getElementById('attack-feed').innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">Waiting for attacks...</div>';
                     animateAttacks();
                 }
             }, 3000);
@@ -318,12 +689,218 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function clearMap() {
-        // Remove all arcs and markers
+        // Remove all arcs
         arcLayers.forEach(arc => map.removeLayer(arc));
-        pulseMarkers.forEach(marker => map.removeLayer(marker));
         arcLayers.length = 0;
-        pulseMarkers.length = 0;
         document.getElementById('progress-text').textContent = '0%';
+    }
+
+    // ===== LIVE MODE FUNCTIONS =====
+
+    function startLiveMode() {
+        liveMode = true;
+        animationRunning = false;
+
+        // Stop replay mode
+        if (animationInterval) clearTimeout(animationInterval);
+        if (clockInterval) clearInterval(clockInterval);
+        clearMap();
+
+        // Update UI
+        document.getElementById('mode-toggle-btn').textContent = '📼 Replay Mode';
+        document.getElementById('mode-toggle-btn').className = 'btn';
+        document.getElementById('mode-indicator').innerHTML = '<span style="color: #28a745; animation: pulse 2s ease-in-out infinite;">🔴 LIVE</span>';
+        document.getElementById('play-pause-btn').disabled = true;
+        document.getElementById('reset-btn').disabled = true;
+        document.getElementById('speed-slider').disabled = true;
+        document.getElementById('hours-selector').disabled = true;
+        document.getElementById('current-time').textContent = 'LIVE';
+        document.getElementById('progress-text').textContent = 'LIVE';
+        document.getElementById('attack-feed').innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">Waiting for live attacks...</div>';
+
+        // Start SSE connection
+        eventSource = new EventSource('/api/attack-stream');
+
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.event === 'connect') {
+                handleLiveConnect(data);
+            } else if (data.event === 'login_success') {
+                handleLiveLoginSuccess(data);
+            } else if (data.event === 'session_closed') {
+                handleLiveSessionClosed(data);
+            }
+        };
+
+        eventSource.onerror = function(err) {
+            console.error('EventSource error:', err);
+            document.getElementById('mode-indicator').innerHTML = '<span style="color: #dc3545;">⚠️ Connection Lost</span>';
+        };
+    }
+
+    function stopLiveMode() {
+        liveMode = false;
+
+        // Close SSE connection
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+
+        // Clear all live sessions and timers
+        for (const sessionId in liveSessions) {
+            const session = liveSessions[sessionId];
+            if (session.arc) map.removeLayer(session.arc);
+            if (session.closeTimer) clearTimeout(session.closeTimer);
+        }
+        liveSessions = {};
+        liveAttackCount = 0;
+
+        // Update UI
+        document.getElementById('mode-toggle-btn').textContent = '📡 Go Live';
+        document.getElementById('mode-toggle-btn').className = 'btn btn-success';
+        document.getElementById('mode-indicator').innerHTML = '<span style="color: var(--text-secondary);">📼 Replay</span>';
+        document.getElementById('play-pause-btn').disabled = false;
+        document.getElementById('reset-btn').disabled = false;
+        document.getElementById('speed-slider').disabled = false;
+        document.getElementById('hours-selector').disabled = false;
+        document.getElementById('current-time').textContent = '--';
+        document.getElementById('progress-text').textContent = '0%';
+        document.getElementById('attack-feed').innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">Waiting for attacks...</div>';
+
+        // Restart replay mode
+        animationRunning = true;
+        currentIndex = 0;
+        attackFeedCount = 0;
+        animateAttacks();
+    }
+
+    function handleLiveConnect(data) {
+        liveAttackCount++;
+
+        const attack = {
+            lat: data.lat,
+            lon: data.lon,
+            ip: data.ip,
+            city: data.city,
+            country: data.country,
+            timestamp: data.timestamp,
+            login_success: false,
+            sessionId: data.session_id,
+            asn: data.asn,
+            asn_org: data.asn_org,
+            attackCount: 1,
+            isHighVolume: false,
+            lineWidth: 3,
+            glowIntensity: 8,
+            color: '#dc3545'
+        };
+
+        // Calculate curved path
+        const arcPoints = calculateArcPoints(
+            [data.lat, data.lon],
+            [honeypotLocation.lat, honeypotLocation.lon]
+        );
+
+        // Create arc
+        const arc = L.polyline(arcPoints, {
+            color: '#dc3545',
+            weight: 3,
+            opacity: 0.8,
+            dashArray: '5, 10',
+            className: 'attack-path'
+        });
+
+        arc.addTo(map);
+        arcLayers.push(arc);
+
+        // Bind popup
+        arc.bindPopup(`
+            <strong>${data.city}, ${data.country}</strong><br>
+            IP: <a href="/sessions?ip=${data.ip}" target="_blank">${data.ip}</a><br>
+            Session: ${data.session_id}
+        `);
+
+        // Add explosion
+        addImpactExplosion(attack);
+
+        // Add to feed
+        addToAttackFeed(attack);
+
+        // Store session (will be removed in 30 seconds or when session closes)
+        liveSessions[data.session_id] = {
+            arc: arc,
+            attack_data: attack,
+            closeTimer: setTimeout(() => {
+                // Auto-remove failed attacks after 30 seconds
+                if (liveSessions[data.session_id] && !liveSessions[data.session_id].attack_data.login_success) {
+                    const session = liveSessions[data.session_id];
+                    if (session.arc) map.removeLayer(session.arc);
+                    delete liveSessions[data.session_id];
+                }
+            }, 30000)
+        };
+
+        // Update stats
+        document.getElementById('progress-text').textContent = `${liveAttackCount} attacks`;
+    }
+
+    function handleLiveLoginSuccess(data) {
+        if (liveSessions[data.session_id]) {
+            const session = liveSessions[data.session_id];
+            session.attack_data.login_success = true;
+
+            // Update arc to green
+            if (session.arc) {
+                session.arc.setStyle({
+                    color: '#28a745',
+                    weight: 6,
+                    opacity: 0.9
+                });
+            }
+
+            // Clear the auto-remove timer for failed attacks
+            if (session.closeTimer) {
+                clearTimeout(session.closeTimer);
+                session.closeTimer = null;
+            }
+
+            // Update feed entry
+            session.attack_data.timestamp = data.timestamp;
+            addToAttackFeed(session.attack_data);
+        }
+    }
+
+    function handleLiveSessionClosed(data) {
+        if (liveSessions[data.session_id]) {
+            const session = liveSessions[data.session_id];
+
+            if (data.login_success) {
+                // Successful login - close after 1 minute
+                session.closeTimer = setTimeout(() => {
+                    if (session.arc) {
+                        // Fade out
+                        let opacity = 0.9;
+                        const fadeInterval = setInterval(() => {
+                            opacity -= 0.1;
+                            if (opacity <= 0) {
+                                clearInterval(fadeInterval);
+                                map.removeLayer(session.arc);
+                                delete liveSessions[data.session_id];
+                            } else {
+                                session.arc.setStyle({ opacity: opacity });
+                            }
+                        }, 200);
+                    }
+                }, 60000);  // 1 minute
+            } else {
+                // Failed attack - remove immediately
+                if (session.arc) map.removeLayer(session.arc);
+                if (session.closeTimer) clearTimeout(session.closeTimer);
+                delete liveSessions[data.session_id];
+            }
+        }
     }
 
     // Control buttons
@@ -334,6 +911,7 @@ document.addEventListener('DOMContentLoaded', function() {
             animateAttacks();
         } else {
             if (animationInterval) clearTimeout(animationInterval);
+            if (clockInterval) clearInterval(clockInterval);
         }
     });
 
@@ -348,6 +926,58 @@ document.addEventListener('DOMContentLoaded', function() {
         animationSpeed = parseFloat(this.value);
         document.getElementById('speed-text').textContent = `${animationSpeed.toFixed(1)}x`;
     });
+
+    document.getElementById('mode-toggle-btn').addEventListener('click', function() {
+        if (liveMode) {
+            stopLiveMode();
+        } else {
+            startLiveMode();
+        }
+    });
+
+    // Fullscreen button
+    document.getElementById('fullscreen-btn').addEventListener('click', function() {
+        const elem = document.querySelector('.attack-map-page');
+
+        if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.mozFullScreenElement) {
+            // Enter fullscreen
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.webkitRequestFullscreen) { // Safari
+                elem.webkitRequestFullscreen();
+            } else if (elem.mozRequestFullScreen) { // Firefox
+                elem.mozRequestFullScreen();
+            } else if (elem.msRequestFullscreen) { // IE/Edge
+                elem.msRequestFullscreen();
+            }
+        } else {
+            // Exit fullscreen
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            } else if (document.mozCancelFullScreen) {
+                document.mozCancelFullScreen();
+            } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+            }
+        }
+    });
+
+    // Update fullscreen button text when fullscreen state changes
+    document.addEventListener('fullscreenchange', updateFullscreenButton);
+    document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+    document.addEventListener('mozfullscreenchange', updateFullscreenButton);
+    document.addEventListener('MSFullscreenChange', updateFullscreenButton);
+
+    function updateFullscreenButton() {
+        const btn = document.getElementById('fullscreen-btn');
+        if (document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement) {
+            btn.textContent = '⛶ Exit Fullscreen';
+        } else {
+            btn.textContent = '⛶ Fullscreen';
+        }
+    }
 
     // Start animation
     if (attacks.length > 0) {
