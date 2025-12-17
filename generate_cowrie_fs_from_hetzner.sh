@@ -146,7 +146,6 @@ echo "::1 localhost ip6-localhost ip6-loopback $HONEYPOT_HOSTNAME" >> /etc/hosts
 
 # Install nginx, MySQL/MariaDB, PHP and WordPress for realistic services
 echo "[remote] Installing nginx, MariaDB, PHP, and WordPress..."
-DEBIAN_FRONTEND=noninteractive apt-get clean -qq > /dev/null
 DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
 DEBIAN_FRONTEND=noninteractive apt-get install -qq -y nginx mariadb-server php-fpm php-mysql wordpress > /dev/null
 
