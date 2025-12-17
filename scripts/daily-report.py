@@ -17,7 +17,7 @@ import sqlite3
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 try:
     import smtplib
@@ -207,7 +207,7 @@ class YARACache:
     def set_result(
         self,
         sha256: str,
-        matches: List[str],
+        matches: list[str],
         rules_version: str = None,
         file_type: str = None,
         file_mime: str = None,
@@ -441,7 +441,7 @@ class GeoIPEnricher:
 
         return result
 
-    def enrich_ip_list(self, ip_list: List[str]) -> Tuple[Dict, Counter]:
+    def enrich_ip_list(self, ip_list: list[str]) -> tuple[dict, Counter]:
         """Enrich list of IPs and return geo data and country counts."""
         geo_data = {}
         country_counter = Counter()
@@ -547,7 +547,7 @@ class YARAScanner:
             return
 
         rule_files = {}
-        for root, dirs, files in os.walk(self.rules_path):
+        for root, _, files in os.walk(self.rules_path):
             for file in files:
                 if file.endswith(".yar") or file.endswith(".yara"):
                     rule_path = os.path.join(root, file)
@@ -563,7 +563,7 @@ class YARAScanner:
             except Exception as e:
                 print(f"[!] Error loading YARA rules: {e}")
 
-    def scan_file(self, file_path: str, sha256: str = None) -> List[str]:
+    def scan_file(self, file_path: str, sha256: str = None) -> list[str]:
         """Scan file and return matched rule names.
 
         Args:
@@ -604,7 +604,7 @@ class YARAScanner:
 class ReportGenerator:
     """Generate HTML and text reports."""
 
-    def __init__(self, stats: dict, geo_data: dict, country_counts: Counter, file_analysis: List[dict], config: Config):
+    def __init__(self, stats: dict, geo_data: dict, country_counts: Counter, file_analysis: list[dict], config: Config):
         self.stats = stats
         self.geo_data = geo_data
         self.country_counts = country_counts

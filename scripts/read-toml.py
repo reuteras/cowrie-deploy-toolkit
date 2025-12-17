@@ -19,8 +19,9 @@ For booleans, returns "true" or "false"
 """
 
 import sys
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 
 def get_nested_value(data: dict, key_path: str):

@@ -8,18 +8,14 @@ This module contains authentication code
 from __future__ import annotations
 
 import configparser
-import json
 import re
 import sqlite3
 from collections import OrderedDict
 from pathlib import Path
-from random import randint
-from typing import Any
 from re import Pattern
 
-from twisted.python import log
-
 from cowrie.core.config import CowrieConfig
+from twisted.python import log
 
 _USERDB_DEFAULTS: list[str] = [
     "root:x:!root",
@@ -73,11 +69,8 @@ class IPUserDB:
     def _init_database(self):
         """Create database schema if not exists"""
 
-        try:
-            if Path(self.db_path).is_file():
-                return
-        except:
-            log.msg("Path error.")
+        if Path(self.db_path).is_file():
+            return
 
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -220,7 +213,7 @@ class IPUserDB:
                     else:
                         self.increment_login_count(src_ip)
                     return policy
-        
+
         self.log_attempt(src_ip, thelogin, thepasswd, False, False)
         return False
 

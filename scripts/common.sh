@@ -147,6 +147,7 @@ ssh_exec() {
     local cmd="$2"
     local port="${3:-22}"
 
+    # shellcheck disable=SC2086
     ssh $SSH_OPTS -p "$port" "$host" "$cmd"
 }
 
@@ -157,6 +158,7 @@ scp_copy() {
     local dest="$2"
     local port="${3:-22}"
 
+    # shellcheck disable=SC2086
     scp $SSH_OPTS -P "$port" "$source" "$dest" > /dev/null 2>&1
 }
 
@@ -169,6 +171,7 @@ wait_for_ssh() {
     local elapsed=0
 
     echo_n_info "Waiting for SSH to become available"
+    # shellcheck disable=SC2086
     while ! ssh $SSH_OPTS -p "$port" -o ConnectTimeout=3 "$host" "exit" 2>/dev/null; do
         printf "."
         sleep 3
@@ -247,7 +250,7 @@ create_temp_file() {
     local temp_file
 
     if [ -n "$suffix" ]; then
-        temp_file=$(mktemp /tmp/cowrie${suffix}.XXXXXXXXXX)
+        temp_file=$(mktemp /tmp/cowrie"${suffix}".XXXXXXXXXX)
     else
         temp_file=$(mktemp /tmp/cowrie.XXXXXXXXXX)
     fi
@@ -303,8 +306,9 @@ setup_server_cleanup_trap() {
     CLEANUP_SERVER_ID="$1"
     CLEANUP_DONE=false
 
+    # shellcheck disable=SC2329
     cleanup_server() {
-        local exit_code=$?
+        local exit_code="$?"
 
         # Prevent double cleanup (trap fires on both ERR and EXIT)
         if [ "$CLEANUP_DONE" = true ]; then
@@ -313,7 +317,7 @@ setup_server_cleanup_trap() {
         CLEANUP_DONE=true
 
         # Only cleanup on error (non-zero exit code)
-        if [ $exit_code -ne 0 ]; then
+        if [ "$exit_code" -ne 0 ]; then
             echo ""
             echo_warn "Deployment failed! Cleaning up..."
             echo_info "Deleting server $CLEANUP_SERVER_ID..."

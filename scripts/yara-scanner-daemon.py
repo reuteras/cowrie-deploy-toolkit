@@ -19,7 +19,7 @@ import sqlite3
 import sys
 import time
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Optional
 
 try:
     import magic
@@ -176,7 +176,7 @@ class FileAnalysisCache:
         return None
 
     def set_result(
-        self, sha256: str, matches: List[str], rules_version: str = None, file_type: str = None, file_mime: str = None
+        self, sha256: str, matches: list[str], rules_version: str = None, file_type: str = None, file_mime: str = None
     ):
         """Cache scan result with file type information."""
         # Determine category and previewability
@@ -305,7 +305,7 @@ class FileTypeDetector:
         self.magic_mime = magic.Magic(mime=True)
         self.magic_desc = magic.Magic(mime=False)
 
-    def detect(self, file_path: str) -> Tuple[str, str]:
+    def detect(self, file_path: str) -> tuple[str, str]:
         """Detect file type and MIME type.
 
         Returns:
@@ -338,7 +338,7 @@ class FileAnalyzer:
             return
 
         rule_files = {}
-        for root, dirs, files in os.walk(self.rules_path):
+        for root, _, files in os.walk(self.rules_path):
             for file in files:
                 if file.endswith(".yar") or file.endswith(".yara"):
                     rule_path = os.path.join(root, file)
@@ -395,7 +395,7 @@ class FileAnalyzer:
         # Return full result
         return self.cache.get_result(sha256)
 
-    def scan_file(self, file_path: str, use_cache: bool = True) -> List[str]:
+    def scan_file(self, file_path: str, use_cache: bool = True) -> list[str]:
         """Scan a file and return matched rule names (backward compatible)."""
         result = self.analyze_file(file_path, use_cache)
         return result.get("matches", [])

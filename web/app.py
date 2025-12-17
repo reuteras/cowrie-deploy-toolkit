@@ -14,8 +14,8 @@ import time
 import zipfile
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
 import requests
 from flask import Flask, Response, jsonify, render_template, request, send_file
@@ -394,22 +394,6 @@ class SessionParser:
                             "timestamp": entry["timestamp"],
                         }
 
-                    elif event_id == "cowrie.abuseipdb.reportedip":
-                        # AbuseIPDB report event
-                        result["abuseipdb"] = {
-                            "abuse_confidence_score": entry.get("abuseConfidenceScore", 0),
-                            "is_whitelisted": entry.get("isWhitelisted", False),
-                            "country_code": entry.get("countryCode", ""),
-                            "usage_type": entry.get("usageType", ""),
-                            "isp": entry.get("isp", ""),
-                            "domain": entry.get("domain", ""),
-                            "total_reports": entry.get("totalReports", 0),
-                            "num_distinct_users": entry.get("numDistinctUsers", 0),
-                            "last_reported_at": entry.get("lastReportedAt", ""),
-                            "message": entry.get("message", ""),
-                            "timestamp": entry["timestamp"],
-                        }
-
                 except (json.JSONDecodeError, KeyError):
                     continue
 
@@ -560,21 +544,6 @@ class SessionParser:
 
                             greynoise_results[src_ip] = {
                                 "classification": classification,
-                                "message": entry.get("message", ""),
-                                "timestamp": entry["timestamp"],
-                            }
-
-                        elif event_id == "cowrie.abuseipdb.reportedip" and src_ip:
-                            abuseipdb_results[src_ip] = {
-                                "abuse_confidence_score": entry.get("abuseConfidenceScore", 0),
-                                "is_whitelisted": entry.get("isWhitelisted", False),
-                                "country_code": entry.get("countryCode", ""),
-                                "usage_type": entry.get("usageType", ""),
-                                "isp": entry.get("isp", ""),
-                                "domain": entry.get("domain", ""),
-                                "total_reports": entry.get("totalReports", 0),
-                                "num_distinct_users": entry.get("numDistinctUsers", 0),
-                                "last_reported_at": entry.get("lastReportedAt", ""),
                                 "message": entry.get("message", ""),
                                 "timestamp": entry["timestamp"],
                             }
@@ -740,7 +709,7 @@ class TTYLogParser:
             return direct_path
 
         # Try with various date-based subdirectories
-        for root, dirs, files in os.walk(self.tty_path):
+        for root, _, files in os.walk(self.tty_path):
             if tty_log_name in files:
                 return os.path.join(root, tty_log_name)
 
@@ -873,7 +842,7 @@ class TTYLogParser:
         print(f"[DEBUG] merge_tty_logs: Found {len(tty_logs)} TTY logs and {len(commands)} commands")
 
         if not tty_logs:
-            print(f"[DEBUG] merge_tty_logs: No TTY logs found, returning None")
+            print("[DEBUG] merge_tty_logs: No TTY logs found, returning None")
             return None
 
         merged_stdout = []
@@ -890,9 +859,6 @@ class TTYLogParser:
         sorted_cmds = sorted(commands, key=lambda x: x.get("timestamp", ""))
 
         for i, tty_entry in enumerate(sorted_ttys):
-            # Add realistic delay before next command (simulate attacker thinking/typing)
-            delay = 0.5 if i > 0 else 0.0
-
             # Add prompt before command
             merged_stdout.append([total_duration, prompt])
 
@@ -1189,7 +1155,7 @@ def api_system_info():
     metadata_path = CONFIG["metadata_path"]
     if os.path.exists(metadata_path):
         try:
-            with open(metadata_path, 'r') as f:
+            with open(metadata_path) as f:
                 metadata = json.load(f)
                 info["cowrie_version"] = metadata.get("cowrie_version", "unknown")
                 info["git_commit"] = metadata.get("git_commit")
@@ -1534,7 +1500,6 @@ def ip_list():
 def countries():
     """All countries listing page."""
     hours = request.args.get("hours", 168, type=int)
-    stats = session_parser.get_stats(hours=hours)
 
     # Get all countries (not just top 10)
     sessions = session_parser.parse_all(hours=hours)
@@ -1553,7 +1518,6 @@ def countries():
 def credentials():
     """All credentials listing page."""
     hours = request.args.get("hours", 168, type=int)
-    stats = session_parser.get_stats(hours=hours)
 
     # Get all credentials (not just top 10)
     sessions = session_parser.parse_all(hours=hours)
@@ -1598,7 +1562,6 @@ def clients():
 def asns():
     """All ASNs listing page."""
     hours = request.args.get("hours", 168, type=int)
-    stats = session_parser.get_stats(hours=hours)
 
     # Get all ASNs (not just top 10)
     sessions = session_parser.parse_all(hours=hours)
