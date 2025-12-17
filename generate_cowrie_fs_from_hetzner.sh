@@ -409,6 +409,11 @@ rm -rf /root/cowrie
 # Remove other potential honeypot indicators
 rm -rf /tmp/cowrie* /var/tmp/cowrie* /opt/cowrie* 2>/dev/null || true
 
+# Create dummy files for commands below
+echo "Dummy file" > /bin/enable && chmod +x /bin/enable
+touch /bin/sync && chmod +x /bin/sync
+echo "Dummy file" > /bin/ulimit && chmod +x /bin/ulimit
+
 # Create the pickle from cleaned filesystem
 cd /tmp
 source .venv/bin/activate
@@ -424,18 +429,18 @@ ps aux > /root/ps.txt
 
 # /bin
 mkdir -p /root/txtcmds/bin
-df > /root/txtcmds/bin/df 2>&1
-dmesg > /root/txtcmds/bin/dmesg 2>&1
 enable > /root/txtcmds/bin/enable 2>&1
-stty > /root/txtcmds/bin/stty 2>&1
-sync > /root/txtcmds/bin/sync 2>&1
 ulimit > /root/txtcmds/bin/ulimit 2>&1
 
 mkdir -p /root/txtcmds/usr/bin
+df > /root/txtcmds/usr/bin/df 2>&1
+dmesg > /root/txtcmds/usr/bin/dmesg 2>&1
 locate > /root/txtcmds/usr/bin/locate 2>&1
 lscpu > /root/txtcmds/usr/bin/lscpu 2>&1
 make > /root/txtcmds/usr/bin/make 2>&1
 mount > /root/txtcmds/usr/bin/mount 2>&1
+stty > /root/txtcmds/usr/bin/stty 2>&1
+sync > /root/txtcmds/usr/bin/sync 2>&1
 EOF
 
 echo_info " Filesystem pickle created (Cowrie directories excluded)."
