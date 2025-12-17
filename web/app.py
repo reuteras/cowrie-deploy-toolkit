@@ -263,7 +263,7 @@ class SessionParser:
         if not os.path.exists(self.log_path):
             return {}
 
-        for logfile in Path(self.log_path).rglob("**"):
+        for logfile in Path(self.log_path).parent.rglob("*json*"):
             with open(logfile) as f:
                 for line in f:
                     try:
