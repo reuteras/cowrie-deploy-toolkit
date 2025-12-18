@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}System Information - Cowrie Honeypot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🖥️ Honeypot System Information</h1>
+    <a href="{{ url_for('index') }}" class="btn">← Back to Dashboard</a>
+</div>
+
+<div style="display: grid; gap: 20px;">
+    <!-- Basic System Info -->
+    <div class="dashboard-card">
+        <h2>Basic Information</h2>
+        <table class="data-table">
+            <tbody>
+                <tr>
+                    <td style="font-weight: 600; width: 200px;">Server IP</td>
+                    <td><code>{{ system.server_ip or "Not configured" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Hostname</td>
+                    <td><code>{{ system.honeypot_hostname or system.hostname_file or "Not configured" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Cowrie Version</td>
+                    <td><code>{{ system.cowrie_version }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Container Built</td>
+                    <td><code>{{ system.build_date or "Unknown" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Operating System</td>
+                    <td><code>{{ system.os_release or "Unknown" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Debian Version</td>
+                    <td><code>{{ system.debian_version or "Unknown" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Kernel</td>
+                    <td><code style="font-size: 0.85em;">{{ system.kernel or "Unknown" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Architecture</td>
+                    <td><code>{{ system.arch or "Unknown" }}</code></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- SSH Configuration -->
+    <div class="dashboard-card">
+        <h2>SSH Server Configuration</h2>
+
+        <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 1em; color: var(--text-secondary);">SSH Banner</h3>
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; font-family: 'Courier New', monospace; font-size: 0.9em;">
+            {{ system.ssh_banner or "Not captured" }}
+        </div>
+
+        <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 1em; color: var(--text-secondary);">Supported Ciphers ({{ system.ssh_ciphers|length }})</h3>
+        {% if system.ssh_ciphers %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; max-height: 300px; overflow-y: auto;">
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                {% for cipher in system.ssh_ciphers %}
+                <span style="padding: 4px 8px; background: var(--bg-tertiary); border-radius: 3px; font-size: 0.85em; font-family: 'Courier New', monospace;">{{ cipher }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; color: var(--text-secondary); font-size: 0.9em;">
+            No cipher data captured
+        </div>
+        {% endif %}
+
+        <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 1em; color: var(--text-secondary);">MAC Algorithms ({{ system.ssh_macs|length }})</h3>
+        {% if system.ssh_macs %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                {% for mac in system.ssh_macs %}
+                <span style="padding: 4px 8px; background: var(--bg-tertiary); border-radius: 3px; font-size: 0.85em; font-family: 'Courier New', monospace;">{{ mac }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; color: var(--text-secondary); font-size: 0.9em;">
+            No MAC data captured
+        </div>
+        {% endif %}
+
+        <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 1em; color: var(--text-secondary);">Key Exchange Algorithms ({{ system.ssh_kex|length }})</h3>
+        {% if system.ssh_kex %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; max-height: 300px; overflow-y: auto;">
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                {% for kex in system.ssh_kex %}
+                <span style="padding: 4px 8px; background: var(--bg-tertiary); border-radius: 3px; font-size: 0.85em; font-family: 'Courier New', monospace;">{{ kex }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; color: var(--text-secondary); font-size: 0.9em;">
+            No KEX data captured
+        </div>
+        {% endif %}
+
+        <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 1em; color: var(--text-secondary);">Host Key Types ({{ system.ssh_keys|length }})</h3>
+        {% if system.ssh_keys %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                {% for key in system.ssh_keys %}
+                <span style="padding: 4px 8px; background: var(--bg-tertiary); border-radius: 3px; font-size: 0.85em; font-family: 'Courier New', monospace;">{{ key }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; color: var(--text-secondary); font-size: 0.9em;">
+            No key type data captured
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Canary Tokens -->
+    {% if canary_tokens %}
+    <div class="dashboard-card">
+        <h2>🍯 Canary Token Locations</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 15px;">
+            These honeytokens trigger alerts when accessed or downloaded by attackers.
+        </p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>File Path</th>
+                    <th>Size</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for token in canary_tokens %}
+                <tr>
+                    <td>{{ token.icon }} {{ token.description }}</td>
+                    <td><code>{{ token.path }}</code></td>
+                    <td>{{ "%.1f"|format(token.size / 1024) }} KB</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Anti-Fingerprinting Notes -->
+    <div class="dashboard-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <h2 style="color: white;">🛡️ Anti-Fingerprinting Features</h2>
+        <div style="line-height: 1.8;">
+            <p><strong>✅ SSH Configuration Matching:</strong> Ciphers, MACs, and key exchange algorithms match the source Debian server</p>
+            <p><strong>✅ Authentic System Identity:</strong> Kernel version, SSH banner, and hostname captured from real server</p>
+            <p><strong>✅ Realistic Filesystem:</strong> Generated from actual Debian installation with services running</p>
+            <p><strong>✅ Canary Tokens:</strong> Honeytokens strategically placed for early detection of data exfiltration</p>
+            <p><strong>✅ Process List:</strong> Captured with nginx, MySQL, and system services running</p>
+        </div>
+    </div>
+</div>
+
+<style>
+.data-table tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+</style>
+{% endblock %}

@@ -524,6 +524,26 @@ else
     echo_warn " Warning: No txtcmds directory found"
 fi
 
+# Upload identity directory for SSH configuration and system info
+if [ -d "$IDENTITY_DIR" ] && [ "$(ls -A "$IDENTITY_DIR" 2>/dev/null)" ]; then
+    echo_info "Uploading identity data for web dashboard..."
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+        "mkdir -p /opt/cowrie/identity"
+
+    # Upload identity as tarball for efficiency (--no-xattrs to avoid macOS extended attributes)
+    IDENTITY_TAR=$(create_temp_file ".tar.gz")
+    tar --no-xattrs -czf "$IDENTITY_TAR" -C "$IDENTITY_DIR" . 2>/dev/null
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+        "$IDENTITY_TAR" "root@$SERVER_IP:/tmp/identity.tar.gz" > /dev/null
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+        "cd /opt/cowrie/identity && tar xzf /tmp/identity.tar.gz && rm /tmp/identity.tar.gz"
+
+    FILE_COUNT=$(find "$IDENTITY_DIR" -type f | wc -l | tr -d ' ')
+    echo_info "Uploaded $FILE_COUNT identity files (SSH config, kernel info, etc.)"
+else
+    echo_warn " Warning: No identity directory found, web dashboard system info will be limited"
+fi
+
 # ============================================================
 # STEP 6.5 — Upload Custom Cowrie Build Context
 # ============================================================
@@ -1247,10 +1267,12 @@ services:
       - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
       - /var/lib/GeoIP:/geoip:ro
       - /opt/cowrie/var:/yara-cache:ro
+      - /opt/cowrie/identity:/cowrie-data/identity:ro
     environment:
       - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
       - COWRIE_DOWNLOAD_PATH=/cowrie-data/lib/cowrie/downloads
+      - IDENTITY_PATH=/cowrie-data/identity
       - GEOIP_DB_PATH=/geoip/GeoLite2-City.mmdb
       - GEOIP_ASN_PATH=/geoip/GeoLite2-ASN.mmdb
       - YARA_CACHE_DB_PATH=/yara-cache/yara-cache.db

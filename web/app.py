@@ -33,6 +33,7 @@ CONFIG = {
     "tty_path": os.getenv("COWRIE_TTY_PATH", "/cowrie-data/lib/cowrie/tty"),
     "download_path": os.getenv("COWRIE_DOWNLOAD_PATH", "/cowrie-data/lib/cowrie/downloads"),
     "honeyfs_path": os.getenv("HONEYFS_PATH", "/cowrie-data/share/cowrie/contents"),
+    "identity_path": os.getenv("IDENTITY_PATH", "/cowrie-data/identity"),
     "geoip_db_path": os.getenv("GEOIP_DB_PATH", "/cowrie-data/geoip/GeoLite2-City.mmdb"),
     "geoip_asn_path": os.getenv("GEOIP_ASN_PATH", "/cowrie-data/geoip/GeoLite2-ASN.mmdb"),
     "base_url": os.getenv("BASE_URL", ""),
@@ -1249,6 +1250,113 @@ def api_canary_tokens():
         "tokens": tokens,
         "total": len(tokens)
     })
+
+
+@app.route("/system-info")
+def system_info():
+    """Extended system information page with SSH config and canary tokens."""
+    identity_path = CONFIG.get("identity_path", "/cowrie-data/identity")
+
+    # Read system information
+    system_data = {
+        "server_ip": CONFIG["server_ip"],
+        "honeypot_hostname": CONFIG["honeypot_hostname"],
+        "cowrie_version": "unknown",
+        "build_date": None,
+        "kernel": None,
+        "arch": None,
+        "os_release": None,
+        "ssh_banner": None,
+        "ssh_ciphers": [],
+        "ssh_macs": [],
+        "ssh_kex": [],
+        "ssh_keys": [],
+        "kernel_build": None,
+        "debian_version": None,
+    }
+
+    # Read metadata
+    metadata_path = CONFIG["metadata_path"]
+    if os.path.exists(metadata_path):
+        try:
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+                system_data["cowrie_version"] = metadata.get("cowrie_version", "unknown")
+                system_data["build_date"] = metadata.get("build_date")
+        except Exception as e:
+            app.logger.warning(f"Failed to read metadata: {e}")
+
+    # Read identity data if available
+    def read_identity_file(filename):
+        path = os.path.join(identity_path, filename)
+        if os.path.exists(path):
+            try:
+                with open(path) as f:
+                    return f.read().strip()
+            except Exception as e:
+                app.logger.warning(f"Failed to read {filename}: {e}")
+        return None
+
+    def read_identity_lines(filename):
+        path = os.path.join(identity_path, filename)
+        if os.path.exists(path):
+            try:
+                with open(path) as f:
+                    return [line.strip() for line in f if line.strip()]
+            except Exception as e:
+                app.logger.warning(f"Failed to read {filename}: {e}")
+        return []
+
+    # Read basic identity
+    system_data["kernel"] = read_identity_file("kernel.txt")
+    system_data["ssh_banner"] = read_identity_file("ssh-banner.txt")
+    system_data["kernel_build"] = read_identity_file("proc-version")
+    system_data["debian_version"] = read_identity_file("debian_version")
+    system_data["hostname_file"] = read_identity_file("hostname")
+
+    # Read OS release
+    os_release_content = read_identity_file("os-release")
+    if os_release_content:
+        for line in os_release_content.split("\n"):
+            if line.startswith("PRETTY_NAME="):
+                system_data["os_release"] = line.split("=", 1)[1].strip('"')
+                break
+
+    # Extract architecture from kernel
+    if system_data["kernel"]:
+        parts = system_data["kernel"].split()
+        if len(parts) >= 3:
+            system_data["arch"] = parts[-1]
+
+    # Read SSH configuration
+    system_data["ssh_ciphers"] = read_identity_lines("ssh-ciphers.txt")
+    system_data["ssh_macs"] = read_identity_lines("ssh-mac.txt")
+    system_data["ssh_kex"] = read_identity_lines("ssh-kex.txt")
+    system_data["ssh_keys"] = read_identity_lines("ssh-key.txt")
+
+    # Get canary token information
+    honeyfs_path = CONFIG.get("honeyfs_path", "/cowrie-data/share/cowrie/contents")
+    canary_tokens = []
+
+    # Check for canary tokens in filesystem
+    token_locations = [
+        ("/root/backup/mysql-backup.sql", "🗄️ MySQL Dump", "Database backup file"),
+        ("/root/Q1_Financial_Report.xlsx", "📊 Excel Document", "Financial report"),
+        ("/root/Network_Passwords.pdf", "📄 PDF Document", "Password documentation"),
+    ]
+
+    for path, icon, description in token_locations:
+        full_path = os.path.join(honeyfs_path, path.lstrip("/"))
+        if os.path.exists(full_path):
+            stat_info = os.stat(full_path)
+            canary_tokens.append({
+                "path": path,
+                "icon": icon,
+                "description": description,
+                "size": stat_info.st_size,
+            })
+
+    return render_template("system_info.html", system=system_data, canary_tokens=canary_tokens)
 
 
 @app.route("/downloads")
