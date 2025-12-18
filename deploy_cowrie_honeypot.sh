@@ -597,6 +597,83 @@ SSH_BANNER=$(cat "$IDENTITY_DIR/ssh-banner.txt" | sed 's/^SSH-2.0-//' | tr -d '\
 # Extract kernel build string from proc-version (everything after last ') ')
 KERNEL_BUILD=$(cat "$IDENTITY_DIR/proc-version" | sed -n 's/.*) \(#1 SMP.*\)$/\1/p')
 
+# Read SSH cipher configuration if available and filter against Cowrie's supported algorithms
+# Based on: https://github.com/cowrie/cowrie/blob/main/src/cowrie/ssh/factory.py
+
+# Cowrie supported ciphers
+COWRIE_CIPHERS="aes128-ctr,aes192-ctr,aes256-ctr,aes256-cbc,aes192-cbc,aes128-cbc,3des-cbc,blowfish-cbc,cast128-cbc"
+# Cowrie supported MACs
+COWRIE_MACS="hmac-sha2-512,hmac-sha2-384,hmac-sha2-256,hmac-sha1,hmac-md5"
+# Cowrie supported key types (for reference, but we don't filter KEX here as it uses Twisted defaults)
+COWRIE_KEYS="ssh-rsa,ecdsa-sha2-nistp256,ssh-ed25519"
+
+SSH_CIPHERS=""
+SSH_MACS=""
+SSH_KEX=""
+
+if [ -f "$IDENTITY_DIR/ssh-ciphers.txt" ]; then
+    # Filter captured ciphers to only include Cowrie-supported ones
+    CAPTURED_CIPHERS=$(cat "$IDENTITY_DIR/ssh-ciphers.txt")
+    FILTERED_CIPHERS=""
+
+    # Convert Cowrie ciphers to array for lookup
+    IFS=',' read -ra COWRIE_CIPHER_ARRAY <<< "$COWRIE_CIPHERS"
+
+    # Filter captured ciphers preserving source server order
+    while IFS= read -r cipher; do
+        for supported in "${COWRIE_CIPHER_ARRAY[@]}"; do
+            if [ "$cipher" = "$supported" ]; then
+                if [ -z "$FILTERED_CIPHERS" ]; then
+                    FILTERED_CIPHERS="$cipher"
+                else
+                    FILTERED_CIPHERS="$FILTERED_CIPHERS,$cipher"
+                fi
+                break
+            fi
+        done
+    done <<< "$CAPTURED_CIPHERS"
+
+    if [ -n "$FILTERED_CIPHERS" ]; then
+        SSH_CIPHERS="$FILTERED_CIPHERS"
+        echo_info "Loaded SSH ciphers from identity data (filtered to Cowrie-supported)"
+    fi
+fi
+
+if [ -f "$IDENTITY_DIR/ssh-mac.txt" ]; then
+    # Filter captured MACs to only include Cowrie-supported ones
+    CAPTURED_MACS=$(cat "$IDENTITY_DIR/ssh-mac.txt")
+    FILTERED_MACS=""
+
+    # Convert Cowrie MACs to array for lookup
+    IFS=',' read -ra COWRIE_MAC_ARRAY <<< "$COWRIE_MACS"
+
+    # Filter captured MACs preserving source server order
+    while IFS= read -r mac; do
+        for supported in "${COWRIE_MAC_ARRAY[@]}"; do
+            if [ "$mac" = "$supported" ]; then
+                if [ -z "$FILTERED_MACS" ]; then
+                    FILTERED_MACS="$mac"
+                else
+                    FILTERED_MACS="$FILTERED_MACS,$mac"
+                fi
+                break
+            fi
+        done
+    done <<< "$CAPTURED_MACS"
+
+    if [ -n "$FILTERED_MACS" ]; then
+        SSH_MACS="$FILTERED_MACS"
+        echo_info "Loaded SSH MACs from identity data (filtered to Cowrie-supported)"
+    fi
+fi
+
+if [ -f "$IDENTITY_DIR/ssh-kex.txt" ]; then
+    # For KEX algorithms, we'll include all captured ones since Cowrie uses Twisted's defaults
+    # Cowrie will ignore any KEX algorithms it doesn't support
+    SSH_KEX=$(cat "$IDENTITY_DIR/ssh-kex.txt" | tr '\n' ',' | sed 's/,$//')
+    echo_info "Loaded SSH key exchange algorithms from identity data"
+fi
+
 # Extract OS info from os-release
 OS_NAME=$(grep "^PRETTY_NAME=" "$IDENTITY_DIR/os-release" | cut -d'"' -f2)
 
@@ -648,6 +725,20 @@ sftp_enabled = true
 forwarding = true
 forward_redirect = false
 version = SSH-2.0-$SSH_BANNER
+EOFCFG
+
+# Add SSH cipher configuration if captured from source server
+if [ -n "$SSH_CIPHERS" ]; then
+    echo "ciphers = $SSH_CIPHERS" >> /tmp/cowrie.cfg
+fi
+if [ -n "$SSH_MACS" ]; then
+    echo "macs = $SSH_MACS" >> /tmp/cowrie.cfg
+fi
+if [ -n "$SSH_KEX" ]; then
+    echo "key_exchange = $SSH_KEX" >> /tmp/cowrie.cfg
+fi
+
+cat >> /tmp/cowrie.cfg << EOFCFG
 
 [telnet]
 enabled = false
