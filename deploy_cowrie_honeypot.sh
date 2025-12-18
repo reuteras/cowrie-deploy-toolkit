@@ -597,6 +597,23 @@ SSH_BANNER=$(cat "$IDENTITY_DIR/ssh-banner.txt" | sed 's/^SSH-2.0-//' | tr -d '\
 # Extract kernel build string from proc-version (everything after last ') ')
 KERNEL_BUILD=$(cat "$IDENTITY_DIR/proc-version" | sed -n 's/.*) \(#1 SMP.*\)$/\1/p')
 
+# Read SSH cipher configuration if available
+SSH_CIPHERS=""
+SSH_MACS=""
+SSH_KEX=""
+if [ -f "$IDENTITY_DIR/ssh-ciphers.txt" ]; then
+    SSH_CIPHERS=$(cat "$IDENTITY_DIR/ssh-ciphers.txt" | tr '\n' ',' | sed 's/,$//')
+    echo_info "Loaded SSH ciphers from identity data"
+fi
+if [ -f "$IDENTITY_DIR/ssh-mac.txt" ]; then
+    SSH_MACS=$(cat "$IDENTITY_DIR/ssh-mac.txt" | tr '\n' ',' | sed 's/,$//')
+    echo_info "Loaded SSH MACs from identity data"
+fi
+if [ -f "$IDENTITY_DIR/ssh-kex.txt" ]; then
+    SSH_KEX=$(cat "$IDENTITY_DIR/ssh-kex.txt" | tr '\n' ',' | sed 's/,$//')
+    echo_info "Loaded SSH key exchange algorithms from identity data"
+fi
+
 # Extract OS info from os-release
 OS_NAME=$(grep "^PRETTY_NAME=" "$IDENTITY_DIR/os-release" | cut -d'"' -f2)
 
@@ -648,6 +665,20 @@ sftp_enabled = true
 forwarding = true
 forward_redirect = false
 version = SSH-2.0-$SSH_BANNER
+EOFCFG
+
+# Add SSH cipher configuration if captured from source server
+if [ -n "$SSH_CIPHERS" ]; then
+    echo "ciphers = $SSH_CIPHERS" >> /tmp/cowrie.cfg
+fi
+if [ -n "$SSH_MACS" ]; then
+    echo "macs = $SSH_MACS" >> /tmp/cowrie.cfg
+fi
+if [ -n "$SSH_KEX" ]; then
+    echo "key_exchange = $SSH_KEX" >> /tmp/cowrie.cfg
+fi
+
+cat >> /tmp/cowrie.cfg << EOFCFG
 
 [telnet]
 enabled = false
