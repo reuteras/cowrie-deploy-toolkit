@@ -479,8 +479,24 @@ ssh $SSH_OPTS "root@$SERVER_IP" "cat /root/ps.txt"    > "$IDENTITY_DIR/ps.txt"
 # SSH banner
 nc -w 2 "$SERVER_IP" 22 | head -n1 > "$IDENTITY_DIR/ssh-banner.txt" || true
 
+# SSH configuration and cipher information
+echo_info " Collecting SSH cipher configuration..."
+# shellcheck disable=SC2086
+ssh $SSH_OPTS "root@$SERVER_IP" "cat /etc/ssh/sshd_config" > "$IDENTITY_DIR/sshd_config" 2>/dev/null || true
+# shellcheck disable=SC2086
+ssh $SSH_OPTS "root@$SERVER_IP" "ssh -Q cipher" > "$IDENTITY_DIR/ssh-ciphers.txt" 2>/dev/null || true
+# shellcheck disable=SC2086
+ssh $SSH_OPTS "root@$SERVER_IP" "ssh -Q kex" > "$IDENTITY_DIR/ssh-kex.txt" 2>/dev/null || true
+# shellcheck disable=SC2086
+ssh $SSH_OPTS "root@$SERVER_IP" "ssh -Q mac" > "$IDENTITY_DIR/ssh-mac.txt" 2>/dev/null || true
+# shellcheck disable=SC2086
+ssh $SSH_OPTS "root@$SERVER_IP" "ssh -Q key" > "$IDENTITY_DIR/ssh-key.txt" 2>/dev/null || true
+# shellcheck disable=SC2086
+ssh $SSH_OPTS "root@$SERVER_IP" "sshd -T" > "$IDENTITY_DIR/sshd-test-config.txt" 2>/dev/null || true
+
 echo_info " Identity data saved to $IDENTITY_DIR"
 echo_info "   - Process list (ps.txt) captured with nginx running"
+echo_info "   - SSH cipher configuration and algorithms captured"
 
 # ============================================================
 # STEP 6 — Collect file contents for realistic honeypot
@@ -510,6 +526,7 @@ tar --no-xattrs -cf /tmp/contents.tar \
     etc/passwd \
     etc/resolv.conf \
     etc/shadow \
+    etc/ssh/sshd_config \
     etc/sudoers \
     etc/timezone \
     etc/nginx/nginx.conf \
