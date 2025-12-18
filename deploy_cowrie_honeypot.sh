@@ -903,8 +903,11 @@ docker run --rm cowrie-custom:latest -c "print(open('/cowrie/cowrie-git/metadata
 echo "[remote] Initializing Cowrie volumes with custom configuration..."
 
 # Start container briefly to initialize volumes
-if ! docker compose up -d > /dev/null 2>&1; then
+if ! docker compose up -d 2>&1; then
   echo "[remote] ERROR: Failed to start Cowrie container"
+  echo "[remote] Checking container status..."
+  docker compose ps
+  docker compose logs --tail=50
   exit 1
 fi
 sleep 10
@@ -933,7 +936,13 @@ docker run --rm \
 # Start Cowrie with custom configuration
 echo "[remote] Starting Cowrie with custom configuration..."
 cd /opt/cowrie
-docker compose up -d > /dev/null 2>&1
+if ! docker compose up -d 2>&1; then
+  echo "[remote] ERROR: Failed to start Cowrie with custom configuration"
+  echo "[remote] Checking container status..."
+  docker compose ps
+  docker compose logs --tail=50
+  exit 1
+fi
 
 # Wait for container to start
 sleep 5
@@ -1267,12 +1276,12 @@ services:
       - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
       - /var/lib/GeoIP:/geoip:ro
       - /opt/cowrie/var:/yara-cache:ro
-      - /opt/cowrie/identity:/cowrie-data/identity:ro
+      - /opt/cowrie/identity:/identity:ro
     environment:
       - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
       - COWRIE_DOWNLOAD_PATH=/cowrie-data/lib/cowrie/downloads
-      - IDENTITY_PATH=/cowrie-data/identity
+      - IDENTITY_PATH=/identity
       - GEOIP_DB_PATH=/geoip/GeoLite2-City.mmdb
       - GEOIP_ASN_PATH=/geoip/GeoLite2-ASN.mmdb
       - YARA_CACHE_DB_PATH=/yara-cache/yara-cache.db
@@ -1306,9 +1315,17 @@ DOCKEREOF
 # Build and start web service
 cd /opt/cowrie
 echo "[remote] Building web dashboard container (this may take a minute)..."
-docker compose build --quiet cowrie-web 2>&1 | grep -E "ERROR|WARN" || true
+if ! docker compose build --quiet cowrie-web 2>&1 | grep -E "ERROR|WARN" || true; then
+  echo "[remote] WARNING: Build reported errors, but continuing..."
+fi
+
 echo "[remote] Starting services..."
-docker compose up -d --quiet-pull > /dev/null 2>&1
+if ! docker compose up -d --quiet-pull 2>&1; then
+  echo "[remote] ERROR: Failed to start services. Checking status..."
+  docker compose ps
+  docker compose logs --tail=50
+  exit 1
+fi
 
 echo "[remote] Web dashboard deployed on localhost:5000"
 echo "[remote] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"

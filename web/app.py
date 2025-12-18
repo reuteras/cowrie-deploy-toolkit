@@ -33,7 +33,7 @@ CONFIG = {
     "tty_path": os.getenv("COWRIE_TTY_PATH", "/cowrie-data/lib/cowrie/tty"),
     "download_path": os.getenv("COWRIE_DOWNLOAD_PATH", "/cowrie-data/lib/cowrie/downloads"),
     "honeyfs_path": os.getenv("HONEYFS_PATH", "/cowrie-data/share/cowrie/contents"),
-    "identity_path": os.getenv("IDENTITY_PATH", "/cowrie-data/identity"),
+    "identity_path": os.getenv("IDENTITY_PATH", "/identity"),
     "geoip_db_path": os.getenv("GEOIP_DB_PATH", "/cowrie-data/geoip/GeoLite2-City.mmdb"),
     "geoip_asn_path": os.getenv("GEOIP_ASN_PATH", "/cowrie-data/geoip/GeoLite2-ASN.mmdb"),
     "base_url": os.getenv("BASE_URL", ""),

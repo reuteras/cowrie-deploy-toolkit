@@ -449,6 +449,7 @@ locate > /root/txtcmds/usr/bin/locate 2>&1
 lscpu > /root/txtcmds/usr/bin/lscpu 2>&1
 make > /root/txtcmds/usr/bin/make 2>&1
 mount > /root/txtcmds/usr/bin/mount 2>&1
+nproc > /root/txtcmds/usr/bin/nproc 2>&1
 stty > /root/txtcmds/usr/bin/stty 2>&1
 sync > /root/txtcmds/usr/bin/sync 2>&1
 EOF
@@ -534,6 +535,7 @@ tar --no-xattrs -cf /tmp/contents.tar \
     etc/mysql/my.cnf \
     etc/mysql/mariadb.cnf \
     etc/php/*/fpm/php.ini \
+    usr/lib/os-release \
     var/www/html/index.nginx-debian.html \
     var/www/html/blog/wp-config.php \
     root/backup \

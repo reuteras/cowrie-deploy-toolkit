@@ -10,8 +10,8 @@ Deploy realistic [Cowrie](https://github.com/cowrie/cowrie) SSH honeypots on Het
 - **Authentic identity** - Uses real SSH banner, kernel version, process list, and system files
 - **Automated deployment** - Single script deploys a production-ready honeypot
 - **Daily threat reports** - GeoIP (with ASN), VirusTotal, YARA scanning with automated email delivery
-- **Web dashboard** - Session playback with asciinema-player, malware browser, attack statistics
-- **Threat intelligence** - DShield data sharing, GreyNoise IP reputation, VirusTotal integration
+- **Web dashboard** - Session playback with asciinema-player, live attack map, malware browser, system info
+- **Threat intelligence** - AbuseIPDB IP reputation, DShield data sharing, GreyNoise integration
 - **Canary tokens** - Optional honeytokens for immediate exfiltration alerts
 - **Tailscale VPN** - Zero-trust management access with optional public SSH blocking
 - **Security hardening** - Automatic updates, Docker isolation, capability dropping, read-only containers
@@ -201,8 +201,10 @@ Interactive web interface for session playback and attack analysis!
 **Features:**
 - 🎥 **TTY Session Playback** - Watch recorded SSH sessions with asciinema-player
 - 📊 **Attack Dashboard** - Overview with top countries, credentials, commands, and IPs
+- 🗺️ **Live Attack Map** - Real-time geographic visualization of attacks with replay mode
 - 🔍 **Session Browser** - List all sessions with filtering by IP, username, and date range
 - 📁 **Malware Downloads** - Browse captured files with VirusTotal links and YARA matches
+- 🖥️ **System Information** - View honeypot configuration, Cowrie version, and captured identity
 - 🌍 **GeoIP Integration** - View attacker locations with ASN/organization data
 - 🔗 **Email Integration** - Session links in daily reports link directly to playback
 

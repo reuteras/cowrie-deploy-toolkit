@@ -377,6 +377,12 @@ The toolkit includes an optional web dashboard for viewing and replaying SSH ses
 ### Features
 
 - **📊 Dashboard** - Overview of attack statistics with top countries, credentials, commands, and attacking IPs
+- **🗺️ Live Attack Map** - Real-time geographic visualization of attacks with:
+  - Live mode: Watch attacks as they happen in real-time
+  - Replay mode: Replay historical attacks with timeline controls
+  - Attack lines from source to honeypot with fade animations
+  - Statistics on unique IPs, high-volume attackers, and total attacks
+  - Time range selection (last hour, 6 hours, 24 hours, 7 days)
 - **🔍 Session Browser** - List all sessions with filtering by IP, username, and date range
 - **🎥 TTY Playback** - Watch recorded SSH sessions in real-time with asciinema-player
 - **📁 Malware Downloads** - Browse captured files with:
@@ -384,6 +390,13 @@ The toolkit includes an optional web dashboard for viewing and replaying SSH ses
   - YARA rule matches from real-time scanning
   - File type detection and categorization
   - Direct links to VirusTotal analysis
+- **🖥️ System Information** - View honeypot details including:
+  - Server IP and hostname configuration
+  - Cowrie version and container build date
+  - Captured identity (kernel, OS, SSH banner, architecture)
+  - SSH cipher configuration
+  - SSH version strings
+  - Process list snapshot
 - **🌍 GeoIP Integration** - View attacker locations with ASN and organization data
 - **🔗 Email Integration** - Session links in daily reports link directly to TTY playback
 - **🔒 Security**:
@@ -456,6 +469,120 @@ open http://localhost:5000
 ```
 
 **Note**: If you enabled Tailscale with `block_public_ssh = true`, you must use your Tailscale IP address (shown in deployment output).
+
+## Daily Reporting System
+
+The toolkit includes an automated daily reporting system that sends comprehensive threat intelligence reports via email.
+
+### Features
+
+- **📊 Comprehensive Statistics** - Total connections, unique IPs, sessions, and files downloaded
+- **🌍 GeoIP Enrichment** - Country, city, ASN, and organization data using MaxMind GeoLite2
+- **🦠 VirusTotal Integration** - Malware analysis with extended threat intelligence:
+  - Popular threat label (e.g., `trojan.emotet`, `ransomware.wannacry`)
+  - Threat categories with detection counts
+  - Family labels/tags for malware classification
+  - Detection ratios and links to full analysis
+- **🔍 YARA Scanning** - Local malware classification using YARA Forge ruleset (~1000+ rules)
+- **🔄 Real-Time Scanning** - Background daemon scans files as they're downloaded
+- **📧 Email Delivery** - HTML and plain text reports via SMTP (Scaleway, SendGrid, Mailgun, etc.)
+- **🔗 Session Links** - Direct links to web dashboard for TTY playback (if enabled)
+- **⚡ Automatic Setup** - Fully automated via `master-config.toml` during deployment
+
+### Configuration
+
+Add to `master-config.toml`:
+
+```toml
+[honeypot]
+enable_reporting = true
+maxmind_account_id = "YOUR_ACCOUNT_ID"
+maxmind_license_key = "YOUR_LICENSE_KEY"
+
+[reporting]
+max_commands_per_session = 20
+virustotal_api_key = "YOUR_VT_API_KEY"
+email_from = "honeypot@yourdomain.com"
+email_to = "admin@yourdomain.com"
+email_subject_prefix = "[Honeypot]"
+
+[email]
+scaleway_domain = "yourdomain.com"
+smtp_host = "smtp.tem.scw.cloud"
+smtp_port = 587
+smtp_user = "YOUR_SMTP_USERNAME"
+smtp_password = "YOUR_SMTP_PASSWORD"
+smtp_tls = true
+```
+
+### Report Contents
+
+Each daily report includes:
+
+1. **Summary Statistics**
+   - Total connections and unique IPs
+   - Sessions with commands executed
+   - Files downloaded
+   - Average session duration
+
+2. **Top Attacking Countries**
+   - Geographic distribution with country names
+   - Connection counts and percentages
+
+3. **Top Credentials**
+   - Most frequently attempted username:password combinations
+   - Attempt counts
+
+4. **Downloaded Files**
+   - SHA256 hashes and file sizes
+   - VirusTotal detection ratios and threat labels
+   - YARA rule matches
+   - Links to VirusTotal analysis
+
+5. **Notable Commands**
+   - Source IPs and full command lines
+   - Timestamps
+
+6. **Active Sessions**
+   - Session IDs with links to web dashboard (if enabled)
+   - Command counts and IP addresses
+
+### Setup and Testing
+
+The reporting system is automatically configured during deployment when `enable_reporting = true` in `master-config.toml`. To manually test:
+
+```bash
+# SSH to the honeypot
+ssh -p 2222 root@<SERVER_IP>
+
+# Test the report
+cd /opt/cowrie
+uv run scripts/daily-report.py --test
+
+# View YARA scanner status
+journalctl -u yara-scanner -f
+```
+
+### Dependencies
+
+All dependencies are managed with [uv](https://github.com/astral-sh/uv) - a modern, fast Python package manager:
+- MaxMind GeoIP databases (auto-updated weekly on Wednesdays at 3 AM)
+- VirusTotal API (free tier: 4 requests/minute with caching)
+- YARA rules (auto-updated daily at 4 AM)
+- Postfix for email delivery (configured automatically)
+
+### Advanced Configuration
+
+You can customize the report interval in `master-config.toml`:
+
+```toml
+[advanced]
+report_hours = 24  # Default: 24 hours (daily)
+```
+
+Reports are sent via cron job at the configured interval.
+
+See [scripts/README.md](scripts/README.md) for detailed documentation.
 
 ## Data Sharing and Threat Intelligence
 

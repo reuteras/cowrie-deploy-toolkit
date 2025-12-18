@@ -19,7 +19,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl && \
     pip install --no-cache-dir -r requirements.txt && \
-    mkdir -p /app/static /app/templates /geoip && \
+    mkdir -p /app/static /app/templates /geoip /identity && \
     groupadd -r cowrie && useradd -r -g cowrie cowrie && \
     chown -R cowrie:cowrie /app && \
     rm -rf /var/lib/apt/lists/*
