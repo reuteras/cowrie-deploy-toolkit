@@ -414,6 +414,12 @@ document.addEventListener('DOMContentLoaded', function() {
     let liveSessions = {};  // Track live sessions: session_id -> {arc, attack_data, closeTimer}
     let liveAttackCount = 0;
 
+    // Retry connection state
+    let retryCount = 0;
+    let maxRetries = 10;
+    let retryTimer = null;
+    let retryBaseDelay = 2000;  // Start with 2 seconds
+
     // Calculate points along a curved arc using quadratic bezier curve
     function calculateArcPoints(start, end, numPoints = 50) {
         const points = [];
@@ -755,6 +761,101 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ===== LIVE MODE FUNCTIONS =====
 
+    function connectEventSource() {
+        // Close existing connection if any
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+
+        // Clear any pending retry timer
+        if (retryTimer) {
+            clearTimeout(retryTimer);
+            retryTimer = null;
+        }
+
+        try {
+            // Create new EventSource connection
+            eventSource = new EventSource('/api/attack-stream');
+
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+
+                if (data.event === 'connect') {
+                    handleLiveConnect(data);
+                } else if (data.event === 'login_success') {
+                    handleLiveLoginSuccess(data);
+                } else if (data.event === 'login_failed') {
+                    handleLiveLoginFailed(data);
+                } else if (data.event === 'command_input') {
+                    handleLiveCommand(data);
+                } else if (data.event === 'session_closed') {
+                    handleLiveSessionClosed(data);
+                }
+            };
+
+            eventSource.onerror = function(err) {
+                console.error('EventSource error:', err, 'ReadyState:', eventSource?.readyState);
+
+                // Check if connection is permanently closed
+                if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+                    console.log('Connection closed, attempting manual retry...');
+
+                    // Calculate exponential backoff delay
+                    const delay = Math.min(retryBaseDelay * Math.pow(2, retryCount), 60000); // Max 60 seconds
+
+                    if (retryCount < maxRetries) {
+                        retryCount++;
+                        const secondsUntilRetry = Math.round(delay / 1000);
+
+                        document.getElementById('mode-indicator').innerHTML =
+                            `<span style="color: #ffc107;">🔄 Reconnecting... (${retryCount}/${maxRetries}, next in ${secondsUntilRetry}s)</span>`;
+
+                        console.log(`Retry attempt ${retryCount}/${maxRetries} in ${secondsUntilRetry} seconds`);
+
+                        // Schedule reconnection with countdown update
+                        let countdown = secondsUntilRetry;
+                        const countdownInterval = setInterval(() => {
+                            countdown--;
+                            if (countdown > 0) {
+                                document.getElementById('mode-indicator').innerHTML =
+                                    `<span style="color: #ffc107;">🔄 Reconnecting... (${retryCount}/${maxRetries}, next in ${countdown}s)</span>`;
+                            }
+                        }, 1000);
+
+                        retryTimer = setTimeout(() => {
+                            clearInterval(countdownInterval);
+                            if (liveMode) {  // Only retry if still in live mode
+                                connectEventSource();
+                            }
+                        }, delay);
+                    } else {
+                        // Max retries exceeded
+                        document.getElementById('mode-indicator').innerHTML =
+                            '<span style="color: #dc3545;">⚠️ Connection Failed - Max retries exceeded. <button onclick="location.reload()" style="margin-left: 10px; padding: 2px 8px; cursor: pointer;">Reload Page</button></span>';
+                        console.error('Max retries exceeded. Connection abandoned.');
+                    }
+                } else if (eventSource && eventSource.readyState === EventSource.CONNECTING) {
+                    // Browser is still trying to connect
+                    document.getElementById('mode-indicator').innerHTML =
+                        '<span style="color: #ffc107;">🔄 Connecting...</span>';
+                }
+            };
+
+            eventSource.onopen = function() {
+                // Connection successful - reset retry counter
+                console.log('EventSource connection established');
+                retryCount = 0;
+                document.getElementById('mode-indicator').innerHTML =
+                    '<span style="color: #28a745; animation: pulse 2s ease-in-out infinite;">🔴 LIVE</span>';
+            };
+        } catch (error) {
+            console.error('Failed to create EventSource:', error);
+            document.getElementById('mode-indicator').innerHTML =
+                '<span style="color: #dc3545;">⚠️ Connection Error</span>';
+        }
+    }
+
     function startLiveMode() {
         liveMode = true;
         animationRunning = false;
@@ -764,10 +865,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (clockInterval) clearInterval(clockInterval);
         clearMap();
 
+        // Reset retry counter when entering live mode
+        retryCount = 0;
+
         // Update UI
         document.getElementById('mode-toggle-btn').textContent = '📼 Replay Mode';
         document.getElementById('mode-toggle-btn').className = 'btn';
-        document.getElementById('mode-indicator').innerHTML = '<span style="color: #28a745; animation: pulse 2s ease-in-out infinite;">🔴 LIVE</span>';
+        document.getElementById('mode-indicator').innerHTML = '<span style="color: #ffc107;">🔄 Connecting...</span>';
         document.getElementById('attack-feed-title').textContent = '📡 Live Attack Feed';
         document.getElementById('play-pause-btn').disabled = true;
         document.getElementById('reset-btn').disabled = true;
@@ -796,40 +900,8 @@ document.addEventListener('DOMContentLoaded', function() {
         updateLiveClock(); // Update immediately
         clockInterval = setInterval(updateLiveClock, 1000); // Update every second
 
-        // Start SSE connection
-        eventSource = new EventSource('/api/attack-stream');
-
-        eventSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-
-            if (data.event === 'connect') {
-                handleLiveConnect(data);
-            } else if (data.event === 'login_success') {
-                handleLiveLoginSuccess(data);
-            } else if (data.event === 'login_failed') {
-                handleLiveLoginFailed(data);
-            } else if (data.event === 'command_input') {
-                handleLiveCommand(data);
-            } else if (data.event === 'session_closed') {
-                handleLiveSessionClosed(data);
-            }
-        };
-
-        eventSource.onerror = function(err) {
-            console.error('EventSource error:', err);
-
-            // Check if connection is still open
-            if (eventSource.readyState === EventSource.CLOSED) {
-                document.getElementById('mode-indicator').innerHTML = '<span style="color: #dc3545;">⚠️ Connection Failed</span>';
-            } else if (eventSource.readyState === EventSource.CONNECTING) {
-                document.getElementById('mode-indicator').innerHTML = '<span style="color: #ffc107;">🔄 Reconnecting...</span>';
-            }
-        };
-
-        eventSource.onopen = function() {
-            // Connection restored
-            document.getElementById('mode-indicator').innerHTML = '<span style="color: #28a745; animation: pulse 2s ease-in-out infinite;">🔴 LIVE</span>';
-        };
+        // Start SSE connection with retry logic
+        connectEventSource();
     }
 
     function stopLiveMode() {
@@ -840,6 +912,15 @@ document.addEventListener('DOMContentLoaded', function() {
             eventSource.close();
             eventSource = null;
         }
+
+        // Clear retry timer
+        if (retryTimer) {
+            clearTimeout(retryTimer);
+            retryTimer = null;
+        }
+
+        // Reset retry counter
+        retryCount = 0;
 
         // Stop live clock
         if (clockInterval) {
