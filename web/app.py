@@ -71,14 +71,14 @@ class GeoIPLookup:
 
     def lookup(self, ip: str) -> dict:
         """Lookup IP and return geo data with ASN information."""
-        result = {"country": "Unknown", "country_code": "XX", "city": "Unknown"}
+        result = {"country": "-", "country_code": "XX", "city": "-"}
         if not self.reader:
             return result
         try:
             response = self.reader.city(ip)
-            result["country"] = response.country.name or "Unknown"
+            result["country"] = response.country.name or "-"
             result["country_code"] = response.country.iso_code or "XX"
-            result["city"] = response.city.name or "Unknown"
+            result["city"] = response.city.name or "-"
             result["latitude"] = response.location.latitude
             result["longitude"] = response.location.longitude
         except Exception:
@@ -965,8 +965,8 @@ def attack_map_page():
             honeypot_location = {
                 "lat": honeypot_geo["latitude"],
                 "lon": honeypot_geo["longitude"],
-                "city": honeypot_geo.get("city", "Unknown"),
-                "country": honeypot_geo.get("country", "Unknown"),
+                "city": honeypot_geo.get("city", "-"),
+                "country": honeypot_geo.get("country", "-"),
             }
 
     # Collect attack data with timestamps for animation
@@ -981,10 +981,11 @@ def attack_map_page():
                         "ip": session["src_ip"],
                         "lat": geo["latitude"],
                         "lon": geo["longitude"],
-                        "city": geo.get("city", "Unknown"),
-                        "country": geo.get("country", "Unknown"),
+                        "city": geo.get("city", "-"),
+                        "country": geo.get("country", "-"),
                         "timestamp": session.get("start_time", ""),
                         "username": session.get("username", ""),
+                        "password": session.get("password", ""),
                         "login_success": session.get("login_success", False),
                     }
                 )
@@ -1664,7 +1665,9 @@ def attack_stream():
                                 "src_ip": src_ip,
                                 "geo": geo,
                                 "start_time": entry.get("timestamp"),
-                                "login_success": False
+                                "login_success": False,
+                                "username": None,
+                                "password": None
                             }
 
                             # Send connect event
@@ -1674,8 +1677,8 @@ def attack_stream():
                                 "ip": src_ip,
                                 "lat": geo.get("latitude"),
                                 "lon": geo.get("longitude"),
-                                "city": geo.get("city", "Unknown"),
-                                "country": geo.get("country", "Unknown"),
+                                "city": geo.get("city", "-"),
+                                "country": geo.get("country", "-"),
                                 "timestamp": entry.get("timestamp"),
                                 "asn": geo.get("asn"),
                                 "asn_org": geo.get("asn_org")
@@ -1695,6 +1698,40 @@ def attack_stream():
                             "session_id": session_id,
                             "ip": session["src_ip"],
                             "username": entry.get("username"),
+                            "password": entry.get("password"),
+                            "timestamp": entry.get("timestamp")
+                        }
+                        yield f"data: {json.dumps(event_data)}\n\n"
+
+                    # Track failed logins (only the first one to get credentials)
+                    elif event_id == "cowrie.login.failed" and session_id in active_sessions:
+                        session = active_sessions[session_id]
+                        # Only send if we don't already have credentials
+                        if not session.get("username"):
+                            session["username"] = entry.get("username")
+                            session["password"] = entry.get("password")
+
+                            # Send login failed event with credentials
+                            event_data = {
+                                "event": "login_failed",
+                                "session_id": session_id,
+                                "ip": session["src_ip"],
+                                "username": entry.get("username"),
+                                "password": entry.get("password"),
+                                "timestamp": entry.get("timestamp")
+                            }
+                            yield f"data: {json.dumps(event_data)}\n\n"
+
+                    # Track command input
+                    elif event_id == "cowrie.command.input" and session_id in active_sessions:
+                        session = active_sessions[session_id]
+
+                        # Send command event
+                        event_data = {
+                            "event": "command_input",
+                            "session_id": session_id,
+                            "ip": session["src_ip"],
+                            "command": entry.get("input", ""),
                             "timestamp": entry.get("timestamp")
                         }
                         yield f"data: {json.dumps(event_data)}\n\n"

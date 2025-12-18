@@ -14,15 +14,15 @@
     <div class="page-header">
         <h1>🎯 Live Attack Visualization</h1>
         <div class="header-actions">
-            <select id="hours-selector" onchange="window.location.href='?hours='+this.value">
+            <select id="hours-selector" onchange="window.location.href='?hours='+this.value" disabled>
                 <option value="1" {% if hours == 1 %}selected{% endif %}>Last Hour</option>
                 <option value="6" {% if hours == 6 %}selected{% endif %}>Last 6 Hours</option>
                 <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 Hours</option>
                 <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 Days</option>
             </select>
-            <button id="mode-toggle-btn" class="btn btn-success">📡 Go Live</button>
-            <button id="play-pause-btn" class="btn btn-primary">⏸ Pause</button>
-            <button id="reset-btn" class="btn">🔄 Reset</button>
+            <button id="mode-toggle-btn" class="btn">📼 Replay Mode</button>
+            <button id="play-pause-btn" class="btn btn-primary" disabled>⏸ Pause</button>
+            <button id="reset-btn" class="btn" disabled>🔄 Reset</button>
             <button id="fullscreen-btn" class="btn">⛶ Fullscreen</button>
             <a href="{{ url_for('index') }}" class="btn">Back to Dashboard</a>
         </div>
@@ -59,16 +59,16 @@
             <div>
                 <div style="font-size: 0.9em; color: var(--text-secondary);">Mode</div>
                 <div style="font-size: 1.1em; font-weight: 600;" id="mode-indicator">
-                    <span style="color: var(--text-secondary);">📼 Replay</span>
+                    <span style="color: #28a745; animation: pulse 2s ease-in-out infinite;">🔴 LIVE</span>
                 </div>
             </div>
-            <div>
+            <div id="progress-container" style="display: none;">
                 <div style="font-size: 0.9em; color: var(--text-secondary);">Animation Progress</div>
                 <div style="font-size: 1.2em; font-weight: 600;" id="progress-text">0%</div>
             </div>
-            <div>
+            <div id="speed-container" style="display: none;">
                 <div style="font-size: 0.9em; color: var(--text-secondary);">Speed</div>
-                <input type="range" id="speed-slider" min="0.1" max="5" step="0.1" value="1" style="width: 100%;">
+                <input type="range" id="speed-slider" min="0.1" max="5" step="0.1" value="1" style="width: 100%;" disabled>
                 <div style="text-align: center; font-size: 0.9em;" id="speed-text">1x</div>
             </div>
         </div>
@@ -79,36 +79,22 @@
 
         <!-- Live Attack Feed -->
         <div class="attack-feed-container" style="background: var(--bg-secondary); border-radius: 8px; padding: 15px; height: 700px; display: flex; flex-direction: column;">
-            <h3 style="margin: 0 0 15px 0; font-size: 1.1em;">📡 Live Attack Feed</h3>
+            <h3 id="attack-feed-title" style="margin: 0 0 15px 0; font-size: 1.1em;">📡 Live Attack Feed</h3>
             <div style="flex: 1; overflow-y: auto; overflow-x: hidden;" id="attack-feed">
                 <div style="color: var(--text-secondary); text-align: center; padding: 20px;">
-                    Waiting for attacks...
+                    Waiting for live attacks...
                 </div>
             </div>
         </div>
     </div>
 
     <div class="map-legend" style="margin-top: 20px; padding: 15px; background: var(--bg-secondary); border-radius: 8px;">
-        <div style="margin-bottom: 10px;">
+        <div>
             <strong>Legend:</strong>
             <span style="margin-left: 15px;">🔴 Attacker</span>
             <span style="margin-left: 15px;">🎯 Honeypot</span>
             <span style="margin-left: 15px; color: #dc3545;">━━━</span> <span>Attack Path</span>
             <span style="margin-left: 15px; color: #28a745;">━━━</span> <span>Successful Login</span>
-        </div>
-        <div style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 10px;">
-            <strong>Visual Intensity Scale (attacks from same IP):</strong>
-            <span style="margin-left: 15px;">1-9: Regular</span>
-            <span style="margin-left: 15px;">🔥 10-19: High Volume</span>
-            <span style="margin-left: 15px;">⚡ 20-39: Heavy</span>
-            <span style="margin-left: 15px;">💀 40+: MEGA</span>
-        </div>
-        <div style="font-size: 0.9em; color: var(--text-secondary);">
-            <strong>Visual Cues:</strong>
-            <span style="margin-left: 15px;">💥 Thicker lines & larger markers = More attacks</span>
-            <span style="margin-left: 15px;">✨ Stronger glow = Higher intensity</span>
-            <span style="margin-left: 15px;">🎆 Explosion size = Attack volume</span>
-            <span style="margin-left: 15px;">⚡ Faster pulse = Persistent attacker</span>
         </div>
     </div>
 </div>
@@ -223,6 +209,13 @@
         transform: translateX(0);
         opacity: 1;
     }
+}
+
+/* IP link hover effect */
+.ip-link:hover {
+    opacity: 0.7;
+    text-decoration: underline !important;
+    cursor: pointer;
 }
 
 /* Fullscreen mode adjustments */
@@ -389,6 +382,8 @@ document.addEventListener('DOMContentLoaded', function() {
             city: attack.city,
             country: attack.country,
             timestamp: attack.timestamp,  // Attack timestamp for display
+            username: attack.username,
+            password: attack.password,
             login_success: attack.login_success,
             attackCount: attackCount,  // Total attacks from this IP
             isHighVolume: isHighVolume,  // Flag for high-volume attackers (10+)
@@ -406,13 +401,15 @@ document.addEventListener('DOMContentLoaded', function() {
     let migrationLayer = null;
     let animationInterval = null;
     let clockInterval = null;
-    let currentSimulatedTime = null;
+    let lastAttackTimestamp = null;  // Timestamp of last displayed attack
+    let nextAttackTimestamp = null;  // Timestamp of next attack to display
+    let lastAttackWallTime = null;   // Wall-clock time when last attack was displayed
     let attackFeedCount = 0;
 
     const arcLayers = [];
 
     // Live mode state
-    let liveMode = false;
+    let liveMode = true;  // Start in live mode by default
     let eventSource = null;
     let liveSessions = {};  // Track live sessions: session_id -> {arc, attack_data, closeTimer}
     let liveAttackCount = 0;
@@ -572,21 +569,41 @@ document.addEventListener('DOMContentLoaded', function() {
         return arc;
     }
 
-    function startContinuousClock(startTime) {
+    function startReplayClock() {
         // Stop any existing clock
         if (clockInterval) clearInterval(clockInterval);
 
-        currentSimulatedTime = new Date(startTime);
-
-        // Update clock every 100ms, incrementing based on animation speed
+        // Update clock every 100ms by interpolating between last and next attack timestamps
         clockInterval = setInterval(() => {
-            if (animationRunning && currentSimulatedTime) {
-                // Increment time based on animation speed (faster = more time passes)
-                currentSimulatedTime = new Date(currentSimulatedTime.getTime() + (100 * animationSpeed));
+            if (animationRunning && lastAttackTimestamp && nextAttackTimestamp && lastAttackWallTime) {
+                // Calculate progress between last and next attack
+                const attackInterval = 500 / animationSpeed; // Time between attacks in ms
+                const elapsedSinceLastAttack = Date.now() - lastAttackWallTime;
+                const progress = Math.min(elapsedSinceLastAttack / attackInterval, 1.0);
 
-                const formattedTime = currentSimulatedTime.toLocaleString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
+                // Interpolate between last and next attack timestamps
+                const lastTime = new Date(lastAttackTimestamp).getTime();
+                const nextTime = new Date(nextAttackTimestamp).getTime();
+                const timeDiff = nextTime - lastTime;
+                const currentTime = new Date(lastTime + (timeDiff * progress));
+
+                const formattedTime = currentTime.toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                });
+                document.getElementById('current-time').textContent = formattedTime;
+            } else if (lastAttackTimestamp && !nextAttackTimestamp) {
+                // No next attack, just show the last attack time
+                const currentTime = new Date(lastAttackTimestamp);
+                const formattedTime = currentTime.toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit',
@@ -608,14 +625,32 @@ document.addEventListener('DOMContentLoaded', function() {
         attackFeedCount++;
 
         const date = new Date(attack.timestamp);
-        const timeStr = date.toLocaleTimeString('en-US', { hour12: false });
+
+        // Format: YYYY-MM-DD HH:MM:SS TIMEZONE
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+
+        // Get timezone abbreviation (e.g., "EST", "PST", "UTC")
+        const timezoneName = date.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop();
+
+        const timeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} ${timezoneName}`;
+
         const statusBadge = attack.login_success
             ? '<span style="background: #28a745; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-weight: 600;">SUCCESS</span>'
             : '<span style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-weight: 600;">FAILED</span>';
 
         // Get ASN info if available
-        const asnInfo = attack.asn ? `AS${attack.asn}` : 'Unknown';
+        const asnInfo = attack.asn ? `AS${attack.asn}` : '';
         const asnOrg = attack.asn_org || '';
+
+        // Format credentials
+        const credentials = attack.username && attack.password
+            ? `${attack.username}:${attack.password}`
+            : (attack.username ? attack.username : 'No username/password provided');
 
         const entry = document.createElement('div');
         entry.style.cssText = `
@@ -628,14 +663,23 @@ document.addEventListener('DOMContentLoaded', function() {
             animation: slideIn 0.3s ease-out;
         `;
 
+        // Build location line with ASN
+        let locationLine = `${attack.city}, ${attack.country}`;
+        if (asnInfo) {
+            locationLine += ` - ${asnInfo}`;
+            if (asnOrg) {
+                locationLine += ` ${asnOrg.substring(0, 20)}`;
+            }
+        }
+
         entry.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                <strong style="color: var(--accent-color);">${attack.ip}</strong>
+                <strong style="color: var(--accent-color);"><a href="/session/${attack.sessionId}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a></strong>
                 ${statusBadge}
             </div>
             <div style="color: var(--text-secondary); font-size: 0.9em;">
-                <div>${attack.city}, ${attack.country}</div>
-                <div style="margin-top: 3px;">${asnInfo} ${asnOrg ? '- ' + asnOrg.substring(0, 25) : ''}</div>
+                <div>${locationLine}</div>
+                <div style="margin-top: 3px;">${credentials}</div>
                 <div style="margin-top: 3px; color: var(--text-tertiary);">${timeStr}</div>
             </div>
         `;
@@ -656,9 +700,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const currentAttack = migrationData[currentIndex];
             addAttackArc(currentAttack);
 
-            // Start continuous clock on first attack
-            if (currentIndex === 0 && currentAttack.timestamp) {
-                startContinuousClock(currentAttack.timestamp);
+            // Update clock timestamps
+            lastAttackTimestamp = currentAttack.timestamp;
+            lastAttackWallTime = Date.now();
+
+            // Set next attack timestamp if there is one
+            if (currentIndex + 1 < migrationData.length) {
+                nextAttackTimestamp = migrationData[currentIndex + 1].timestamp;
+            } else {
+                nextAttackTimestamp = null;
+            }
+
+            // Start clock on first attack
+            if (currentIndex === 0) {
+                startReplayClock();
             }
 
             // Add to attack feed
@@ -679,7 +734,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     clearMap();
                     currentIndex = 0;
                     attackFeedCount = 0;
-                    currentSimulatedTime = null;
+                    lastAttackTimestamp = null;
+                    nextAttackTimestamp = null;
+                    lastAttackWallTime = null;
                     document.getElementById('current-time').textContent = '--';
                     document.getElementById('attack-feed').innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">Waiting for attacks...</div>';
                     animateAttacks();
@@ -710,13 +767,33 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('mode-toggle-btn').textContent = '📼 Replay Mode';
         document.getElementById('mode-toggle-btn').className = 'btn';
         document.getElementById('mode-indicator').innerHTML = '<span style="color: #28a745; animation: pulse 2s ease-in-out infinite;">🔴 LIVE</span>';
+        document.getElementById('attack-feed-title').textContent = '📡 Live Attack Feed';
         document.getElementById('play-pause-btn').disabled = true;
         document.getElementById('reset-btn').disabled = true;
         document.getElementById('speed-slider').disabled = true;
         document.getElementById('hours-selector').disabled = true;
-        document.getElementById('current-time').textContent = 'LIVE';
         document.getElementById('progress-text').textContent = 'LIVE';
         document.getElementById('attack-feed').innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">Waiting for live attacks...</div>';
+
+        // Hide Speed and Animation Progress in live mode
+        document.getElementById('speed-container').style.display = 'none';
+        document.getElementById('progress-container').style.display = 'none';
+
+        // Start live clock showing current time
+        function updateLiveClock() {
+            const now = new Date();
+            const formattedTime = now.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+            document.getElementById('current-time').textContent = formattedTime;
+        }
+        updateLiveClock(); // Update immediately
+        clockInterval = setInterval(updateLiveClock, 1000); // Update every second
 
         // Start SSE connection
         eventSource = new EventSource('/api/attack-stream');
@@ -728,6 +805,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 handleLiveConnect(data);
             } else if (data.event === 'login_success') {
                 handleLiveLoginSuccess(data);
+            } else if (data.event === 'login_failed') {
+                handleLiveLoginFailed(data);
+            } else if (data.event === 'command_input') {
+                handleLiveCommand(data);
             } else if (data.event === 'session_closed') {
                 handleLiveSessionClosed(data);
             }
@@ -735,7 +816,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         eventSource.onerror = function(err) {
             console.error('EventSource error:', err);
-            document.getElementById('mode-indicator').innerHTML = '<span style="color: #dc3545;">⚠️ Connection Lost</span>';
+
+            // Check if connection is still open
+            if (eventSource.readyState === EventSource.CLOSED) {
+                document.getElementById('mode-indicator').innerHTML = '<span style="color: #dc3545;">⚠️ Connection Failed</span>';
+            } else if (eventSource.readyState === EventSource.CONNECTING) {
+                document.getElementById('mode-indicator').innerHTML = '<span style="color: #ffc107;">🔄 Reconnecting...</span>';
+            }
+        };
+
+        eventSource.onopen = function() {
+            // Connection restored
+            document.getElementById('mode-indicator').innerHTML = '<span style="color: #28a745; animation: pulse 2s ease-in-out infinite;">🔴 LIVE</span>';
         };
     }
 
@@ -746,6 +838,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (eventSource) {
             eventSource.close();
             eventSource = null;
+        }
+
+        // Stop live clock
+        if (clockInterval) {
+            clearInterval(clockInterval);
+            clockInterval = null;
         }
 
         // Clear all live sessions and timers
@@ -761,6 +859,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('mode-toggle-btn').textContent = '📡 Go Live';
         document.getElementById('mode-toggle-btn').className = 'btn btn-success';
         document.getElementById('mode-indicator').innerHTML = '<span style="color: var(--text-secondary);">📼 Replay</span>';
+        document.getElementById('attack-feed-title').textContent = '📼 Replay Attack Feed';
         document.getElementById('play-pause-btn').disabled = false;
         document.getElementById('reset-btn').disabled = false;
         document.getElementById('speed-slider').disabled = false;
@@ -768,6 +867,10 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('current-time').textContent = '--';
         document.getElementById('progress-text').textContent = '0%';
         document.getElementById('attack-feed').innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">Waiting for attacks...</div>';
+
+        // Show Speed and Animation Progress in replay mode
+        document.getElementById('speed-container').style.display = 'block';
+        document.getElementById('progress-container').style.display = 'block';
 
         // Restart replay mode
         animationRunning = true;
@@ -786,6 +889,8 @@ document.addEventListener('DOMContentLoaded', function() {
             city: data.city,
             country: data.country,
             timestamp: data.timestamp,
+            username: null,
+            password: null,
             login_success: false,
             sessionId: data.session_id,
             asn: data.asn,
@@ -825,22 +930,46 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add explosion
         addImpactExplosion(attack);
 
-        // Add to feed
-        addToAttackFeed(attack);
-
-        // Store session (will be removed in 30 seconds or when session closes)
+        // Store session with creation timestamp and command tracking
         liveSessions[data.session_id] = {
             arc: arc,
             attack_data: attack,
-            closeTimer: setTimeout(() => {
-                // Auto-remove failed attacks after 30 seconds
-                if (liveSessions[data.session_id] && !liveSessions[data.session_id].attack_data.login_success) {
-                    const session = liveSessions[data.session_id];
-                    if (session.arc) map.removeLayer(session.arc);
-                    delete liveSessions[data.session_id];
-                }
-            }, 30000)
+            createdAt: Date.now(),
+            closeTimer: null,
+            minDisplayTimer: null,
+            isExpanded: false,
+            commandBuffer: [],
+            lastActivityTime: Date.now(),
+            isTyping: false,
+            autoCollapseTimer: null,
+            commandCount: 0,
+            feedElement: null  // Will store the DOM element
         };
+
+        // Create feed element
+        const feed = document.getElementById('attack-feed');
+
+        // Clear "waiting" message on first attack
+        if (Object.keys(liveSessions).length === 1) {
+            feed.innerHTML = '';
+        }
+
+        const entry = document.createElement('div');
+        entry.style.cssText = `
+            padding: 10px;
+            margin-bottom: 8px;
+            background: var(--bg-primary);
+            border-left: 4px solid ${attack.login_success ? '#28a745' : '#dc3545'};
+            border-radius: 4px;
+            font-size: 0.85em;
+            animation: slideIn 0.3s ease-out;
+        `;
+
+        feed.insertBefore(entry, feed.firstChild);
+        liveSessions[data.session_id].feedElement = entry;
+
+        // Initial render
+        updateLiveFeedEntry(liveSessions[data.session_id]);
 
         // Update stats
         document.getElementById('progress-text').textContent = `${liveAttackCount} attacks`;
@@ -850,6 +979,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (liveSessions[data.session_id]) {
             const session = liveSessions[data.session_id];
             session.attack_data.login_success = true;
+            session.attack_data.username = data.username;
+            session.attack_data.password = data.password;
+            session.attack_data.timestamp = data.timestamp;
 
             // Update arc to green
             if (session.arc) {
@@ -860,6 +992,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
 
+            // Update border color to green
+            if (session.feedElement) {
+                session.feedElement.style.borderLeft = '4px solid #28a745';
+            }
+
             // Clear the auto-remove timer for failed attacks
             if (session.closeTimer) {
                 clearTimeout(session.closeTimer);
@@ -867,8 +1004,194 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // Update feed entry
-            session.attack_data.timestamp = data.timestamp;
-            addToAttackFeed(session.attack_data);
+            updateLiveFeedEntry(session);
+
+            // Re-sort feed to keep successful logins at top
+            sortLiveFeed();
+        }
+    }
+
+    function handleLiveLoginFailed(data) {
+        if (liveSessions[data.session_id]) {
+            const session = liveSessions[data.session_id];
+            // Only update if we don't already have credentials
+            if (!session.attack_data.username) {
+                session.attack_data.username = data.username;
+                session.attack_data.password = data.password;
+                session.attack_data.timestamp = data.timestamp;
+
+                // Update feed entry with credentials
+                updateLiveFeedEntry(session);
+            }
+        }
+    }
+
+    function sortLiveFeed() {
+        const feed = document.getElementById('attack-feed');
+        const sessions = Object.values(liveSessions).filter(s => s.feedElement);
+
+        // Sort sessions by priority:
+        // 1. Active sessions with commands (typing indicator) at top
+        // 2. Successful logins without commands
+        // 3. Failed logins at bottom
+        // Within each tier, sort by last activity time (most recent first)
+        sessions.sort((a, b) => {
+            const now = Date.now();
+            const aActive = a.commandCount > 0 && (now - a.lastActivityTime < 30000);  // Active in last 30s
+            const bActive = b.commandCount > 0 && (now - b.lastActivityTime < 30000);
+
+            // Active sessions first
+            if (aActive && !bActive) return -1;
+            if (!aActive && bActive) return 1;
+
+            // Then successful logins
+            if (a.attack_data.login_success && !b.attack_data.login_success) return -1;
+            if (!a.attack_data.login_success && b.attack_data.login_success) return 1;
+
+            // Within same tier, sort by last activity
+            return b.lastActivityTime - a.lastActivityTime;
+        });
+
+        // Re-append in sorted order
+        sessions.forEach(session => {
+            feed.appendChild(session.feedElement);
+        });
+    }
+
+    function resetAutoCollapseTimer(sessionId) {
+        const session = liveSessions[sessionId];
+        if (!session) return;
+
+        // Clear existing timer
+        if (session.autoCollapseTimer) {
+            clearTimeout(session.autoCollapseTimer);
+        }
+
+        // Set new timer (10 seconds)
+        if (session.isExpanded) {
+            session.autoCollapseTimer = setTimeout(() => {
+                session.isExpanded = false;
+                updateLiveFeedEntry(session);
+            }, 10000);
+        }
+    }
+
+    function updateLiveFeedEntry(session) {
+        if (!session.feedElement) return;
+
+        const attack = session.attack_data;
+        const date = new Date(attack.timestamp);
+
+        // Format timestamp
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        const timezoneName = date.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop();
+        const timeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} ${timezoneName}`;
+
+        const statusBadge = attack.login_success
+            ? '<span style="background: #28a745; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-weight: 600;">SUCCESS</span>'
+            : '<span style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-weight: 600;">FAILED</span>';
+
+        const asnInfo = attack.asn ? `AS${attack.asn}` : '';
+        const asnOrg = attack.asn_org || '';
+        const credentials = attack.username && attack.password
+            ? `${attack.username}:${attack.password}`
+            : (attack.username ? attack.username : 'No username/password provided');
+
+        let locationLine = `${attack.city}, ${attack.country}`;
+        if (asnInfo) {
+            locationLine += ` - ${asnInfo}`;
+            if (asnOrg) {
+                locationLine += ` ${asnOrg.substring(0, 20)}`;
+            }
+        }
+
+        // Typing indicator
+        const typingIndicator = session.commandCount > 0 ? ' ⌨️' : '';
+        const expandIcon = session.isExpanded ? '▼' : '▶';
+
+        // Build command display
+        let commandDisplay = '';
+        if (session.commandCount > 0 && !session.isExpanded) {
+            commandDisplay = `<div style="margin-top: 5px; color: var(--text-secondary); font-size: 0.85em;">💬 ${session.commandCount} command${session.commandCount > 1 ? 's' : ''} executed • Click to view</div>`;
+        } else if (session.isExpanded && session.commandBuffer.length > 0) {
+            const commandLines = session.commandBuffer.map(cmd =>
+                `<div style="color: #4CAF50;">$ ${cmd.command}</div>`
+            ).join('');
+            commandDisplay = `
+                <div style="margin-top: 8px; padding: 10px; background: #1e1e1e; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 0.85em; max-height: 200px; overflow-y: auto;">
+                    <div style="color: #888; margin-bottom: 5px; font-size: 0.9em;">─ LIVE SESSION ─</div>
+                    ${commandLines}
+                </div>
+            `;
+        }
+
+        session.feedElement.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <strong style="color: var(--accent-color);">
+                    ${expandIcon} <a href="/session/${attack.sessionId}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a>${typingIndicator}
+                </strong>
+                ${statusBadge}
+            </div>
+            <div style="color: var(--text-secondary); font-size: 0.9em;">
+                <div>${locationLine}</div>
+                <div style="margin-top: 3px;">${credentials}</div>
+                <div style="margin-top: 3px; color: var(--text-tertiary);">${timeStr}</div>
+                ${commandDisplay}
+            </div>
+        `;
+
+        // Re-attach click handler for expand/collapse
+        session.feedElement.style.cursor = 'pointer';
+        session.feedElement.onclick = (e) => {
+            // Don't toggle if clicking the session link
+            if (e.target.tagName === 'A') return;
+
+            session.isExpanded = !session.isExpanded;
+            if (session.isExpanded) {
+                resetAutoCollapseTimer(attack.sessionId);
+            } else {
+                if (session.autoCollapseTimer) {
+                    clearTimeout(session.autoCollapseTimer);
+                }
+            }
+            updateLiveFeedEntry(session);
+        };
+    }
+
+    function handleLiveCommand(data) {
+        if (liveSessions[data.session_id]) {
+            const session = liveSessions[data.session_id];
+
+            // Add command to buffer
+            session.commandBuffer.push({
+                command: data.command,
+                timestamp: data.timestamp
+            });
+
+            // Keep only last 15 commands
+            if (session.commandBuffer.length > 15) {
+                session.commandBuffer.shift();
+            }
+
+            session.commandCount++;
+            session.lastActivityTime = Date.now();
+            session.isTyping = false;
+
+            // Reset auto-collapse timer if expanded
+            if (session.isExpanded) {
+                resetAutoCollapseTimer(data.session_id);
+            }
+
+            // Update feed entry
+            updateLiveFeedEntry(session);
+
+            // Re-sort feed to keep active sessions at top
+            sortLiveFeed();
         }
     }
 
@@ -876,55 +1199,119 @@ document.addEventListener('DOMContentLoaded', function() {
         if (liveSessions[data.session_id]) {
             const session = liveSessions[data.session_id];
 
-            if (data.login_success) {
-                // Successful login - close after 1 minute
-                session.closeTimer = setTimeout(() => {
-                    if (session.arc) {
-                        // Fade out
-                        let opacity = 0.9;
-                        const fadeInterval = setInterval(() => {
-                            opacity -= 0.1;
-                            if (opacity <= 0) {
-                                clearInterval(fadeInterval);
-                                map.removeLayer(session.arc);
-                                delete liveSessions[data.session_id];
-                            } else {
-                                session.arc.setStyle({ opacity: opacity });
-                            }
-                        }, 200);
-                    }
-                }, 60000);  // 1 minute
-            } else {
-                // Failed attack - remove immediately
-                if (session.arc) map.removeLayer(session.arc);
-                if (session.closeTimer) clearTimeout(session.closeTimer);
-                delete liveSessions[data.session_id];
+            // Mark session as closed
+            session.isClosed = true;
+
+            // Collapse if expanded
+            if (session.isExpanded) {
+                session.isExpanded = false;
+                updateLiveFeedEntry(session);
             }
+
+            // Clear auto-collapse timer
+            if (session.autoCollapseTimer) {
+                clearTimeout(session.autoCollapseTimer);
+            }
+
+            // Remove arc from map (but keep feed entry)
+            if (session.arc) {
+                // Fade out arc
+                let opacity = 0.9;
+                const fadeInterval = setInterval(() => {
+                    opacity -= 0.1;
+                    if (opacity <= 0) {
+                        clearInterval(fadeInterval);
+                        map.removeLayer(session.arc);
+                        session.arc = null;
+                    } else {
+                        if (session.arc) {
+                            session.arc.setStyle({ opacity: opacity });
+                        }
+                    }
+                }, 200);
+            }
+
+            // Only cleanup old entries if feed is getting too large (100+ entries)
+            cleanupOldEntries();
+        }
+    }
+
+    function cleanupOldEntries() {
+        const sessions = Object.values(liveSessions);
+        const maxEntries = 100;
+
+        if (sessions.length > maxEntries) {
+            // Sort by creation time, oldest first
+            const sortedSessions = sessions.sort((a, b) => a.createdAt - b.createdAt);
+
+            // Remove oldest entries beyond the max
+            const toRemove = sortedSessions.slice(0, sessions.length - maxEntries);
+            toRemove.forEach(session => {
+                if (session.feedElement && session.feedElement.parentNode) {
+                    session.feedElement.parentNode.removeChild(session.feedElement);
+                }
+                if (session.arc) {
+                    map.removeLayer(session.arc);
+                }
+                if (session.closeTimer) clearTimeout(session.closeTimer);
+                if (session.autoCollapseTimer) clearTimeout(session.autoCollapseTimer);
+
+                // Find and delete from liveSessions
+                const sessionId = Object.keys(liveSessions).find(
+                    id => liveSessions[id] === session
+                );
+                if (sessionId) {
+                    delete liveSessions[sessionId];
+                }
+            });
         }
     }
 
     // Control buttons
     document.getElementById('play-pause-btn').addEventListener('click', function() {
-        animationRunning = !animationRunning;
-        this.textContent = animationRunning ? '⏸ Pause' : '▶️ Play';
         if (animationRunning) {
-            animateAttacks();
-        } else {
+            // Pausing
+            animationRunning = false;
+            this.textContent = '▶️ Play';
             if (animationInterval) clearTimeout(animationInterval);
             if (clockInterval) clearInterval(clockInterval);
+        } else {
+            // Resuming
+            animationRunning = true;
+            this.textContent = '⏸ Pause';
+
+            // Restart clock and animation from current position
+            if (lastAttackTimestamp) {
+                lastAttackWallTime = Date.now(); // Reset wall time to now
+                startReplayClock();
+            }
+
+            animateAttacks();
         }
     });
 
     document.getElementById('reset-btn').addEventListener('click', function() {
         if (animationInterval) clearTimeout(animationInterval);
+        if (clockInterval) clearInterval(clockInterval);
         clearMap();
         currentIndex = 0;
+        attackFeedCount = 0;
+        lastAttackTimestamp = null;
+        nextAttackTimestamp = null;
+        lastAttackWallTime = null;
+        document.getElementById('current-time').textContent = '--';
+        document.getElementById('attack-feed').innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">Waiting for attacks...</div>';
         if (animationRunning) animateAttacks();
     });
 
     document.getElementById('speed-slider').addEventListener('input', function() {
         animationSpeed = parseFloat(this.value);
         document.getElementById('speed-text').textContent = `${animationSpeed.toFixed(1)}x`;
+
+        // Reset wall time so speed change takes effect immediately
+        if (animationRunning && lastAttackTimestamp) {
+            lastAttackWallTime = Date.now();
+        }
     });
 
     document.getElementById('mode-toggle-btn').addEventListener('click', function() {
@@ -979,15 +1366,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Start animation
-    if (attacks.length > 0) {
-        animateAttacks();
-    } else {
-        const noDataDiv = document.createElement('div');
-        noDataDiv.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); padding: 20px; border-radius: 8px; color: white; text-align: center; z-index: 1000;';
-        noDataDiv.textContent = 'No attacks in selected time range';
-        document.getElementById('attack-map').appendChild(noDataDiv);
-    }
+    // Start in live mode by default
+    startLiveMode();
 });
 </script>
 {% endblock %}
