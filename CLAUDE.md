@@ -474,7 +474,7 @@ open http://localhost:5000
 
 The toolkit includes an automated daily reporting system that sends comprehensive threat intelligence reports via email.
 
-### Features
+### Features Daily Reporting System
 
 - **📊 Comprehensive Statistics** - Total connections, unique IPs, sessions, and files downloaded
 - **🌍 GeoIP Enrichment** - Country, city, ASN, and organization data using MaxMind GeoLite2
@@ -489,7 +489,7 @@ The toolkit includes an automated daily reporting system that sends comprehensiv
 - **🔗 Session Links** - Direct links to web dashboard for TTY playback (if enabled)
 - **⚡ Automatic Setup** - Fully automated via `master-config.toml` during deployment
 
-### Configuration
+### Configuration Daily Reporting System
 
 Add to `master-config.toml`:
 
