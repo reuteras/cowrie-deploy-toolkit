@@ -544,8 +544,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add impact explosion at honeypot location
         addImpactExplosion(attack);
 
-        // Successful attacks stay longer (10 seconds) so they're not missed
-        const displayDuration = attack.login_success ? 10000 : 8000;
+        // Minimum display time: 2 minutes for all attacks
+        // Successful logins stay even longer to ensure they're noticed
+        const displayDuration = attack.login_success ? 180000 : 120000;  // 3 min for success, 2 min for failed
 
         // Auto-fade and remove after displayDuration
         setTimeout(() => {
@@ -851,6 +852,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const session = liveSessions[sessionId];
             if (session.arc) map.removeLayer(session.arc);
             if (session.closeTimer) clearTimeout(session.closeTimer);
+            if (session.minDisplayTimer) clearTimeout(session.minDisplayTimer);
+            if (session.autoCollapseTimer) clearTimeout(session.autoCollapseTimer);
         }
         liveSessions = {};
         liveAttackCount = 0;
@@ -937,6 +940,8 @@ document.addEventListener('DOMContentLoaded', function() {
             createdAt: Date.now(),
             closeTimer: null,
             minDisplayTimer: null,
+            minDisplayDuration: 120000,  // Minimum 2 minutes display
+            canRemoveArc: false,  // Flag to indicate if arc can be removed
             isExpanded: false,
             commandBuffer: [],
             lastActivityTime: Date.now(),
@@ -945,6 +950,20 @@ document.addEventListener('DOMContentLoaded', function() {
             commandCount: 0,
             feedElement: null  // Will store the DOM element
         };
+
+        // Set minimum display timer - arc cannot be removed before this expires
+        liveSessions[data.session_id].minDisplayTimer = setTimeout(() => {
+            if (liveSessions[data.session_id]) {
+                liveSessions[data.session_id].canRemoveArc = true;
+                // If session already closed and waiting to be removed, remove it now
+                if (liveSessions[data.session_id].isClosed && !liveSessions[data.session_id].arc) {
+                    // Arc was already removed, we can clean up
+                } else if (liveSessions[data.session_id].pendingRemoval) {
+                    // Session closed before min time, now we can remove arc
+                    removeSessionArc(data.session_id);
+                }
+            }
+        }, 120000);  // 2 minutes
 
         // Create feed element
         const feed = document.getElementById('attack-feed');
@@ -1002,6 +1021,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 clearTimeout(session.closeTimer);
                 session.closeTimer = null;
             }
+
+            // Extend minimum display duration for successful logins to 3 minutes
+            session.minDisplayDuration = 180000;  // 3 minutes for successful logins
+
+            // Reset the minimum display timer with extended duration
+            if (session.minDisplayTimer) {
+                clearTimeout(session.minDisplayTimer);
+            }
+            session.canRemoveArc = false;
+            session.minDisplayTimer = setTimeout(() => {
+                if (liveSessions[data.session_id]) {
+                    liveSessions[data.session_id].canRemoveArc = true;
+                    if (liveSessions[data.session_id].pendingRemoval) {
+                        removeSessionArc(data.session_id);
+                    }
+                }
+            }, session.minDisplayDuration);
 
             // Update feed entry
             updateLiveFeedEntry(session);
@@ -1195,6 +1231,29 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Helper function to remove session arc with fade animation
+    function removeSessionArc(sessionId) {
+        const session = liveSessions[sessionId];
+        if (!session || !session.arc) return;
+
+        // Fade out arc
+        let opacity = 0.9;
+        const fadeInterval = setInterval(() => {
+            opacity -= 0.1;
+            if (opacity <= 0) {
+                clearInterval(fadeInterval);
+                if (session.arc) {
+                    map.removeLayer(session.arc);
+                    session.arc = null;
+                }
+            } else {
+                if (session.arc) {
+                    session.arc.setStyle({ opacity: opacity });
+                }
+            }
+        }, 200);
+    }
+
     function handleLiveSessionClosed(data) {
         if (liveSessions[data.session_id]) {
             const session = liveSessions[data.session_id];
@@ -1213,22 +1272,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 clearTimeout(session.autoCollapseTimer);
             }
 
-            // Remove arc from map (but keep feed entry)
-            if (session.arc) {
-                // Fade out arc
-                let opacity = 0.9;
-                const fadeInterval = setInterval(() => {
-                    opacity -= 0.1;
-                    if (opacity <= 0) {
-                        clearInterval(fadeInterval);
-                        map.removeLayer(session.arc);
-                        session.arc = null;
-                    } else {
-                        if (session.arc) {
-                            session.arc.setStyle({ opacity: opacity });
-                        }
-                    }
-                }, 200);
+            // Check if we can remove the arc now or need to wait for minimum display time
+            if (session.canRemoveArc) {
+                // Minimum display time has passed, remove arc immediately
+                removeSessionArc(data.session_id);
+            } else {
+                // Minimum display time hasn't passed yet, mark for pending removal
+                session.pendingRemoval = true;
+                // The minDisplayTimer callback will handle removal when time expires
             }
 
             // Only cleanup old entries if feed is getting too large (100+ entries)
@@ -1254,6 +1305,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     map.removeLayer(session.arc);
                 }
                 if (session.closeTimer) clearTimeout(session.closeTimer);
+                if (session.minDisplayTimer) clearTimeout(session.minDisplayTimer);
                 if (session.autoCollapseTimer) clearTimeout(session.autoCollapseTimer);
 
                 // Find and delete from liveSessions
