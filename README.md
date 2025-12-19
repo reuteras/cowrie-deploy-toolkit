@@ -258,7 +258,11 @@ Canary Tokens are special files that trigger webhooks when accessed, downloaded,
 
 4. **View alerts** in the web dashboard under "🐦 Canary Alerts"
 
-### Nginx Reverse Proxy Configuration (Required)
+### Nginx Reverse Proxy Configuration
+
+**Important:** If you access the web dashboard via nginx proxy, you need special configuration for the **Live Attack Map** to work. The live map uses Server-Sent Events (SSE) which requires disabling nginx buffering. See [nginx-sse-config.md](nginx-sse-config.md) for detailed configuration.
+
+#### Canary Webhook Configuration (Required for Canary Tokens)
 
 Since the honeypot runs on a private Tailscale network and Canary Tokens need to send webhooks from the internet, you must set up an nginx reverse proxy on your existing public server.
 
