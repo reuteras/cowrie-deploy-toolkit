@@ -119,7 +119,7 @@ enabled = false
 # The honeypot runs on Tailscale (private network), but Canary webhooks need a
 # public endpoint. Set up nginx on your existing server to proxy to Tailscale.
 #
-# See CLAUDE.md for nginx configuration example.
+# See README.md "Canary Token Webhook Receiver" section for nginx configuration.
 
 # Enable webhook receiver (default: false)
 enabled = false

@@ -501,96 +501,21 @@ Add to `master-config.toml`:
 enabled = true
 ```
 
-### Reverse Proxy Setup (Required)
+### Setup
 
-Since the honeypot runs on a private Tailscale network and Canary Tokens need to send webhooks from the internet, you must set up an nginx reverse proxy on an existing public server (like the one you're running this toolkit from).
+1. **Enable in `master-config.toml`:**
+   ```toml
+   [canary_webhook]
+   enabled = true
+   ```
 
-### Setting Up Canary Tokens
+2. **Configure nginx reverse proxy** - See README.md "Canary Token Webhook Receiver" section for detailed nginx configuration
 
-1. **Generate tokens** at https://canarytokens.org/nest/
-
-   Recommended tokens for honeypots:
-   - **PDF Document** - Triggers when opened in PDF reader
-   - **Microsoft Excel/Word** - Triggers when opened in Office
-   - **MySQL Dump** - Triggers when accessed
-
-2. **Configure webhook URL**:
-   - Webhook URL: `https://<your-server>/webhook/canary` (your nginx proxy endpoint)
-   - Memo/Name: Descriptive name (e.g., "Honeypot Network Passwords PDF")
-   - Email notifications: Optional (you'll see alerts in dashboard)
-
-3. **Place tokens in honeypot**:
-   - Tokens are automatically embedded during filesystem generation
-   - Place token files in `canary-tokens/` directory before running `generate_cowrie_fs_from_hetzner.sh`
+3. **Generate tokens** at https://canarytokens.org/nest/
+   - Choose token type: PDF, Excel/Word, or MySQL Dump
+   - Set webhook URL to: `https://<your-server>/webhook/canary` (your nginx proxy endpoint)
+   - Place token files in `canary-tokens/` directory before generating filesystem
    - See "Canary Tokens Integration" section above for file naming
-
-**Nginx Configuration for Your Existing Server:**
-
-Add this to your existing nginx configuration (e.g., `/etc/nginx/sites-available/default` or a dedicated site config):
-
-```nginx
-# Rate limiting for webhook endpoint (outside server block)
-limit_req_zone $binary_remote_addr zone=canary_limit:10m rate=10r/m;
-
-server {
-    listen 443 ssl http2;
-    server_name your-server.com;  # Your existing domain
-
-    # Your existing SSL certificates
-    ssl_certificate /etc/letsencrypt/live/your-server.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-server.com/privkey.pem;
-
-    # Canary webhook endpoint
-    location /webhook/canary {
-        # Rate limiting
-        limit_req zone=canary_limit burst=5 nodelay;
-
-        # Proxy to honeypot via Tailscale
-        proxy_pass https://<tailscale_name>.<tailscale_domain>/webhook/canary;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Timeouts
-        proxy_connect_timeout 10s;
-        proxy_send_timeout 10s;
-        proxy_read_timeout 10s;
-    }
-
-    # Your existing server configuration...
-}
-```
-
-**Setup steps:**
-
-1. **Install Tailscale on your existing server** (if not already installed):
-   ```bash
-   curl -fsSL https://tailscale.com/install.sh | sh
-   tailscale up
-   ```
-
-2. **Add the webhook location block** to your existing nginx configuration
-
-3. **Test the configuration:**
-   ```bash
-   nginx -t
-   systemctl reload nginx
-   ```
-
-4. **Test the webhook:**
-   ```bash
-   curl -X POST https://your-server.com/webhook/canary \
-     -H "Content-Type: application/json" \
-     -d '{"channel": "HTTP", "memo": "Test", "src_ip": "1.2.3.4"}'
-   ```
-
-**Security notes:**
-
-- ✅ **Rate limiting** - 10 requests/minute with burst of 5
-- ✅ **HTTPS required** - Uses your existing SSL certificates
-- ✅ **Minimal attack surface** - Only exposes `/webhook/canary` endpoint
-- ✅ **Tailscale connection** - Backend connection to honeypot is private
 
 ### Viewing Alerts
 

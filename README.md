@@ -233,6 +233,100 @@ Interactive web interface for session playback and attack analysis!
 
 See [web/README.md](web/README.md) for detailed documentation.
 
+## Canary Token Webhook Receiver
+
+The toolkit includes a webhook receiver for Canary Tokens that provides immediate alerts when attackers exfiltrate honeytokens (PDF, Excel, MySQL dump files) from the honeypot.
+
+### What are Canary Tokens?
+
+Canary Tokens are special files that trigger webhooks when accessed, downloaded, or opened. When an attacker exfiltrates these files from the honeypot and opens them on their machine, you receive an immediate alert with the IP address, user agent, geographic location, and timestamp.
+
+### Setup
+
+1. **Enable in `master-config.toml`:**
+   ```toml
+   [canary_webhook]
+   enabled = true
+   ```
+
+2. **Configure nginx reverse proxy** (required - see below)
+
+3. **Generate Canary Tokens** at https://canarytokens.org/nest/
+   - Choose token type: PDF, Excel/Word, or MySQL Dump
+   - Set webhook URL to: `https://<your-server>/webhook/canary`
+   - Place token files in `canary-tokens/` directory before generating filesystem
+
+4. **View alerts** in the web dashboard under "🐦 Canary Alerts"
+
+### Nginx Reverse Proxy Configuration (Required)
+
+Since the honeypot runs on a private Tailscale network and Canary Tokens need to send webhooks from the internet, you must set up an nginx reverse proxy on your existing public server.
+
+**Add this to your existing nginx configuration** (e.g., `/etc/nginx/sites-available/default`):
+
+```nginx
+# Rate limiting for webhook endpoint (outside server block)
+limit_req_zone $binary_remote_addr zone=canary_limit:10m rate=10r/m;
+
+server {
+    listen 443 ssl http2;
+    server_name your-server.com;  # Your existing domain
+
+    # Your existing SSL certificates
+    ssl_certificate /etc/letsencrypt/live/your-server.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-server.com/privkey.pem;
+
+    # Canary webhook endpoint
+    location /webhook/canary {
+        # Rate limiting
+        limit_req zone=canary_limit burst=5 nodelay;
+
+        # Proxy to honeypot via Tailscale
+        proxy_pass https://<tailscale_name>.<tailscale_domain>/webhook/canary;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Timeouts
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 10s;
+    }
+
+    # Your existing server configuration...
+}
+```
+
+**Setup steps:**
+
+1. Install Tailscale on your existing server (if not already installed):
+   ```bash
+   curl -fsSL https://tailscale.com/install.sh | sh
+   tailscale up
+   ```
+
+2. Add the webhook location block to your nginx configuration
+
+3. Test and reload:
+   ```bash
+   nginx -t
+   systemctl reload nginx
+   ```
+
+4. Test the webhook:
+   ```bash
+   curl -X POST https://your-server.com/webhook/canary \
+     -H "Content-Type: application/json" \
+     -d '{"channel": "HTTP", "memo": "Test", "src_ip": "1.2.3.4"}'
+   ```
+
+**Security features:**
+- Rate limiting: 10 requests/minute with burst of 5
+- HTTPS required with existing SSL certificates
+- Minimal attack surface: only `/webhook/canary` endpoint exposed
+- Private backend: nginx connects to honeypot via Tailscale
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for planned features:
