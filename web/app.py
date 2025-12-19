@@ -43,6 +43,8 @@ CONFIG = {
     "metadata_path": os.getenv("COWRIE_METADATA_PATH", "/cowrie-metadata/metadata.json"),
     "server_ip": os.getenv("SERVER_IP", ""),
     "honeypot_hostname": os.getenv("HONEYPOT_HOSTNAME", ""),
+    "canary_webhook_db_path": os.getenv("CANARY_WEBHOOK_DB_PATH", "/cowrie-data/var/canary-webhooks.db"),
+    "canary_webhook_secret": os.getenv("CANARY_WEBHOOK_SECRET", ""),
 }
 
 
@@ -176,6 +178,115 @@ class YARACache:
         except Exception:
             pass
         return None
+
+
+class CanaryWebhookDB:
+    """SQLite database for storing Canary Token webhook alerts."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._init_db()
+
+    def _init_db(self):
+        """Initialize database schema."""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS canary_webhooks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                token_type TEXT,
+                token_name TEXT,
+                trigger_ip TEXT,
+                trigger_user_agent TEXT,
+                trigger_location TEXT,
+                trigger_hostname TEXT,
+                referer TEXT,
+                additional_data TEXT,
+                raw_payload TEXT
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+    def add_webhook(self, webhook_data: dict) -> int:
+        """Add a webhook alert to the database."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute(
+            """INSERT INTO canary_webhooks
+               (token_type, token_name, trigger_ip, trigger_user_agent,
+                trigger_location, trigger_hostname, referer, additional_data, raw_payload)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                webhook_data.get("token_type"),
+                webhook_data.get("token_name"),
+                webhook_data.get("trigger_ip"),
+                webhook_data.get("trigger_user_agent"),
+                webhook_data.get("trigger_location"),
+                webhook_data.get("trigger_hostname"),
+                webhook_data.get("referer"),
+                json.dumps(webhook_data.get("additional_data", {})),
+                json.dumps(webhook_data.get("raw_payload", {})),
+            ),
+        )
+        webhook_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return webhook_id
+
+    def get_recent_webhooks(self, limit: int = 100) -> list:
+        """Get recent webhook alerts."""
+        if not os.path.exists(self.db_path):
+            return []
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """SELECT * FROM canary_webhooks
+                   ORDER BY received_at DESC LIMIT ?""",
+                (limit,),
+            )
+            rows = cursor.fetchall()
+            conn.close()
+
+            results = []
+            for row in rows:
+                results.append({
+                    "id": row["id"],
+                    "received_at": row["received_at"],
+                    "token_type": row["token_type"],
+                    "token_name": row["token_name"],
+                    "trigger_ip": row["trigger_ip"],
+                    "trigger_user_agent": row["trigger_user_agent"],
+                    "trigger_location": row["trigger_location"],
+                    "trigger_hostname": row["trigger_hostname"],
+                    "referer": row["referer"],
+                    "additional_data": json.loads(row["additional_data"]) if row["additional_data"] else {},
+                    "raw_payload": json.loads(row["raw_payload"]) if row["raw_payload"] else {},
+                })
+            return results
+        except Exception as e:
+            print(f"[!] Error fetching webhooks: {e}")
+            return []
+
+    def get_webhook_count(self, hours: int = 24) -> int:
+        """Get count of webhooks received in the last N hours."""
+        if not os.path.exists(self.db_path):
+            return 0
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            cursor = conn.execute(
+                """SELECT COUNT(*) FROM canary_webhooks
+                   WHERE received_at >= ?""",
+                (cutoff.isoformat(),),
+            )
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count
+        except Exception:
+            return 0
 
 
 class VirusTotalScanner:
@@ -942,13 +1053,26 @@ if CONFIG["virustotal_api_key"]:
 # Initialize YARA cache (reads results from yara-scanner-daemon)
 yara_cache = YARACache(CONFIG["yara_cache_db_path"])
 
+# Initialize Canary Webhook database
+canary_webhook_db = CanaryWebhookDB(CONFIG["canary_webhook_db_path"])
+
 
 @app.route("/")
 def index():
     """Dashboard page."""
     hours = request.args.get("hours", 24, type=int)
     stats = session_parser.get_stats(hours=hours)
-    return render_template("index.html", stats=stats, hours=hours, config=CONFIG)
+
+    # Get recent canary webhook alerts (last 5)
+    recent_webhooks = canary_webhook_db.get_recent_webhooks(limit=5)
+
+    # Enrich webhooks with GeoIP data
+    geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+    for webhook in recent_webhooks:
+        if webhook.get("trigger_ip"):
+            webhook["geo"] = geoip.lookup(webhook["trigger_ip"])
+
+    return render_template("index.html", stats=stats, hours=hours, config=CONFIG, recent_webhooks=recent_webhooks)
 
 
 @app.route("/attack-map")
@@ -1730,6 +1854,103 @@ def asns():
         })
 
     return render_template("asns.html", asns=all_asns, hours=hours, config=CONFIG)
+
+
+@app.route("/webhook/canary", methods=["POST"])
+def canary_webhook():
+    """Webhook endpoint for Canary Token alerts.
+
+    Security notes:
+    - This endpoint should only be accessible via Tailscale network
+    - Optional: Validate webhook secret if configured
+    - Rate limiting should be handled by reverse proxy if using public endpoint
+    """
+    try:
+        # Get JSON payload
+        if not request.is_json:
+            return jsonify({"error": "Content-Type must be application/json"}), 400
+
+        payload = request.get_json()
+
+        # Validate webhook secret if configured
+        webhook_secret = CONFIG.get("canary_webhook_secret", "")
+        if webhook_secret:
+            # Check for secret in header or payload
+            provided_secret = request.headers.get("X-Canary-Secret") or payload.get("secret")
+            if provided_secret != webhook_secret:
+                print("[!] Canary webhook: Invalid secret")
+                return jsonify({"error": "Unauthorized"}), 401
+
+        # Extract Canary Token data
+        # Canarytokens.org webhook format:
+        # - manage_url: URL to manage the token
+        # - memo: User-defined name/description
+        # - channel: Token type (HTTP, PDF, AWS, etc.)
+        # - src_ip: IP that triggered the token
+        # - useragent: User agent string
+        # - referer: HTTP referer
+        # - location: Geographic location
+        # - additional_data: Extra fields
+
+        webhook_data = {
+            "token_type": payload.get("channel", "unknown"),
+            "token_name": payload.get("memo", "Unnamed Token"),
+            "trigger_ip": payload.get("src_ip", request.remote_addr),
+            "trigger_user_agent": payload.get("useragent", ""),
+            "trigger_location": payload.get("location", ""),
+            "trigger_hostname": payload.get("hostname", ""),
+            "referer": payload.get("referer", ""),
+            "additional_data": {
+                "manage_url": payload.get("manage_url", ""),
+                "time": payload.get("time", ""),
+                "hits": payload.get("hits", 0),
+            },
+            "raw_payload": payload,
+        }
+
+        # Store in database
+        webhook_id = canary_webhook_db.add_webhook(webhook_data)
+
+        print(f"[+] Canary webhook received: {webhook_data['token_type']} - {webhook_data['token_name']} from {webhook_data['trigger_ip']}")
+
+        return jsonify({"success": True, "id": webhook_id}), 200
+
+    except Exception as e:
+        print(f"[!] Error processing canary webhook: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route("/api/canary-webhooks")
+def api_canary_webhooks():
+    """API endpoint for recent Canary Token webhook alerts."""
+    limit = request.args.get("limit", 100, type=int)
+    webhooks = canary_webhook_db.get_recent_webhooks(limit=limit)
+
+    # Enrich with GeoIP data if available
+    geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+    for webhook in webhooks:
+        if webhook.get("trigger_ip"):
+            webhook["geo"] = geoip.lookup(webhook["trigger_ip"])
+
+    return jsonify({
+        "webhooks": webhooks,
+        "total": len(webhooks)
+    })
+
+
+@app.route("/canary-alerts")
+def canary_alerts():
+    """Canary Token alerts page."""
+    limit = request.args.get("limit", 100, type=int)
+    webhooks = canary_webhook_db.get_recent_webhooks(limit=limit)
+
+    # Enrich with GeoIP data
+    geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+    for webhook in webhooks:
+        if webhook.get("trigger_ip"):
+            webhook["geo"] = geoip.lookup(webhook["trigger_ip"])
+
+    return render_template("canary_alerts.html", webhooks=webhooks, limit=limit, config=CONFIG)
 
 
 @app.route("/api/attack-stream")

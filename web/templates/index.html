@@ -68,6 +68,34 @@
         </div>
     </div>
 
+    <!-- Recent Canary Alerts Box -->
+    {% if recent_webhooks %}
+    <div class="canary-alerts-box" style="margin: 20px 0; padding: 15px; background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%); border-radius: 8px; color: white;">
+        <h3 style="margin: 0 0 10px 0; font-size: 18px;">🐦 Recent Canary Token Alerts <a href="{{ url_for('canary_alerts') }}" style="font-size: 0.7em; font-weight: normal; float: right; color: white; opacity: 0.9;">View All →</a></h3>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 6px; padding: 10px;">
+            {% for webhook in recent_webhooks %}
+            <div style="padding: 10px; margin-bottom: 8px; background: rgba(255,255,255,0.2); border-radius: 4px; {% if loop.last %}margin-bottom: 0;{% endif %}">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; font-size: 14px;">{{ webhook.token_name }}</div>
+                        <div style="font-size: 12px; opacity: 0.9; margin-top: 2px;">
+                            <span style="background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 3px; margin-right: 5px;">{{ webhook.token_type }}</span>
+                            <span>{{ webhook.trigger_ip }}</span>
+                            {% if webhook.geo %}
+                            <span style="margin-left: 5px;">• {{ webhook.geo.city }}, {{ webhook.geo.country }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div style="text-align: right; font-size: 11px; opacity: 0.8; white-space: nowrap; margin-left: 10px;">
+                        {{ webhook.received_at | format_timestamp }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="dashboard-grid">
         <!-- Attack Map -->
         <div class="dashboard-card full-width">

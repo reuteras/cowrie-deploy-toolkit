@@ -470,6 +470,256 @@ open http://localhost:5000
 
 **Note**: If you enabled Tailscale with `block_public_ssh = true`, you must use your Tailscale IP address (shown in deployment output).
 
+## Canary Token Webhook Receiver
+
+The toolkit includes a webhook receiver for Canary Tokens, providing immediate alerts when attackers exfiltrate honeytokens (PDF, Excel, MySQL dump files) from the honeypot.
+
+### What are Canary Tokens?
+
+Canary Tokens are special files that trigger webhooks when accessed, downloaded, or opened. When an attacker exfiltrates these files from the honeypot and opens them on their machine, you receive an immediate alert with:
+
+- IP address of the opener
+- User agent and system information
+- Geographic location
+- Timestamp
+- HTTP referer (if applicable)
+
+### Features
+
+- **🐦 Webhook Endpoint** - Receives webhooks from Canary Tokens (https://canarytokens.org)
+- **🔒 Security** - Webhook endpoint accessible via Tailscale network only by default
+- **🗄️ SQLite Storage** - Stores webhook alerts in local database
+- **📊 Dashboard Integration** - View alerts in web dashboard with GeoIP enrichment
+- **🔐 Optional Authentication** - Webhook secret validation for additional security
+- **🌐 Reverse Proxy Support** - Optional public access via secure reverse proxy
+
+### Enabling the Webhook Receiver
+
+Add to `master-config.toml`:
+
+```toml
+[canary_webhook]
+enabled = true
+
+# Optional: Webhook secret for authentication
+webhook_secret = ""  # Generate with: openssl rand -hex 32
+# Or: "op read op://Personal/Canary/webhook_secret"
+```
+
+### Webhook URL Configuration
+
+**Option 1: Tailscale URL (Recommended)**
+
+Configure your Canary Tokens to send webhooks to:
+```
+https://<tailscale_name>.<tailscale_domain>/webhook/canary
+```
+
+This keeps the webhook endpoint private and accessible only via your Tailscale VPN.
+
+**Option 2: Public URL via Reverse Proxy**
+
+For public access (if you can't use Tailscale or need webhooks from external services):
+
+1. Set up a small VPS with nginx
+2. Configure nginx to proxy to your Tailscale URL
+3. Use the public URL in your Canary Token configuration
+
+See reverse proxy setup instructions below.
+
+### Setting Up Canary Tokens
+
+1. **Generate tokens** at https://canarytokens.org/nest/
+
+   Recommended tokens for honeypots:
+   - **PDF Document** - Triggers when opened in PDF reader
+   - **Microsoft Excel/Word** - Triggers when opened in Office
+   - **MySQL Dump** - Triggers when accessed
+
+2. **Configure webhook URL**:
+   - Webhook URL: `https://<your-endpoint>/webhook/canary`
+   - Memo/Name: Descriptive name (e.g., "Honeypot Network Passwords PDF")
+   - Email notifications: Optional (you'll see alerts in dashboard)
+
+3. **Optional: Add webhook secret**:
+   - If you configured a `webhook_secret` in `master-config.toml`
+   - Add HTTP header: `X-Canary-Secret: <your-secret>`
+   - Or include in JSON payload: `{"secret": "<your-secret>"}`
+
+4. **Place tokens in honeypot**:
+   - Tokens are automatically embedded during filesystem generation
+   - Place token files in `canary-tokens/` directory before running `generate_cowrie_fs_from_hetzner.sh`
+   - See "Canary Tokens Integration" section above for file naming
+
+### Viewing Alerts
+
+**Web Dashboard:**
+- Navigate to "🐦 Canary Alerts" in the dashboard
+- View recent alerts with IP, location, and token details
+- Click "Manage Token" to view full details at canarytokens.org
+
+**API Endpoint:**
+```bash
+curl https://<your-dashboard>/api/canary-webhooks
+```
+
+### Reverse Proxy Setup (Optional)
+
+If you need public access to the webhook endpoint, set up a reverse proxy on a separate VPS.
+
+**Requirements:**
+- A small VPS (e.g., $5/month DigitalOcean droplet)
+- Domain name or subdomain pointing to the VPS
+- SSL certificate (free with Let's Encrypt)
+
+**Example nginx configuration:**
+
+```nginx
+# /etc/nginx/sites-available/canary-proxy
+server {
+    listen 80;
+    server_name webhooks.yourdomain.com;
+
+    # Redirect to HTTPS
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name webhooks.yourdomain.com;
+
+    # SSL certificates (use certbot to generate)
+    ssl_certificate /etc/letsencrypt/live/webhooks.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/webhooks.yourdomain.com/privkey.pem;
+
+    # Security headers
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-XSS-Protection "1; mode=block";
+
+    # Rate limiting (prevent abuse)
+    limit_req_zone $binary_remote_addr zone=canary_limit:10m rate=10r/m;
+    limit_req zone=canary_limit burst=5 nodelay;
+
+    # Webhook endpoint only
+    location /webhook/canary {
+        # Proxy to Tailscale URL (accessible because nginx is on Tailscale)
+        proxy_pass https://<tailscale_name>.<tailscale_domain>/webhook/canary;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Timeouts
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 10s;
+    }
+
+    # Block all other paths
+    location / {
+        return 404;
+    }
+}
+```
+
+**Setup steps:**
+
+1. **Install nginx and certbot on VPS:**
+   ```bash
+   apt update && apt install -y nginx certbot python3-certbot-nginx
+   ```
+
+2. **Install Tailscale on the VPS:**
+   ```bash
+   curl -fsSL https://tailscale.com/install.sh | sh
+   tailscale up
+   ```
+
+3. **Configure nginx:**
+   ```bash
+   # Copy configuration above to /etc/nginx/sites-available/canary-proxy
+   ln -s /etc/nginx/sites-available/canary-proxy /etc/nginx/sites-enabled/
+   nginx -t
+   systemctl reload nginx
+   ```
+
+4. **Generate SSL certificate:**
+   ```bash
+   certbot --nginx -d webhooks.yourdomain.com
+   ```
+
+5. **Test the webhook:**
+   ```bash
+   curl -X POST https://webhooks.yourdomain.com/webhook/canary \
+     -H "Content-Type: application/json" \
+     -H "X-Canary-Secret: your-secret-here" \
+     -d '{"channel": "HTTP", "memo": "Test", "src_ip": "1.2.3.4"}'
+   ```
+
+**Security considerations for reverse proxy:**
+
+- ✅ **Always use HTTPS** with valid SSL certificate
+- ✅ **Enable rate limiting** to prevent abuse (10 requests/minute in example)
+- ✅ **Block all paths except `/webhook/canary`**
+- ✅ **Use webhook secret** for authentication
+- ✅ **Monitor nginx logs** for suspicious activity
+- ✅ **Keep VPS updated** with automatic security updates
+- ❌ **Never expose SSH** on default port 22 (use Tailscale or port 2222+)
+- ❌ **Don't proxy the entire dashboard** - only the webhook endpoint
+
+### Database Schema
+
+Webhook alerts are stored in SQLite at `/opt/cowrie/var/canary-webhooks.db`:
+
+```sql
+CREATE TABLE canary_webhooks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    token_type TEXT,           -- e.g., "PDF", "HTTP", "EXCEL"
+    token_name TEXT,           -- User-defined name from memo field
+    trigger_ip TEXT,           -- IP that triggered the token
+    trigger_user_agent TEXT,   -- User agent string
+    trigger_location TEXT,     -- Geographic location
+    trigger_hostname TEXT,     -- Hostname if available
+    referer TEXT,              -- HTTP referer
+    additional_data TEXT,      -- JSON blob
+    raw_payload TEXT           -- Full webhook payload
+);
+```
+
+**Accessing the database:**
+
+```bash
+# SSH to honeypot
+ssh -p 2222 root@<SERVER_IP>
+
+# Query recent alerts
+sqlite3 /opt/cowrie/var/canary-webhooks.db \
+  "SELECT received_at, token_type, token_name, trigger_ip FROM canary_webhooks ORDER BY received_at DESC LIMIT 10;"
+```
+
+### Webhook Payload Format
+
+Canary Tokens send webhooks in this format:
+
+```json
+{
+  "channel": "PDF",
+  "memo": "Network Passwords PDF",
+  "src_ip": "203.0.113.42",
+  "useragent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)...",
+  "referer": "https://example.com/download",
+  "location": "San Francisco, CA, US",
+  "hostname": "attacker-machine",
+  "manage_url": "https://canarytokens.org/manage?token=...",
+  "time": "2025-12-19T12:34:56Z",
+  "hits": 1
+}
+```
+
+The webhook receiver stores all fields and enriches with GeoIP data for display in the dashboard.
+
 ## Daily Reporting System
 
 The toolkit includes an automated daily reporting system that sends comprehensive threat intelligence reports via email.

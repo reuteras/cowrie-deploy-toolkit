@@ -715,6 +715,17 @@ if [ -f "$MASTER_CONFIG" ]; then
     fi
 fi
 
+# Extract Canary webhook secret if available (for webhook authentication)
+CANARY_WEBHOOK_SECRET=""
+if [ -f "$MASTER_CONFIG" ]; then
+    CANARY_WEBHOOK_SECRET=$(grep "webhook_secret" "$MASTER_CONFIG" | head -1 | sed -E 's/^[^=]*= *"([^"]+)".*/\1/')
+
+    # Execute command if it looks like "op read" command
+    if echo "$CANARY_WEBHOOK_SECRET" | grep -q "^op read"; then
+        CANARY_WEBHOOK_SECRET=$(eval "$CANARY_WEBHOOK_SECRET" 2>/dev/null || echo "")
+    fi
+fi
+
 # Create cowrie.cfg
 cat > /tmp/cowrie.cfg << EOFCFG
 [honeypot]
@@ -1277,6 +1288,7 @@ services:
       - /var/lib/GeoIP:/geoip:ro
       - /opt/cowrie/var:/yara-cache:ro
       - /opt/cowrie/identity:/identity:ro
+      - /opt/cowrie/var:/canary-webhooks:rw
     environment:
       - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
@@ -1290,6 +1302,8 @@ services:
       - VIRUSTOTAL_API_KEY=$VT_API_KEY
       - SERVER_IP=$SERVER_IP
       - HONEYPOT_HOSTNAME=$HOSTNAME
+      - CANARY_WEBHOOK_DB_PATH=/canary-webhooks/canary-webhooks.db
+      - CANARY_WEBHOOK_SECRET=$CANARY_WEBHOOK_SECRET
     depends_on:
       - cowrie
     networks:

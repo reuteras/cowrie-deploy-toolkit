@@ -109,6 +109,33 @@ enabled = false
 # built from tailscale_name and tailscale_domain when Tailscale is enabled.
 # Example: https://<tailscale_name>.<tailscale_domain>
 
+[canary_webhook]
+# Canary Token Webhook Receiver
+# Receives webhooks from Canary Tokens (https://canarytokens.org) when attackers
+# access honeytokens (PDF, Excel, MySQL dump files) placed in the honeypot.
+# Provides immediate alerts when sensitive-looking files are exfiltrated.
+
+# Enable webhook receiver (default: false)
+enabled = false
+
+# Optional webhook secret for authentication
+# If set, incoming webhooks must include this secret in the X-Canary-Secret header
+# or in the payload as "secret" field.
+# Generate a random secret: openssl rand -hex 32
+webhook_secret = ""
+# Or fetch from 1Password: "op read op://Personal/Canary/webhook_secret"
+
+# Webhook URL configuration:
+# - Tailscale URL (recommended): https://<tailscale_name>.<tailscale_domain>/webhook/canary
+# - Public reverse proxy: Set up a VPS with nginx to forward to your Tailscale URL
+#
+# For public access, you'll need to configure a reverse proxy on a separate VPS:
+#   1. Set up nginx on a public VPS
+#   2. Configure nginx to proxy /webhook/canary to your Tailscale URL
+#   3. Use the public URL in your Canary Token configuration
+#
+# See CLAUDE.md for detailed reverse proxy setup instructions.
+
 [data_sharing]
 # AbuseIPDB - Report and query IP reputation data
 # Sign up at https://www.abuseipdb.com/ and get your API key from https://www.abuseipdb.com/account/api
