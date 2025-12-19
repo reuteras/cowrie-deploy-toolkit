@@ -29,7 +29,7 @@ maxmind_account_id = "YOUR_ACCOUNT_ID"
 maxmind_license_key = "YOUR_LICENSE_KEY"
 
 # TODO: implement use of this variable
-user_auth = IPUserDB
+user_auth = "IPUserDB"
 
 [reporting]
 # Number of commands to show per session before "... and X more" (default: 20)
