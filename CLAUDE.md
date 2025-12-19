@@ -484,9 +484,9 @@ Canary Tokens are special files that trigger webhooks when accessed, downloaded,
 - Timestamp
 - HTTP referer (if applicable)
 
-### Features
+### Features Canary Token Webhook Receiver
 
-- **🐦 Webhook Endpoint** - Receives webhooks from Canary Tokens (https://canarytokens.org)
+- **🐦 Webhook Endpoint** - Receives webhooks from Canary Tokens (<https://canarytokens.org>)
 - **🗄️ SQLite Storage** - Stores webhook alerts in local database
 - **📊 Dashboard Integration** - View alerts in web dashboard with GeoIP enrichment
 - **🌐 Public Access** - Nginx reverse proxy forwards webhooks from internet to honeypot via Tailscale
@@ -511,7 +511,7 @@ enabled = true
 
 2. **Configure nginx reverse proxy** - See README.md "Canary Token Webhook Receiver" section for detailed nginx configuration
 
-3. **Generate tokens** at https://canarytokens.org/nest/
+3. **Generate tokens** at <https://canarytokens.org/nest/>
    - Choose token type: PDF, Excel/Word, or MySQL Dump
    - Set webhook URL to: `https://<your-server>/webhook/canary` (your nginx proxy endpoint)
    - Place token files in `canary-tokens/` directory before generating filesystem
@@ -529,7 +529,7 @@ enabled = true
 curl https://<your-dashboard>/api/canary-webhooks
 ```
 
-### Database Schema
+### Database Schema Webhook Receiver
 
 Webhook alerts are stored in SQLite at `/opt/cowrie/var/canary-webhooks.db`:
 

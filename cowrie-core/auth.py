@@ -32,9 +32,7 @@ class IPUserDB:
     """
 
     def __init__(self) -> None:
-        self.userdb: dict[
-            tuple[Pattern[bytes] | bytes, Pattern[bytes] | bytes], bool
-        ] = OrderedDict()
+        self.userdb: dict[tuple[Pattern[bytes] | bytes, Pattern[bytes] | bytes], bool] = OrderedDict()
         self.load()
         self.db_path = CowrieConfig.get("honeypot", "userdb_path")
         self.min_len = int(CowrieConfig.get("honeypot", "minimum_password_len"))
@@ -125,12 +123,15 @@ class IPUserDB:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE ip_locks
             SET login_count = login_count + 1,
                 last_login_at = CURRENT_TIMESTAMP
             WHERE src_ip = ?
-        """, (src_ip,))
+        """,
+            (src_ip,),
+        )
 
         conn.commit()
         conn.close()
@@ -145,9 +146,12 @@ class IPUserDB:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT username, password FROM ip_locks WHERE src_ip = ?
-        """, (src_ip,))
+        """,
+            (src_ip,),
+        )
 
         result = cursor.fetchone()
         conn.close()
@@ -170,10 +174,13 @@ class IPUserDB:
         cursor = conn.cursor()
 
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO ip_locks (src_ip, username, password)
                 VALUES (?, ?, ?)
-            """, (src_ip, username, password))
+            """,
+                (src_ip, username, password),
+            )
 
             conn.commit()
             conn.close()
@@ -185,10 +192,7 @@ class IPUserDB:
             conn.close()
             return False
 
-    def checklogin(
-        self, thelogin: bytes, thepasswd: bytes, src_ip: str = "0.0.0.0"
-    ) -> bool:
-
+    def checklogin(self, thelogin: bytes, thepasswd: bytes, src_ip: str = "0.0.0.0") -> bool:
         if len(thepasswd) <= self.min_len:
             log.msg("Password to short")
             self.log_attempt(src_ip, thelogin, thepasswd, False, False)
@@ -270,11 +274,13 @@ class IPUserDB:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO auth_attempts (src_ip, username, password, success, is_locked, lock_matched)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (src_ip, username, password, success, is_locked, lock_matched))
+        """,
+            (src_ip, username, password, success, is_locked, lock_matched),
+        )
 
         conn.commit()
         conn.close()
-

@@ -251,7 +251,7 @@ Canary Tokens are special files that trigger webhooks when accessed, downloaded,
 
 2. **Configure nginx reverse proxy** (required - see below)
 
-3. **Generate Canary Tokens** at https://canarytokens.org/nest/
+3. **Generate Canary Tokens** at <https://canarytokens.org/nest/>
    - Choose token type: PDF, Excel/Word, or MySQL Dump
    - Set webhook URL to: `https://<your-server>/webhook/canary`
    - Place token files in `canary-tokens/` directory before generating filesystem

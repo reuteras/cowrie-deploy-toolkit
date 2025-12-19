@@ -103,7 +103,7 @@ server {
    ```
 
 2. Visit the live attack map:
-   ```
+   ```bash
    https://your-server.com/attack-map
    ```
 

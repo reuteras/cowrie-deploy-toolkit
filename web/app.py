@@ -262,19 +262,21 @@ class CanaryWebhookDB:
                         # Fallback: keep as string if parsing fails
                         pass
 
-                results.append({
-                    "id": row["id"],
-                    "received_at": received_at,
-                    "token_type": row["token_type"],
-                    "token_name": row["token_name"],
-                    "trigger_ip": row["trigger_ip"],
-                    "trigger_user_agent": row["trigger_user_agent"],
-                    "trigger_location": row["trigger_location"],
-                    "trigger_hostname": row["trigger_hostname"],
-                    "referer": row["referer"],
-                    "additional_data": json.loads(row["additional_data"]) if row["additional_data"] else {},
-                    "raw_payload": json.loads(row["raw_payload"]) if row["raw_payload"] else {},
-                })
+                results.append(
+                    {
+                        "id": row["id"],
+                        "received_at": received_at,
+                        "token_type": row["token_type"],
+                        "token_name": row["token_name"],
+                        "trigger_ip": row["trigger_ip"],
+                        "trigger_user_agent": row["trigger_user_agent"],
+                        "trigger_location": row["trigger_location"],
+                        "trigger_hostname": row["trigger_hostname"],
+                        "referer": row["referer"],
+                        "additional_data": json.loads(row["additional_data"]) if row["additional_data"] else {},
+                        "raw_payload": json.loads(row["raw_payload"]) if row["raw_payload"] else {},
+                    }
+                )
             return results
         except Exception as e:
             print(f"[!] Error fetching webhooks: {e}")
@@ -360,7 +362,9 @@ class SessionParser:
         self.log_path = log_path
         self.sessions = {}
         # Use provided GeoIP instance or create a new one (for backwards compatibility)
-        self.geoip = geoip_instance if geoip_instance else GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+        self.geoip = (
+            geoip_instance if geoip_instance else GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+        )
 
     def parse_all(self, hours: int = 168) -> dict:
         """Parse all sessions from logs within the specified hours."""
@@ -425,7 +429,9 @@ class SessionParser:
                                 session["password"] = entry.get("password")
 
                         elif event_id == "cowrie.command.input":
-                            session["commands"].append({"command": entry.get("input", ""), "timestamp": entry["timestamp"]})
+                            session["commands"].append(
+                                {"command": entry.get("input", ""), "timestamp": entry["timestamp"]}
+                            )
 
                         elif event_id == "cowrie.session.file_download":
                             session["downloads"].append(
@@ -440,12 +446,14 @@ class SessionParser:
                             tty_log = entry.get("ttylog")
                             if tty_log:
                                 # Append to list of all TTY logs for this session
-                                session["tty_logs"].append({
-                                    "ttylog": tty_log,
-                                    "timestamp": entry["timestamp"],
-                                    "duration": entry.get("duration", "0"),
-                                    "size": entry.get("size", 0)
-                                })
+                                session["tty_logs"].append(
+                                    {
+                                        "ttylog": tty_log,
+                                        "timestamp": entry["timestamp"],
+                                        "duration": entry.get("duration", "0"),
+                                        "size": entry.get("size", 0),
+                                    }
+                                )
                                 # Keep last one for backwards compatibility
                                 session["tty_log"] = tty_log
 
@@ -608,10 +616,7 @@ class SessionParser:
                     asn_key = f"AS{asn}"
                     asn_counter[asn_key] += 1
                     if asn_key not in asn_details:
-                        asn_details[asn_key] = {
-                            "asn_number": asn,
-                            "asn_org": asn_org or "Unknown Organization"
-                        }
+                        asn_details[asn_key] = {"asn_number": asn, "asn_org": asn_org or "Unknown Organization"}
 
             if session["username"] and session["password"]:
                 cred = f"{session['username']}:{session['password']}"
@@ -698,25 +703,29 @@ class SessionParser:
         top_asns = []
         for asn_key, count in asn_counter.most_common(10):
             details = asn_details.get(asn_key, {})
-            top_asns.append({
-                "asn": asn_key,
-                "asn_number": details.get("asn_number", 0),
-                "asn_org": details.get("asn_org", "Unknown"),
-                "count": count
-            })
+            top_asns.append(
+                {
+                    "asn": asn_key,
+                    "asn_number": details.get("asn_number", 0),
+                    "asn_org": details.get("asn_org", "Unknown"),
+                    "count": count,
+                }
+            )
 
         # Collect malicious downloads with VT scores
         download_path = CONFIG["download_path"]
         all_downloads = []
         for session in sessions.values():
             for download in session["downloads"]:
-                all_downloads.append({
-                    "session_id": session["id"],
-                    "src_ip": session["src_ip"],
-                    "shasum": download["shasum"],
-                    "url": download.get("url", ""),
-                    "timestamp": download["timestamp"],
-                })
+                all_downloads.append(
+                    {
+                        "session_id": session["id"],
+                        "src_ip": session["src_ip"],
+                        "shasum": download["shasum"],
+                        "url": download.get("url", ""),
+                        "timestamp": download["timestamp"],
+                    }
+                )
 
         # Deduplicate by shasum and get VT scores
         all_scanned_files = {}
@@ -780,11 +789,7 @@ class SessionParser:
         }
 
         # Sort by VT detections (most detected first, but include all files)
-        top_downloads = sorted(
-            all_scanned_files.values(),
-            key=lambda x: x.get("vt_detections", 0),
-            reverse=True
-        )[:10]
+        top_downloads = sorted(all_scanned_files.values(), key=lambda x: x.get("vt_detections", 0), reverse=True)[:10]
 
         return {
             "total_sessions": len(sessions),
@@ -1039,7 +1044,9 @@ class TTYLogParser:
                         merged_stdout.append([scaled_time, event[1].replace("\n", "\r\n")])
                         total_duration += scaled_time
 
-        print(f"[DEBUG] merge_tty_logs: Created asciicast with {len(merged_stdout)} events, duration={total_duration:.2f}s")
+        print(
+            f"[DEBUG] merge_tty_logs: Created asciicast with {len(merged_stdout)} events, duration={total_duration:.2f}s"
+        )
 
         return {
             "version": 1,
@@ -1052,11 +1059,12 @@ class TTYLogParser:
             "stdout": merged_stdout,
         }
 
+
 # Global GeoIP lookup instance (singleton to avoid reloading databases)
 # Initialize this FIRST so all other components can use it
 print("[+] Loading GeoIP databases (one-time initialization)...")
 global_geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
-print(f"[+] GeoIP databases loaded successfully")
+print("[+] GeoIP databases loaded successfully")
 
 # Initialize parsers (pass global GeoIP instance to avoid reloading)
 session_parser = SessionParser(CONFIG["log_path"], geoip_instance=global_geoip)
@@ -1115,7 +1123,9 @@ def index():
     # Check if user is accessing via proxy (hide manage links if proxied)
     is_proxied = "X-Forwarded-For" in request.headers
 
-    return render_template("index.html", stats=stats, hours=hours, config=CONFIG, recent_webhooks=filtered_webhooks, is_proxied=is_proxied)
+    return render_template(
+        "index.html", stats=stats, hours=hours, config=CONFIG, recent_webhooks=filtered_webhooks, is_proxied=is_proxied
+    )
 
 
 @app.route("/attack-map")
@@ -1192,7 +1202,9 @@ def sessions():
     if country_filter:
         sorted_sessions = [s for s in sorted_sessions if s.get("geo", {}).get("country") == country_filter]
     if credentials_filter:
-        sorted_sessions = [s for s in sorted_sessions if f"{s.get('username', '')}:{s.get('password', '')}" == credentials_filter]
+        sorted_sessions = [
+            s for s in sorted_sessions if f"{s.get('username', '')}:{s.get('password', '')}" == credentials_filter
+        ]
     if client_version_filter:
         sorted_sessions = [s for s in sorted_sessions if s.get("client_version") == client_version_filter]
     if command_filter:
@@ -1380,42 +1392,45 @@ def api_canary_tokens():
     mysql_token_path = os.path.join(honeyfs_path, "root/backup/mysql-backup.sql")
     if os.path.exists(mysql_token_path):
         stat_info = os.stat(mysql_token_path)
-        tokens.append({
-            "type": "MySQL Dump",
-            "icon": "🗄️",
-            "path": "/root/backup/mysql-backup.sql",
-            "size": stat_info.st_size,
-            "description": "Database backup file"
-        })
+        tokens.append(
+            {
+                "type": "MySQL Dump",
+                "icon": "🗄️",
+                "path": "/root/backup/mysql-backup.sql",
+                "size": stat_info.st_size,
+                "description": "Database backup file",
+            }
+        )
 
     # Check for Excel token
     excel_token_path = os.path.join(honeyfs_path, "root/Q1_Financial_Report.xlsx")
     if os.path.exists(excel_token_path):
         stat_info = os.stat(excel_token_path)
-        tokens.append({
-            "type": "Excel Document",
-            "icon": "📊",
-            "path": "/root/Q1_Financial_Report.xlsx",
-            "size": stat_info.st_size,
-            "description": "Financial report spreadsheet"
-        })
+        tokens.append(
+            {
+                "type": "Excel Document",
+                "icon": "📊",
+                "path": "/root/Q1_Financial_Report.xlsx",
+                "size": stat_info.st_size,
+                "description": "Financial report spreadsheet",
+            }
+        )
 
     # Check for PDF token
     pdf_token_path = os.path.join(honeyfs_path, "root/Network_Passwords.pdf")
     if os.path.exists(pdf_token_path):
         stat_info = os.stat(pdf_token_path)
-        tokens.append({
-            "type": "PDF Document",
-            "icon": "📄",
-            "path": "/root/Network_Passwords.pdf",
-            "size": stat_info.st_size,
-            "description": "Password documentation"
-        })
+        tokens.append(
+            {
+                "type": "PDF Document",
+                "icon": "📄",
+                "path": "/root/Network_Passwords.pdf",
+                "size": stat_info.st_size,
+                "description": "Password documentation",
+            }
+        )
 
-    return jsonify({
-        "tokens": tokens,
-        "total": len(tokens)
-    })
+    return jsonify({"tokens": tokens, "total": len(tokens)})
 
 
 @app.route("/system-info")
@@ -1511,7 +1526,7 @@ def system_info():
         os.path.join(identity_path, "userdb.txt"),
     ]
 
-    print(f"[DEBUG] Looking for userdb.txt in the following locations:")
+    print("[DEBUG] Looking for userdb.txt in the following locations:")
     for loc in userdb_locations:
         exists = os.path.exists(loc)
         print(f"[DEBUG]   {loc} - {'EXISTS' if exists else 'NOT FOUND'}")
@@ -1520,7 +1535,7 @@ def system_info():
         if os.path.exists(userdb_path):
             try:
                 with open(userdb_path) as f:
-                    userdb_lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                    userdb_lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
                     system_data["userdb_entries"] = userdb_lines
                     system_data["userdb_path"] = userdb_path
                     print(f"[+] Loaded userdb from {userdb_path}: {len(userdb_lines)} entries")
@@ -1529,7 +1544,7 @@ def system_info():
                 print(f"[!] Failed to read {userdb_path}: {e}")
 
     if not system_data["userdb_entries"]:
-        print(f"[!] No userdb.txt found in any location")
+        print("[!] No userdb.txt found in any location")
 
     # Get canary token information
     honeyfs_path = CONFIG.get("honeyfs_path", "/cowrie-data/share/cowrie/contents")
@@ -1546,12 +1561,14 @@ def system_info():
         full_path = os.path.join(honeyfs_path, path.lstrip("/"))
         if os.path.exists(full_path):
             stat_info = os.stat(full_path)
-            canary_tokens.append({
-                "path": path,
-                "icon": icon,
-                "description": description,
-                "size": stat_info.st_size,
-            })
+            canary_tokens.append(
+                {
+                    "path": path,
+                    "icon": icon,
+                    "description": description,
+                    "size": stat_info.st_size,
+                }
+            )
 
     return render_template("system_info.html", system=system_data, canary_tokens=canary_tokens)
 
@@ -1635,10 +1652,7 @@ def download_zip(shasum: str):
 
     try:
         # Create password-protected ZIP with AES encryption
-        with zipfile.ZipFile(
-            temp_zip.name,
-            "w"
-        ) as zipf:
+        with zipfile.ZipFile(temp_zip.name, "w") as zipf:
             # Add file with just the SHA256 as filename
             zipf.write(file_path, arcname=shasum)
             zipf.setpassword(b"infected")
@@ -1814,7 +1828,9 @@ def ip_list():
     # Apply filters
     filtered_ips = stats["ip_list"]
     if asn_filter:
-        filtered_ips = [ip for ip in filtered_ips if ip.get("geo", {}).get("asn") and f"AS{ip['geo']['asn']}" == asn_filter]
+        filtered_ips = [
+            ip for ip in filtered_ips if ip.get("geo", {}).get("asn") and f"AS{ip['geo']['asn']}" == asn_filter
+        ]
     if country_filter:
         filtered_ips = [ip for ip in filtered_ips if ip.get("geo", {}).get("country") == country_filter]
     if city_filter:
@@ -1827,7 +1843,7 @@ def ip_list():
         asn_filter=asn_filter,
         country_filter=country_filter,
         city_filter=city_filter,
-        config=CONFIG
+        config=CONFIG,
     )
 
 
@@ -1872,7 +1888,7 @@ def credentials():
         credentials=all_credentials,
         successful_credentials=successful_credentials,
         hours=hours,
-        config=CONFIG
+        config=CONFIG,
     )
 
 
@@ -1910,21 +1926,20 @@ def asns():
                 asn_key = f"AS{asn}"
                 asn_counter[asn_key] += 1
                 if asn_key not in asn_details:
-                    asn_details[asn_key] = {
-                        "asn_number": asn,
-                        "asn_org": asn_org or "Unknown Organization"
-                    }
+                    asn_details[asn_key] = {"asn_number": asn, "asn_org": asn_org or "Unknown Organization"}
 
     # Build full ASNs list with details
     all_asns = []
     for asn_key, count in asn_counter.most_common():
         details = asn_details.get(asn_key, {})
-        all_asns.append({
-            "asn": asn_key,
-            "asn_number": details.get("asn_number", 0),
-            "asn_org": details.get("asn_org", "Unknown"),
-            "count": count
-        })
+        all_asns.append(
+            {
+                "asn": asn_key,
+                "asn_number": details.get("asn_number", 0),
+                "asn_org": details.get("asn_org", "Unknown"),
+                "count": count,
+            }
+        )
 
     return render_template("asns.html", asns=all_asns, hours=hours, config=CONFIG)
 
@@ -1974,12 +1989,14 @@ def canary_webhook():
         # Store in database
         webhook_id = canary_webhook_db.add_webhook(webhook_data)
 
-        print(f"[+] Canary webhook received: {webhook_data['token_type']} - {webhook_data['token_name']} from {webhook_data['trigger_ip']}")
+        print(
+            f"[+] Canary webhook received: {webhook_data['token_type']} - {webhook_data['token_name']} from {webhook_data['trigger_ip']}"
+        )
 
         # Add to real-time event queue for SSE streaming
         try:
             # Enrich with GeoIP data for the map (use global instance)
-            geo = global_geoip.lookup(webhook_data['trigger_ip']) if webhook_data['trigger_ip'] else {}
+            geo = global_geoip.lookup(webhook_data["trigger_ip"]) if webhook_data["trigger_ip"] else {}
 
             print(f"[+] GeoIP lookup for {webhook_data['trigger_ip']}: {geo}")
 
@@ -1987,7 +2004,7 @@ def canary_webhook():
                 "id": webhook_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "geo": geo,
-                **webhook_data
+                **webhook_data,
             }
 
             # Non-blocking put with timeout
@@ -2000,12 +2017,13 @@ def canary_webhook():
                     try:
                         canary_event_queue.get_nowait()
                         canary_event_queue.put_nowait(canary_event)
-                        print(f"[+] Queue was full, replaced oldest event")
+                        print("[+] Queue was full, replaced oldest event")
                     except queue.Empty:
                         pass
         except Exception as e:
             print(f"[!] Error adding canary event to queue: {e}")
             import traceback
+
             traceback.print_exc()
 
         return jsonify({"success": True, "id": webhook_id}), 200
@@ -2026,10 +2044,7 @@ def api_canary_webhooks():
         if webhook.get("trigger_ip"):
             webhook["geo"] = global_geoip.lookup(webhook["trigger_ip"])
 
-    return jsonify({
-        "webhooks": webhooks,
-        "total": len(webhooks)
-    })
+    return jsonify({"webhooks": webhooks, "total": len(webhooks)})
 
 
 @app.route("/canary-alerts")
@@ -2046,16 +2061,19 @@ def canary_alerts():
     # Check if user is accessing via proxy (hide manage links if proxied)
     is_proxied = "X-Forwarded-For" in request.headers
 
-    return render_template("canary_alerts.html", webhooks=webhooks, limit=limit, config=CONFIG, now=datetime.now, is_proxied=is_proxied)
+    return render_template(
+        "canary_alerts.html", webhooks=webhooks, limit=limit, config=CONFIG, now=datetime.now, is_proxied=is_proxied
+    )
 
 
 @app.route("/api/attack-stream")
 def attack_stream():
     """Server-Sent Events endpoint for real-time attack feed."""
+
     def generate():
         """Generate SSE events from Cowrie log file and canary webhooks."""
-        import subprocess
         import select
+        import subprocess
 
         log_path = CONFIG["log_path"]
 
@@ -2071,7 +2089,7 @@ def attack_stream():
                 ["tail", "-F", "-n", "0", log_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True
+                universal_newlines=True,
             )
         except Exception as e:
             print(f"[!] Failed to start tail process: {e}")
@@ -2102,7 +2120,11 @@ def attack_stream():
                     print(f"[+] SSE: Got canary event from queue: {canary_event.get('token_name')}")
 
                     # Send canary token trigger event
-                    if canary_event.get("geo") and "latitude" in canary_event["geo"] and "longitude" in canary_event["geo"]:
+                    if (
+                        canary_event.get("geo")
+                        and "latitude" in canary_event["geo"]
+                        and "longitude" in canary_event["geo"]
+                    ):
                         event_data = {
                             "event": "canary_trigger",
                             "id": canary_event.get("id"),
@@ -2128,6 +2150,7 @@ def attack_stream():
                 except Exception as e:
                     print(f"[!] Error processing canary event from queue: {e}")
                     import traceback
+
                     traceback.print_exc()
 
                 # Check if there's data available from tail process (non-blocking)
@@ -2157,7 +2180,7 @@ def attack_stream():
                                 "start_time": entry.get("timestamp"),
                                 "login_success": False,
                                 "username": None,
-                                "password": None
+                                "password": None,
                             }
 
                             # Send connect event
@@ -2171,7 +2194,7 @@ def attack_stream():
                                 "country": geo.get("country", "-"),
                                 "timestamp": entry.get("timestamp"),
                                 "asn": geo.get("asn"),
-                                "asn_org": geo.get("asn_org")
+                                "asn_org": geo.get("asn_org"),
                             }
                             yield f"data: {json.dumps(event_data)}\n\n"
 
@@ -2189,7 +2212,7 @@ def attack_stream():
                             "ip": session["src_ip"],
                             "username": entry.get("username"),
                             "password": entry.get("password"),
-                            "timestamp": entry.get("timestamp")
+                            "timestamp": entry.get("timestamp"),
                         }
                         yield f"data: {json.dumps(event_data)}\n\n"
 
@@ -2208,7 +2231,7 @@ def attack_stream():
                                 "ip": session["src_ip"],
                                 "username": entry.get("username"),
                                 "password": entry.get("password"),
-                                "timestamp": entry.get("timestamp")
+                                "timestamp": entry.get("timestamp"),
                             }
                             yield f"data: {json.dumps(event_data)}\n\n"
 
@@ -2222,7 +2245,7 @@ def attack_stream():
                             "session_id": session_id,
                             "ip": session["src_ip"],
                             "command": entry.get("input", ""),
-                            "timestamp": entry.get("timestamp")
+                            "timestamp": entry.get("timestamp"),
                         }
                         yield f"data: {json.dumps(event_data)}\n\n"
 
@@ -2236,7 +2259,7 @@ def attack_stream():
                             "session_id": session_id,
                             "ip": session["src_ip"],
                             "login_success": session["login_success"],
-                            "timestamp": entry.get("timestamp")
+                            "timestamp": entry.get("timestamp"),
                         }
                         yield f"data: {json.dumps(event_data)}\n\n"
 
@@ -2250,7 +2273,7 @@ def attack_stream():
             proc.terminate()
             proc.wait()
 
-    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 
 @app.template_filter("format_duration")
