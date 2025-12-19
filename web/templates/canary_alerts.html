@@ -120,31 +120,16 @@
         <p>Configure your Canary Tokens at <a href="https://canarytokens.org" target="_blank">canarytokens.org</a> to send webhooks to:</p>
 
         <div style="margin: 15px 0; padding: 10px; background: #fff; border: 1px solid #dee2e6; border-radius: 4px;">
-            <strong>Tailscale URL (Recommended):</strong><br>
-            {% if config.base_url %}
-            <code>{{ config.base_url }}/webhook/canary</code>
-            {% else %}
-            <code>https://&lt;your-tailscale-hostname&gt;/webhook/canary</code>
-            {% endif %}
-        </div>
-
-        <div style="margin: 15px 0; padding: 10px; background: #fff; border: 1px solid #dee2e6; border-radius: 4px;">
-            <strong>Public URL (via reverse proxy):</strong><br>
-            <code>https://&lt;your-public-proxy&gt;/webhook/canary</code>
+            <strong>Public URL (via nginx reverse proxy):</strong><br>
+            <code>https://&lt;your-server&gt;/webhook/canary</code>
             <p style="font-size: 0.85em; color: #666; margin-top: 5px;">
-                See documentation for setting up a secure reverse proxy.
+                Set up nginx on your existing server to proxy webhooks to the honeypot via Tailscale. See CLAUDE.md for configuration.
             </p>
         </div>
 
-        {% if config.canary_webhook_secret %}
-        <div class="alert alert-success" style="margin-top: 15px; padding: 10px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; color: #155724;">
-            <strong>✓ Webhook secret is configured</strong> - Additional security is enabled.
+        <div class="alert alert-info" style="margin-top: 15px; padding: 10px; background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; color: #0c5460;">
+            <strong>Security:</strong> The webhook endpoint is protected by nginx rate limiting (10 requests/minute) and only accepts JSON payloads. Backend connection to honeypot is private via Tailscale.
         </div>
-        {% else %}
-        <div class="alert alert-warning" style="margin-top: 15px; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; color: #856404;">
-            <strong>⚠ No webhook secret configured</strong> - Consider adding one for additional security.
-        </div>
-        {% endif %}
     </div>
 </div>
 

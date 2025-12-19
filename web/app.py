@@ -44,7 +44,6 @@ CONFIG = {
     "server_ip": os.getenv("SERVER_IP", ""),
     "honeypot_hostname": os.getenv("HONEYPOT_HOSTNAME", ""),
     "canary_webhook_db_path": os.getenv("CANARY_WEBHOOK_DB_PATH", "/cowrie-data/var/canary-webhooks.db"),
-    "canary_webhook_secret": os.getenv("CANARY_WEBHOOK_SECRET", ""),
 }
 
 
@@ -1861,9 +1860,8 @@ def canary_webhook():
     """Webhook endpoint for Canary Token alerts.
 
     Security notes:
-    - This endpoint should only be accessible via Tailscale network
-    - Optional: Validate webhook secret if configured
-    - Rate limiting should be handled by reverse proxy if using public endpoint
+    - Accessible via public reverse proxy with rate limiting
+    - Reverse proxy forwards X-Real-IP header for attacker IP tracking
     """
     try:
         # Get JSON payload
@@ -1871,15 +1869,6 @@ def canary_webhook():
             return jsonify({"error": "Content-Type must be application/json"}), 400
 
         payload = request.get_json()
-
-        # Validate webhook secret if configured
-        webhook_secret = CONFIG.get("canary_webhook_secret", "")
-        if webhook_secret:
-            # Check for secret in header or payload
-            provided_secret = request.headers.get("X-Canary-Secret") or payload.get("secret")
-            if provided_secret != webhook_secret:
-                print("[!] Canary webhook: Invalid secret")
-                return jsonify({"error": "Unauthorized"}), 401
 
         # Extract Canary Token data
         # Canarytokens.org webhook format:

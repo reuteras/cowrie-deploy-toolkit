@@ -487,11 +487,10 @@ Canary Tokens are special files that trigger webhooks when accessed, downloaded,
 ### Features
 
 - **🐦 Webhook Endpoint** - Receives webhooks from Canary Tokens (https://canarytokens.org)
-- **🔒 Security** - Webhook endpoint accessible via Tailscale network only by default
 - **🗄️ SQLite Storage** - Stores webhook alerts in local database
 - **📊 Dashboard Integration** - View alerts in web dashboard with GeoIP enrichment
-- **🔐 Optional Authentication** - Webhook secret validation for additional security
-- **🌐 Reverse Proxy Support** - Optional public access via secure reverse proxy
+- **🌐 Public Access** - Nginx reverse proxy forwards webhooks from internet to honeypot via Tailscale
+- **🔒 Security** - Rate limiting and path restrictions at reverse proxy level
 
 ### Enabling the Webhook Receiver
 
@@ -500,32 +499,11 @@ Add to `master-config.toml`:
 ```toml
 [canary_webhook]
 enabled = true
-
-# Optional: Webhook secret for authentication
-webhook_secret = ""  # Generate with: openssl rand -hex 32
-# Or: "op read op://Personal/Canary/webhook_secret"
 ```
 
-### Webhook URL Configuration
+### Reverse Proxy Setup (Required)
 
-**Option 1: Tailscale URL (Recommended)**
-
-Configure your Canary Tokens to send webhooks to:
-```
-https://<tailscale_name>.<tailscale_domain>/webhook/canary
-```
-
-This keeps the webhook endpoint private and accessible only via your Tailscale VPN.
-
-**Option 2: Public URL via Reverse Proxy**
-
-For public access (if you can't use Tailscale or need webhooks from external services):
-
-1. Set up a small VPS with nginx
-2. Configure nginx to proxy to your Tailscale URL
-3. Use the public URL in your Canary Token configuration
-
-See reverse proxy setup instructions below.
+Since the honeypot runs on a private Tailscale network and Canary Tokens need to send webhooks from the internet, you must set up an nginx reverse proxy on an existing public server (like the one you're running this toolkit from).
 
 ### Setting Up Canary Tokens
 
@@ -537,73 +515,37 @@ See reverse proxy setup instructions below.
    - **MySQL Dump** - Triggers when accessed
 
 2. **Configure webhook URL**:
-   - Webhook URL: `https://<your-endpoint>/webhook/canary`
+   - Webhook URL: `https://<your-server>/webhook/canary` (your nginx proxy endpoint)
    - Memo/Name: Descriptive name (e.g., "Honeypot Network Passwords PDF")
    - Email notifications: Optional (you'll see alerts in dashboard)
 
-3. **Optional: Add webhook secret**:
-   - If you configured a `webhook_secret` in `master-config.toml`
-   - Add HTTP header: `X-Canary-Secret: <your-secret>`
-   - Or include in JSON payload: `{"secret": "<your-secret>"}`
-
-4. **Place tokens in honeypot**:
+3. **Place tokens in honeypot**:
    - Tokens are automatically embedded during filesystem generation
    - Place token files in `canary-tokens/` directory before running `generate_cowrie_fs_from_hetzner.sh`
    - See "Canary Tokens Integration" section above for file naming
 
-### Viewing Alerts
+**Nginx Configuration for Your Existing Server:**
 
-**Web Dashboard:**
-- Navigate to "🐦 Canary Alerts" in the dashboard
-- View recent alerts with IP, location, and token details
-- Click "Manage Token" to view full details at canarytokens.org
-
-**API Endpoint:**
-```bash
-curl https://<your-dashboard>/api/canary-webhooks
-```
-
-### Reverse Proxy Setup (Optional)
-
-If you need public access to the webhook endpoint, set up a reverse proxy on a separate VPS.
-
-**Requirements:**
-- A small VPS (e.g., $5/month DigitalOcean droplet)
-- Domain name or subdomain pointing to the VPS
-- SSL certificate (free with Let's Encrypt)
-
-**Example nginx configuration:**
+Add this to your existing nginx configuration (e.g., `/etc/nginx/sites-available/default` or a dedicated site config):
 
 ```nginx
-# /etc/nginx/sites-available/canary-proxy
-server {
-    listen 80;
-    server_name webhooks.yourdomain.com;
-
-    # Redirect to HTTPS
-    return 301 https://$server_name$request_uri;
-}
+# Rate limiting for webhook endpoint (outside server block)
+limit_req_zone $binary_remote_addr zone=canary_limit:10m rate=10r/m;
 
 server {
     listen 443 ssl http2;
-    server_name webhooks.yourdomain.com;
+    server_name your-server.com;  # Your existing domain
 
-    # SSL certificates (use certbot to generate)
-    ssl_certificate /etc/letsencrypt/live/webhooks.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/webhooks.yourdomain.com/privkey.pem;
+    # Your existing SSL certificates
+    ssl_certificate /etc/letsencrypt/live/your-server.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-server.com/privkey.pem;
 
-    # Security headers
-    add_header X-Frame-Options DENY;
-    add_header X-Content-Type-Options nosniff;
-    add_header X-XSS-Protection "1; mode=block";
-
-    # Rate limiting (prevent abuse)
-    limit_req_zone $binary_remote_addr zone=canary_limit:10m rate=10r/m;
-    limit_req zone=canary_limit burst=5 nodelay;
-
-    # Webhook endpoint only
+    # Canary webhook endpoint
     location /webhook/canary {
-        # Proxy to Tailscale URL (accessible because nginx is on Tailscale)
+        # Rate limiting
+        limit_req zone=canary_limit burst=5 nodelay;
+
+        # Proxy to honeypot via Tailscale
         proxy_pass https://<tailscale_name>.<tailscale_domain>/webhook/canary;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -616,57 +558,51 @@ server {
         proxy_read_timeout 10s;
     }
 
-    # Block all other paths
-    location / {
-        return 404;
-    }
+    # Your existing server configuration...
 }
 ```
 
 **Setup steps:**
 
-1. **Install nginx and certbot on VPS:**
-   ```bash
-   apt update && apt install -y nginx certbot python3-certbot-nginx
-   ```
-
-2. **Install Tailscale on the VPS:**
+1. **Install Tailscale on your existing server** (if not already installed):
    ```bash
    curl -fsSL https://tailscale.com/install.sh | sh
    tailscale up
    ```
 
-3. **Configure nginx:**
+2. **Add the webhook location block** to your existing nginx configuration
+
+3. **Test the configuration:**
    ```bash
-   # Copy configuration above to /etc/nginx/sites-available/canary-proxy
-   ln -s /etc/nginx/sites-available/canary-proxy /etc/nginx/sites-enabled/
    nginx -t
    systemctl reload nginx
    ```
 
-4. **Generate SSL certificate:**
+4. **Test the webhook:**
    ```bash
-   certbot --nginx -d webhooks.yourdomain.com
-   ```
-
-5. **Test the webhook:**
-   ```bash
-   curl -X POST https://webhooks.yourdomain.com/webhook/canary \
+   curl -X POST https://your-server.com/webhook/canary \
      -H "Content-Type: application/json" \
-     -H "X-Canary-Secret: your-secret-here" \
      -d '{"channel": "HTTP", "memo": "Test", "src_ip": "1.2.3.4"}'
    ```
 
-**Security considerations for reverse proxy:**
+**Security notes:**
 
-- ✅ **Always use HTTPS** with valid SSL certificate
-- ✅ **Enable rate limiting** to prevent abuse (10 requests/minute in example)
-- ✅ **Block all paths except `/webhook/canary`**
-- ✅ **Use webhook secret** for authentication
-- ✅ **Monitor nginx logs** for suspicious activity
-- ✅ **Keep VPS updated** with automatic security updates
-- ❌ **Never expose SSH** on default port 22 (use Tailscale or port 2222+)
-- ❌ **Don't proxy the entire dashboard** - only the webhook endpoint
+- ✅ **Rate limiting** - 10 requests/minute with burst of 5
+- ✅ **HTTPS required** - Uses your existing SSL certificates
+- ✅ **Minimal attack surface** - Only exposes `/webhook/canary` endpoint
+- ✅ **Tailscale connection** - Backend connection to honeypot is private
+
+### Viewing Alerts
+
+**Web Dashboard:**
+- Navigate to "🐦 Canary Alerts" in the dashboard
+- View recent alerts with IP, location, and token details
+- Click "Manage Token" to view full details at canarytokens.org
+
+**API Endpoint:**
+```bash
+curl https://<your-dashboard>/api/canary-webhooks
+```
 
 ### Database Schema
 
