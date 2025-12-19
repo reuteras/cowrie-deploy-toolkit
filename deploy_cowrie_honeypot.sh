@@ -620,12 +620,11 @@ KERNEL_BUILD=$(cat "$IDENTITY_DIR/proc-version" | sed -n 's/.*) \(#1 SMP.*\)$/\1
 # Read SSH cipher configuration if available and filter against Cowrie's supported algorithms
 # Based on: https://github.com/cowrie/cowrie/blob/main/src/cowrie/ssh/factory.py
 
-# Cowrie supported ciphers
-COWRIE_CIPHERS="aes128-ctr,aes192-ctr,aes256-ctr,aes256-cbc,aes192-cbc,aes128-cbc,3des-cbc,blowfish-cbc,cast128-cbc"
+# Cowrie supported ciphers (removed deprecated: 3des-cbc, blowfish-cbc, cast128-cbc)
+# These are no longer supported in modern cryptography library versions
+COWRIE_CIPHERS="aes128-ctr,aes192-ctr,aes256-ctr,aes256-cbc,aes192-cbc,aes128-cbc"
 # Cowrie supported MACs
 COWRIE_MACS="hmac-sha2-512,hmac-sha2-384,hmac-sha2-256,hmac-sha1,hmac-md5"
-# Cowrie supported key types (for reference, but we don't filter KEX here as it uses Twisted defaults)
-COWRIE_KEYS="ssh-rsa,ecdsa-sha2-nistp256,ssh-ed25519"
 
 SSH_CIPHERS=""
 SSH_MACS=""
