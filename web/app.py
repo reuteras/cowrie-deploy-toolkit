@@ -250,9 +250,19 @@ class CanaryWebhookDB:
 
             results = []
             for row in rows:
+                # Parse received_at timestamp string to datetime object
+                received_at = row["received_at"]
+                if received_at:
+                    try:
+                        # SQLite CURRENT_TIMESTAMP format: "YYYY-MM-DD HH:MM:SS"
+                        received_at = datetime.strptime(received_at, "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        # Fallback: keep as string if parsing fails
+                        pass
+
                 results.append({
                     "id": row["id"],
-                    "received_at": row["received_at"],
+                    "received_at": received_at,
                     "token_type": row["token_type"],
                     "token_name": row["token_name"],
                     "trigger_ip": row["trigger_ip"],
@@ -1065,13 +1075,35 @@ def index():
     # Get recent canary webhook alerts (last 5)
     recent_webhooks = canary_webhook_db.get_recent_webhooks(limit=5)
 
+    # Filter out test tokens older than 10 minutes
+    filtered_webhooks = []
+    now = datetime.now()
+    for webhook in recent_webhooks:
+        token_name = webhook.get("token_name", "")
+        received_at = webhook.get("received_at")
+
+        # Check if this is a test token
+        is_test = token_name.startswith("Test ") or token_name.startswith("Congrats!")
+
+        if is_test and received_at:
+            # Only show test tokens if received within last 10 minutes
+            age_minutes = (now - received_at).total_seconds() / 60
+            if age_minutes <= 10:
+                filtered_webhooks.append(webhook)
+        elif not is_test:
+            # Always show non-test tokens
+            filtered_webhooks.append(webhook)
+
     # Enrich webhooks with GeoIP data
     geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
-    for webhook in recent_webhooks:
+    for webhook in filtered_webhooks:
         if webhook.get("trigger_ip"):
             webhook["geo"] = geoip.lookup(webhook["trigger_ip"])
 
-    return render_template("index.html", stats=stats, hours=hours, config=CONFIG, recent_webhooks=recent_webhooks)
+    # Check if user is accessing via proxy (hide manage links if proxied)
+    is_proxied = "X-Forwarded-For" in request.headers
+
+    return render_template("index.html", stats=stats, hours=hours, config=CONFIG, recent_webhooks=filtered_webhooks, is_proxied=is_proxied)
 
 
 @app.route("/attack-map")
@@ -1939,7 +1971,10 @@ def canary_alerts():
         if webhook.get("trigger_ip"):
             webhook["geo"] = geoip.lookup(webhook["trigger_ip"])
 
-    return render_template("canary_alerts.html", webhooks=webhooks, limit=limit, config=CONFIG)
+    # Check if user is accessing via proxy (hide manage links if proxied)
+    is_proxied = "X-Forwarded-For" in request.headers
+
+    return render_template("canary_alerts.html", webhooks=webhooks, limit=limit, config=CONFIG, now=datetime.now, is_proxied=is_proxied)
 
 
 @app.route("/api/attack-stream")
