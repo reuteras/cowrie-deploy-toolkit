@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Canary Token Alerts - Cowrie Honeypot{% endblock %}
+
+{% block content %}
+<div class="canary-alerts-page">
+    <div class="page-header">
+        <h1>🐦 Canary Token Alerts</h1>
+        <p class="subtitle">Alerts triggered when attackers access honeytokens</p>
+    </div>
+
+    <div class="alert alert-info" style="margin: 20px 0; padding: 15px; background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; color: #0c5460;">
+        <strong>About Canary Tokens:</strong> These are special files placed in the honeypot that trigger webhooks when accessed, downloaded, or opened by attackers.
+        This provides immediate alerts when sensitive-looking files are exfiltrated from the honeypot.
+    </div>
+
+    <div class="webhooks-info" style="margin-bottom: 20px;">
+        <p><strong>Total alerts:</strong> {{ webhooks | length }}</p>
+    </div>
+
+    {% if webhooks %}
+    <table class="data-table canary-table sortable">
+        <thead>
+            <tr>
+                <th>Received</th>
+                <th>Token Type</th>
+                <th>Token Name</th>
+                <th>Trigger IP</th>
+                <th>Location</th>
+                <th>User Agent</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for webhook in webhooks %}
+            <tr class="webhook-row">
+                <td>
+                    <div>{{ webhook.received_at | format_timestamp }}</div>
+                    <div style="font-size: 0.75em; color: #666;">
+                        {% set received_dt = webhook.received_at %}
+                        {% if received_dt %}
+                        {{ (now().timestamp() - received_dt.timestamp()) | int // 3600 }}h ago
+                        {% endif %}
+                    </div>
+                </td>
+                <td>
+                    <span class="badge badge-warning" style="background: #ffc107; color: #000;">
+                        {{ webhook.token_type | upper }}
+                    </span>
+                </td>
+                <td>
+                    <strong>{{ webhook.token_name }}</strong>
+                    {% if webhook.additional_data and webhook.additional_data.hits %}
+                    <div style="font-size: 0.75em; color: #666;">
+                        Hits: {{ webhook.additional_data.hits }}
+                    </div>
+                    {% endif %}
+                </td>
+                <td>
+                    <code>{{ webhook.trigger_ip }}</code>
+                    {% if webhook.geo %}
+                    <div style="font-size: 0.75em; color: #666;">
+                        {% if webhook.geo.asn %}
+                        <span title="AS{{ webhook.geo.asn }} - {{ webhook.geo.asn_org }}">
+                            AS{{ webhook.geo.asn }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if webhook.geo %}
+                    <div>{{ webhook.geo.country }}</div>
+                    <div style="font-size: 0.75em; color: #666;">{{ webhook.geo.city }}</div>
+                    {% elif webhook.trigger_location %}
+                    {{ webhook.trigger_location }}
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if webhook.trigger_user_agent %}
+                    <div style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                         title="{{ webhook.trigger_user_agent }}">
+                        {{ webhook.trigger_user_agent[:60] }}{% if webhook.trigger_user_agent | length > 60 %}...{% endif %}
+                    </div>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if webhook.trigger_hostname %}
+                    <div><strong>Hostname:</strong> {{ webhook.trigger_hostname }}</div>
+                    {% endif %}
+                    {% if webhook.referer %}
+                    <div style="font-size: 0.75em;"><strong>Referer:</strong> {{ webhook.referer[:40] }}{% if webhook.referer | length > 40 %}...{% endif %}</div>
+                    {% endif %}
+                    {% if webhook.additional_data and webhook.additional_data.manage_url %}
+                    <div style="margin-top: 5px;">
+                        <a href="{{ webhook.additional_data.manage_url }}" target="_blank" class="btn btn-sm">Manage Token</a>
+                    </div>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="no-data" style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px; margin: 20px 0;">
+        <h3>No Canary Token alerts yet</h3>
+        <p style="color: #666;">Alerts will appear here when attackers access your honeytokens.</p>
+        <p style="margin-top: 15px;">
+            <a href="{{ url_for('system_info') }}" class="btn">View Deployed Tokens</a>
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="webhook-setup-info" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+        <h3>Webhook Configuration</h3>
+        <p>Configure your Canary Tokens at <a href="https://canarytokens.org" target="_blank">canarytokens.org</a> to send webhooks to:</p>
+
+        <div style="margin: 15px 0; padding: 10px; background: #fff; border: 1px solid #dee2e6; border-radius: 4px;">
+            <strong>Public URL (via nginx reverse proxy):</strong><br>
+            <code>https://&lt;your-server&gt;/webhook/canary</code>
+            <p style="font-size: 0.85em; color: #666; margin-top: 5px;">
+                Set up nginx on your existing server to proxy webhooks to the honeypot via Tailscale. See CLAUDE.md for configuration.
+            </p>
+        </div>
+
+        <div class="alert alert-info" style="margin-top: 15px; padding: 10px; background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; color: #0c5460;">
+            <strong>Security:</strong> The webhook endpoint is protected by nginx rate limiting (10 requests/minute) and only accepts JSON payloads. Backend connection to honeypot is private via Tailscale.
+        </div>
+    </div>
+</div>
+
+<style>
+.canary-alerts-page .page-header {
+    margin-bottom: 20px;
+}
+
+.canary-alerts-page .subtitle {
+    color: #666;
+    font-size: 0.95em;
+    margin-top: 5px;
+}
+
+.webhook-row {
+    transition: background-color 0.2s;
+}
+
+.webhook-row:hover {
+    background-color: #f8f9fa;
+}
+
+.canary-table td {
+    vertical-align: top;
+    padding: 12px 8px;
+}
+</style>
+{% endblock %}

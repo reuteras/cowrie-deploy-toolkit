@@ -470,6 +470,192 @@ open http://localhost:5000
 
 **Note**: If you enabled Tailscale with `block_public_ssh = true`, you must use your Tailscale IP address (shown in deployment output).
 
+## Canary Token Webhook Receiver
+
+The toolkit includes a webhook receiver for Canary Tokens, providing immediate alerts when attackers exfiltrate honeytokens (PDF, Excel, MySQL dump files) from the honeypot.
+
+### What are Canary Tokens?
+
+Canary Tokens are special files that trigger webhooks when accessed, downloaded, or opened. When an attacker exfiltrates these files from the honeypot and opens them on their machine, you receive an immediate alert with:
+
+- IP address of the opener
+- User agent and system information
+- Geographic location
+- Timestamp
+- HTTP referer (if applicable)
+
+### Features
+
+- **🐦 Webhook Endpoint** - Receives webhooks from Canary Tokens (https://canarytokens.org)
+- **🗄️ SQLite Storage** - Stores webhook alerts in local database
+- **📊 Dashboard Integration** - View alerts in web dashboard with GeoIP enrichment
+- **🌐 Public Access** - Nginx reverse proxy forwards webhooks from internet to honeypot via Tailscale
+- **🔒 Security** - Rate limiting and path restrictions at reverse proxy level
+
+### Enabling the Webhook Receiver
+
+Add to `master-config.toml`:
+
+```toml
+[canary_webhook]
+enabled = true
+```
+
+### Reverse Proxy Setup (Required)
+
+Since the honeypot runs on a private Tailscale network and Canary Tokens need to send webhooks from the internet, you must set up an nginx reverse proxy on an existing public server (like the one you're running this toolkit from).
+
+### Setting Up Canary Tokens
+
+1. **Generate tokens** at https://canarytokens.org/nest/
+
+   Recommended tokens for honeypots:
+   - **PDF Document** - Triggers when opened in PDF reader
+   - **Microsoft Excel/Word** - Triggers when opened in Office
+   - **MySQL Dump** - Triggers when accessed
+
+2. **Configure webhook URL**:
+   - Webhook URL: `https://<your-server>/webhook/canary` (your nginx proxy endpoint)
+   - Memo/Name: Descriptive name (e.g., "Honeypot Network Passwords PDF")
+   - Email notifications: Optional (you'll see alerts in dashboard)
+
+3. **Place tokens in honeypot**:
+   - Tokens are automatically embedded during filesystem generation
+   - Place token files in `canary-tokens/` directory before running `generate_cowrie_fs_from_hetzner.sh`
+   - See "Canary Tokens Integration" section above for file naming
+
+**Nginx Configuration for Your Existing Server:**
+
+Add this to your existing nginx configuration (e.g., `/etc/nginx/sites-available/default` or a dedicated site config):
+
+```nginx
+# Rate limiting for webhook endpoint (outside server block)
+limit_req_zone $binary_remote_addr zone=canary_limit:10m rate=10r/m;
+
+server {
+    listen 443 ssl http2;
+    server_name your-server.com;  # Your existing domain
+
+    # Your existing SSL certificates
+    ssl_certificate /etc/letsencrypt/live/your-server.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-server.com/privkey.pem;
+
+    # Canary webhook endpoint
+    location /webhook/canary {
+        # Rate limiting
+        limit_req zone=canary_limit burst=5 nodelay;
+
+        # Proxy to honeypot via Tailscale
+        proxy_pass https://<tailscale_name>.<tailscale_domain>/webhook/canary;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Timeouts
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 10s;
+    }
+
+    # Your existing server configuration...
+}
+```
+
+**Setup steps:**
+
+1. **Install Tailscale on your existing server** (if not already installed):
+   ```bash
+   curl -fsSL https://tailscale.com/install.sh | sh
+   tailscale up
+   ```
+
+2. **Add the webhook location block** to your existing nginx configuration
+
+3. **Test the configuration:**
+   ```bash
+   nginx -t
+   systemctl reload nginx
+   ```
+
+4. **Test the webhook:**
+   ```bash
+   curl -X POST https://your-server.com/webhook/canary \
+     -H "Content-Type: application/json" \
+     -d '{"channel": "HTTP", "memo": "Test", "src_ip": "1.2.3.4"}'
+   ```
+
+**Security notes:**
+
+- ✅ **Rate limiting** - 10 requests/minute with burst of 5
+- ✅ **HTTPS required** - Uses your existing SSL certificates
+- ✅ **Minimal attack surface** - Only exposes `/webhook/canary` endpoint
+- ✅ **Tailscale connection** - Backend connection to honeypot is private
+
+### Viewing Alerts
+
+**Web Dashboard:**
+- Navigate to "🐦 Canary Alerts" in the dashboard
+- View recent alerts with IP, location, and token details
+- Click "Manage Token" to view full details at canarytokens.org
+
+**API Endpoint:**
+```bash
+curl https://<your-dashboard>/api/canary-webhooks
+```
+
+### Database Schema
+
+Webhook alerts are stored in SQLite at `/opt/cowrie/var/canary-webhooks.db`:
+
+```sql
+CREATE TABLE canary_webhooks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    token_type TEXT,           -- e.g., "PDF", "HTTP", "EXCEL"
+    token_name TEXT,           -- User-defined name from memo field
+    trigger_ip TEXT,           -- IP that triggered the token
+    trigger_user_agent TEXT,   -- User agent string
+    trigger_location TEXT,     -- Geographic location
+    trigger_hostname TEXT,     -- Hostname if available
+    referer TEXT,              -- HTTP referer
+    additional_data TEXT,      -- JSON blob
+    raw_payload TEXT           -- Full webhook payload
+);
+```
+
+**Accessing the database:**
+
+```bash
+# SSH to honeypot
+ssh -p 2222 root@<SERVER_IP>
+
+# Query recent alerts
+sqlite3 /opt/cowrie/var/canary-webhooks.db \
+  "SELECT received_at, token_type, token_name, trigger_ip FROM canary_webhooks ORDER BY received_at DESC LIMIT 10;"
+```
+
+### Webhook Payload Format
+
+Canary Tokens send webhooks in this format:
+
+```json
+{
+  "channel": "PDF",
+  "memo": "Network Passwords PDF",
+  "src_ip": "203.0.113.42",
+  "useragent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)...",
+  "referer": "https://example.com/download",
+  "location": "San Francisco, CA, US",
+  "hostname": "attacker-machine",
+  "manage_url": "https://canarytokens.org/manage?token=...",
+  "time": "2025-12-19T12:34:56Z",
+  "hits": 1
+}
+```
+
+The webhook receiver stores all fields and enriches with GeoIP data for display in the dashboard.
+
 ## Daily Reporting System
 
 The toolkit includes an automated daily reporting system that sends comprehensive threat intelligence reports via email.

@@ -1277,6 +1277,7 @@ services:
       - /var/lib/GeoIP:/geoip:ro
       - /opt/cowrie/var:/yara-cache:ro
       - /opt/cowrie/identity:/identity:ro
+      - /opt/cowrie/var:/canary-webhooks:rw
     environment:
       - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
@@ -1290,6 +1291,7 @@ services:
       - VIRUSTOTAL_API_KEY=$VT_API_KEY
       - SERVER_IP=$SERVER_IP
       - HONEYPOT_HOSTNAME=$HOSTNAME
+      - CANARY_WEBHOOK_DB_PATH=/canary-webhooks/canary-webhooks.db
     depends_on:
       - cowrie
     networks:
