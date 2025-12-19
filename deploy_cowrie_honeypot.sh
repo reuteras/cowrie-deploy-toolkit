@@ -1272,6 +1272,7 @@ services:
       - "127.0.0.1:5000:5000"
     volumes:
       - cowrie-var:/cowrie-data:ro
+      - cowrie-etc:/cowrie-etc:ro
       - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
       - /var/lib/GeoIP:/geoip:ro
       - /opt/cowrie/var:/yara-cache:ro

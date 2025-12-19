@@ -32,15 +32,15 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">
             <div>
                 <div style="font-size: 0.9em; color: var(--text-secondary);">Total Attacks</div>
-                <div style="font-size: 1.5em; font-weight: 600; color: var(--accent-color);">{{ attacks | length }}</div>
+                <div style="font-size: 1.5em; font-weight: 600; color: var(--accent-color);" id="total-attacks">{{ attacks | length }}</div>
             </div>
             <div>
                 <div style="font-size: 0.9em; color: var(--text-secondary);">Unique IPs</div>
-                <div style="font-size: 1.5em; font-weight: 600; color: #17a2b8;" id="unique-ips">-</div>
+                <div style="font-size: 1.5em; font-weight: 600; color: #17a2b8;" id="unique-ips">0</div>
             </div>
             <div>
                 <div style="font-size: 0.9em; color: var(--text-secondary);">High-Volume Attackers</div>
-                <div style="font-size: 1.5em; font-weight: 600; color: #ffc107;" id="high-volume-count">-</div>
+                <div style="font-size: 1.5em; font-weight: 600; color: #ffc107;" id="high-volume-count">0</div>
             </div>
             <div>
                 <div style="font-size: 0.9em; color: var(--text-secondary);">Honeypot Location</div>
@@ -95,6 +95,7 @@
             <span style="margin-left: 15px;">🎯 Honeypot</span>
             <span style="margin-left: 15px; color: #dc3545;">━━━</span> <span>Attack Path</span>
             <span style="margin-left: 15px; color: #28a745;">━━━</span> <span>Successful Login</span>
+            <span style="margin-left: 15px; color: #ffc107;">━━━</span> <span>🐦 Canary Token Trigger</span>
         </div>
     </div>
 </div>
@@ -114,6 +115,37 @@
     stroke-dasharray: 5, 5;
     animation: dash 20s linear infinite;
     transition: all 0.3s ease;
+}
+
+.canary-path {
+    stroke-dasharray: 15, 5;
+    animation: dash 10s linear infinite, canary-pulse 2s ease-in-out infinite;
+    filter: drop-shadow(0 0 25px #ffc107) drop-shadow(0 0 40px #ffc107);
+}
+
+@keyframes canary-pulse {
+    0%, 100% {
+        opacity: 0.7;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+/* Canary attacker marker */
+.canary-attacker-marker {
+    animation: canary-marker-pulse 2s ease-in-out infinite;
+}
+
+@keyframes canary-marker-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.9;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 1;
+    }
 }
 
 @keyframes dash {
@@ -413,12 +445,37 @@ document.addEventListener('DOMContentLoaded', function() {
     let eventSource = null;
     let liveSessions = {};  // Track live sessions: session_id -> {arc, attack_data, closeTimer}
     let liveAttackCount = 0;
+    let liveUniqueIPs = new Set();  // Track unique IPs in live mode
+    let liveIPAttackCounts = {};  // Track attack counts per IP in live mode
 
     // Retry connection state
     let retryCount = 0;
     let maxRetries = 10;
     let retryTimer = null;
     let retryBaseDelay = 2000;  // Start with 2 seconds
+
+    // Update live mode statistics
+    function updateLiveStats() {
+        if (!liveMode) return;
+
+        // Update total attacks
+        document.getElementById('total-attacks').textContent = liveAttackCount;
+        document.getElementById('progress-text').textContent = `${liveAttackCount} attacks`;
+
+        // Update unique IPs
+        document.getElementById('unique-ips').textContent = liveUniqueIPs.size;
+
+        // Calculate high-volume attackers (10+ attacks)
+        const highVolumeCount = Object.values(liveIPAttackCounts).filter(count => count >= 10).length;
+        document.getElementById('high-volume-count').textContent = highVolumeCount;
+    }
+
+    // Track IP for live stats
+    function trackLiveIP(ip) {
+        liveUniqueIPs.add(ip);
+        liveIPAttackCounts[ip] = (liveIPAttackCounts[ip] || 0) + 1;
+        updateLiveStats();
+    }
 
     // Calculate points along a curved arc using quadratic bezier curve
     function calculateArcPoints(start, end, numPoints = 50) {
@@ -781,7 +838,15 @@ document.addEventListener('DOMContentLoaded', function() {
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
 
-                if (data.event === 'connect') {
+                if (data.event === 'connected') {
+                    // Connection established successfully
+                    console.log('SSE stream connected:', data.message);
+                } else if (data.event === 'error') {
+                    // Server-side error
+                    console.error('SSE stream error:', data.message);
+                    document.getElementById('mode-indicator').innerHTML =
+                        '<span style="color: #dc3545;">⚠️ Stream Error: ' + data.message + '</span>';
+                } else if (data.event === 'connect') {
                     handleLiveConnect(data);
                 } else if (data.event === 'login_success') {
                     handleLiveLoginSuccess(data);
@@ -791,6 +856,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     handleLiveCommand(data);
                 } else if (data.event === 'session_closed') {
                     handleLiveSessionClosed(data);
+                } else if (data.event === 'canary_trigger') {
+                    handleCanaryTrigger(data);
                 }
             };
 
@@ -868,6 +935,12 @@ document.addEventListener('DOMContentLoaded', function() {
         // Reset retry counter when entering live mode
         retryCount = 0;
 
+        // Reset live stats
+        liveAttackCount = 0;
+        liveUniqueIPs.clear();
+        liveIPAttackCounts = {};
+        updateLiveStats();
+
         // Update UI
         document.getElementById('mode-toggle-btn').textContent = '📼 Replay Mode';
         document.getElementById('mode-toggle-btn').className = 'btn';
@@ -904,6 +977,181 @@ document.addEventListener('DOMContentLoaded', function() {
         connectEventSource();
     }
 
+    function handleCanaryTrigger(data) {
+        console.log('[Canary] Received canary_trigger event:', data);
+        liveAttackCount++;
+        trackLiveIP(data.ip);
+
+        // Create canary token event with distinctive color (golden/amber)
+        const canaryEvent = {
+            lat: data.lat,
+            lon: data.lon,
+            ip: data.ip,
+            city: data.city,
+            country: data.country,
+            timestamp: data.timestamp,
+            token_type: data.token_type,
+            token_name: data.token_name,
+            trigger_user_agent: data.trigger_user_agent,
+            trigger_location: data.trigger_location,
+            asn: data.asn,
+            asn_org: data.asn_org,
+            attackCount: 1,
+            isHighVolume: true,  // Canary tokens are always high priority
+            lineWidth: 8,  // Thicker line for canary tokens
+            glowIntensity: 25,  // High glow
+            color: '#ffc107'  // Golden/amber color for canary tokens
+        };
+
+        // Calculate curved path
+        const arcPoints = calculateArcPoints(
+            [data.lat, data.lon],
+            [honeypotLocation.lat, honeypotLocation.lon]
+        );
+
+        // Create distinctive arc for canary token
+        const arc = L.polyline(arcPoints, {
+            color: '#ffc107',  // Golden/amber color
+            weight: 8,
+            opacity: 0.9,
+            dashArray: '15, 5',  // Distinctive dash pattern
+            className: 'attack-path canary-path'
+        });
+
+        // Enhanced glow for canary tokens
+        if (arc._path) {
+            arc._path.style.filter = 'drop-shadow(0 0 25px #ffc107) drop-shadow(0 0 40px #ffc107)';
+        }
+
+        arc.addTo(map);
+        arcLayers.push(arc);
+
+        // Bind popup with canary token info
+        arc.bindPopup(`
+            <strong>🐦 CANARY TOKEN TRIGGERED!</strong><br>
+            <span style="color: #ffc107; font-weight: bold;">${data.token_name}</span><br>
+            Type: ${data.token_type}<br>
+            <strong>${data.city}, ${data.country}</strong><br>
+            IP: <a href="/canary-alerts" target="_blank">${data.ip}</a><br>
+            ${data.asn ? `ASN: AS${data.asn} ${data.asn_org || ''}` : ''}
+        `);
+
+        // Add yellow marker at attacker's location
+        const attackerIcon = L.divIcon({
+            className: 'canary-attacker-marker',
+            html: '<div style="font-size: 24px; filter: drop-shadow(0 0 10px #ffc107);">🐦</div>',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+
+        const attackerMarker = L.marker([data.lat, data.lon], {
+            icon: attackerIcon,
+            zIndexOffset: 500
+        }).addTo(map);
+
+        attackerMarker.bindPopup(`
+            <strong>🐦 Canary Token Source</strong><br>
+            ${data.city}, ${data.country}<br>
+            IP: <a href="/canary-alerts" target="_blank">${data.ip}</a>
+        `);
+
+        arcLayers.push(attackerMarker);
+
+        // Add dramatic explosion for canary token
+        addImpactExplosion(canaryEvent);
+
+        // Canary tokens stay visible longer (5 minutes)
+        const displayDuration = 300000;  // 5 minutes
+
+        // Store in liveSessions with canary flag
+        const sessionId = `canary-${data.id}`;
+        liveSessions[sessionId] = {
+            arc: arc,
+            marker: attackerMarker,  // Store the attacker marker
+            attack_data: canaryEvent,
+            createdAt: Date.now(),
+            closeTimer: null,
+            minDisplayTimer: null,
+            minDisplayDuration: displayDuration,
+            canRemoveArc: false,
+            isCanary: true,  // Flag to identify canary tokens
+            feedElement: null
+        };
+
+        // Set minimum display timer
+        liveSessions[sessionId].minDisplayTimer = setTimeout(() => {
+            if (liveSessions[sessionId]) {
+                liveSessions[sessionId].canRemoveArc = true;
+                removeSessionArc(sessionId);
+                // Also remove the marker
+                if (liveSessions[sessionId].marker) {
+                    map.removeLayer(liveSessions[sessionId].marker);
+                    liveSessions[sessionId].marker = null;
+                }
+            }
+        }, displayDuration);
+
+        // Create feed entry for canary token
+        const feed = document.getElementById('attack-feed');
+
+        // Clear "waiting" message on first event
+        if (Object.keys(liveSessions).length === 1) {
+            feed.innerHTML = '';
+        }
+
+        const date = new Date(data.timestamp);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        const timezoneName = date.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop();
+        const timeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} ${timezoneName}`;
+
+        const asnInfo = data.asn ? `AS${data.asn}` : '';
+        const asnOrg = data.asn_org || '';
+
+        let locationLine = `${data.city}, ${data.country}`;
+        if (asnInfo) {
+            locationLine += ` - ${asnInfo}`;
+            if (asnOrg) {
+                locationLine += ` ${asnOrg.substring(0, 20)}`;
+            }
+        }
+
+        const entry = document.createElement('div');
+        entry.style.cssText = `
+            padding: 10px;
+            margin-bottom: 8px;
+            background: var(--bg-primary);
+            border-left: 4px solid #ffc107;
+            border-radius: 4px;
+            font-size: 0.85em;
+            animation: slideIn 0.3s ease-out;
+            box-shadow: 0 0 10px rgba(255, 193, 7, 0.3);
+        `;
+
+        entry.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <strong style="color: #ffc107;">🐦 <a href="/canary-alerts" target="_blank" class="ip-link" style="color: #ffc107; text-decoration: none; transition: opacity 0.2s;">${data.ip}</a></strong>
+                <span style="background: #ffc107; color: #000; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-weight: 600;">CANARY TOKEN</span>
+            </div>
+            <div style="color: var(--text-secondary); font-size: 0.9em;">
+                <div style="color: #ffc107; font-weight: bold;">${data.token_name} (${data.token_type})</div>
+                <div>${locationLine}</div>
+                <div style="margin-top: 3px; color: var(--text-tertiary);">${timeStr}</div>
+            </div>
+        `;
+
+        // Insert at top of feed
+        feed.insertBefore(entry, feed.firstChild);
+        liveSessions[sessionId].feedElement = entry;
+
+        // Update stats
+        document.getElementById('progress-text').textContent = `${liveAttackCount} attacks`;
+    }
+
     function stopLiveMode() {
         liveMode = false;
 
@@ -932,6 +1180,7 @@ document.addEventListener('DOMContentLoaded', function() {
         for (const sessionId in liveSessions) {
             const session = liveSessions[sessionId];
             if (session.arc) map.removeLayer(session.arc);
+            if (session.marker) map.removeLayer(session.marker);  // Remove canary marker
             if (session.closeTimer) clearTimeout(session.closeTimer);
             if (session.minDisplayTimer) clearTimeout(session.minDisplayTimer);
             if (session.autoCollapseTimer) clearTimeout(session.autoCollapseTimer);
@@ -952,6 +1201,11 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('progress-text').textContent = '0%';
         document.getElementById('attack-feed').innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">Waiting for attacks...</div>';
 
+        // Restore replay mode stats
+        document.getElementById('total-attacks').textContent = attacks.length;
+        document.getElementById('unique-ips').textContent = uniqueIPCount;
+        document.getElementById('high-volume-count').textContent = highVolumeAttackers;
+
         // Show Speed and Animation Progress in replay mode
         document.getElementById('speed-container').style.display = 'block';
         document.getElementById('progress-container').style.display = 'block';
@@ -965,6 +1219,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function handleLiveConnect(data) {
         liveAttackCount++;
+        trackLiveIP(data.ip);
 
         const attack = {
             lat: data.lat,
@@ -1384,6 +1639,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 if (session.arc) {
                     map.removeLayer(session.arc);
+                }
+                if (session.marker) {
+                    map.removeLayer(session.marker);  // Remove canary marker
                 }
                 if (session.closeTimer) clearTimeout(session.closeTimer);
                 if (session.minDisplayTimer) clearTimeout(session.minDisplayTimer);

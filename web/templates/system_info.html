@@ -120,6 +120,45 @@
         {% endif %}
     </div>
 
+    <!-- User Database (userdb.txt) -->
+    {% if system.userdb_entries %}
+    <div class="dashboard-card">
+        <h2>👥 Authentication Database (userdb.txt)</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 15px;">
+            Configured username/password combinations accepted by the honeypot.
+            {% if system.userdb_path %}
+            <br><code style="font-size: 0.85em;">{{ system.userdb_path }}</code>
+            {% endif %}
+        </p>
+        <div style="background: var(--bg-secondary); border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto;">
+            <table class="data-table" style="font-size: 0.9em;">
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th>Username</th>
+                        <th>Password</th>
+                        <th>UID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in system.userdb_entries %}
+                    {% set parts = entry.split(':') %}
+                    <tr>
+                        <td style="color: var(--text-secondary);">{{ loop.index }}</td>
+                        <td><code style="color: #4CAF50; font-weight: 600;">{{ parts[0] if parts|length > 0 else '' }}</code></td>
+                        <td><code style="color: #FF9800;">{{ parts[2] if parts|length > 2 else '' }}</code></td>
+                        <td><code style="color: var(--text-secondary);">{{ parts[1] if parts|length > 1 else '' }}</code></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p style="margin-top: 10px; font-size: 0.85em; color: var(--text-secondary);">
+            Total entries: <strong>{{ system.userdb_entries|length }}</strong>
+        </p>
+    </div>
+    {% endif %}
+
     <!-- Canary Tokens -->
     {% if canary_tokens %}
     <div class="dashboard-card">
@@ -155,6 +194,7 @@
             <p><strong>✅ SSH Configuration Matching:</strong> Ciphers, MACs, and key exchange algorithms match the source Debian server</p>
             <p><strong>✅ Authentic System Identity:</strong> Kernel version, SSH banner, and hostname captured from real server</p>
             <p><strong>✅ Realistic Filesystem:</strong> Generated from actual Debian installation with services running</p>
+            <p><strong>✅ IP-Locked Authentication:</strong> Each IP locked to first successful credentials for realistic behavior</p>
             <p><strong>✅ Canary Tokens:</strong> Honeytokens strategically placed for early detection of data exfiltration</p>
             <p><strong>✅ Process List:</strong> Captured with nginx, MySQL, and system services running</p>
         </div>

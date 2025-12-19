@@ -7,9 +7,11 @@ Provides a web interface for viewing and replaying SSH sessions captured by Cowr
 
 import json
 import os
+import queue
 import sqlite3
 import struct
 import tempfile
+import threading
 import time
 import zipfile
 from collections import Counter, defaultdict
@@ -354,10 +356,11 @@ class VirusTotalScanner:
 class SessionParser:
     """Parse Cowrie JSON logs and extract session data."""
 
-    def __init__(self, log_path: str):
+    def __init__(self, log_path: str, geoip_instance=None):
         self.log_path = log_path
         self.sessions = {}
-        self.geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+        # Use provided GeoIP instance or create a new one (for backwards compatibility)
+        self.geoip = geoip_instance if geoip_instance else GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
 
     def parse_all(self, hours: int = 168) -> dict:
         """Parse all sessions from logs within the specified hours."""
@@ -1049,8 +1052,14 @@ class TTYLogParser:
             "stdout": merged_stdout,
         }
 
-# Initialize parsers
-session_parser = SessionParser(CONFIG["log_path"])
+# Global GeoIP lookup instance (singleton to avoid reloading databases)
+# Initialize this FIRST so all other components can use it
+print("[+] Loading GeoIP databases (one-time initialization)...")
+global_geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+print(f"[+] GeoIP databases loaded successfully")
+
+# Initialize parsers (pass global GeoIP instance to avoid reloading)
+session_parser = SessionParser(CONFIG["log_path"], geoip_instance=global_geoip)
 tty_parser = TTYLogParser(CONFIG["tty_path"])
 
 # Initialize VirusTotal scanner if API key is provided
@@ -1064,6 +1073,10 @@ yara_cache = YARACache(CONFIG["yara_cache_db_path"])
 
 # Initialize Canary Webhook database
 canary_webhook_db = CanaryWebhookDB(CONFIG["canary_webhook_db_path"])
+
+# Global queue for real-time canary token events (for SSE streaming)
+canary_event_queue = queue.Queue(maxsize=1000)
+canary_queue_lock = threading.Lock()
 
 
 @app.route("/")
@@ -1094,11 +1107,10 @@ def index():
             # Always show non-test tokens
             filtered_webhooks.append(webhook)
 
-    # Enrich webhooks with GeoIP data
-    geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+    # Enrich webhooks with GeoIP data (use global instance)
     for webhook in filtered_webhooks:
         if webhook.get("trigger_ip"):
-            webhook["geo"] = geoip.lookup(webhook["trigger_ip"])
+            webhook["geo"] = global_geoip.lookup(webhook["trigger_ip"])
 
     # Check if user is accessing via proxy (hide manage links if proxied)
     is_proxied = "X-Forwarded-For" in request.headers
@@ -1112,11 +1124,10 @@ def attack_map_page():
     hours = request.args.get("hours", 24, type=int)
     sessions = session_parser.parse_all(hours=hours)
 
-    # Get honeypot location from server IP
-    geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+    # Get honeypot location from server IP (use global GeoIP instance)
     honeypot_location = None
     if CONFIG["server_ip"]:
-        honeypot_geo = geoip.lookup(CONFIG["server_ip"])
+        honeypot_geo = global_geoip.lookup(CONFIG["server_ip"])
         if "latitude" in honeypot_geo and "longitude" in honeypot_geo:
             honeypot_location = {
                 "lat": honeypot_geo["latitude"],
@@ -1428,6 +1439,7 @@ def system_info():
         "ssh_keys": [],
         "kernel_build": None,
         "debian_version": None,
+        "userdb_entries": [],  # User database entries
     }
 
     # Read metadata
@@ -1488,6 +1500,36 @@ def system_info():
     system_data["ssh_macs"] = read_identity_lines("ssh-mac.txt")
     system_data["ssh_kex"] = read_identity_lines("ssh-kex.txt")
     system_data["ssh_keys"] = read_identity_lines("ssh-key.txt")
+
+    # Read userdb.txt (authentication database)
+    # Try multiple possible locations for userdb.txt
+    userdb_locations = [
+        "/cowrie-etc/userdb.txt",  # Mounted from cowrie-etc volume
+        "/cowrie-data/etc/userdb.txt",
+        "/opt/cowrie/etc/userdb.txt",
+        "/etc/cowrie/userdb.txt",
+        os.path.join(identity_path, "userdb.txt"),
+    ]
+
+    print(f"[DEBUG] Looking for userdb.txt in the following locations:")
+    for loc in userdb_locations:
+        exists = os.path.exists(loc)
+        print(f"[DEBUG]   {loc} - {'EXISTS' if exists else 'NOT FOUND'}")
+
+    for userdb_path in userdb_locations:
+        if os.path.exists(userdb_path):
+            try:
+                with open(userdb_path) as f:
+                    userdb_lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                    system_data["userdb_entries"] = userdb_lines
+                    system_data["userdb_path"] = userdb_path
+                    print(f"[+] Loaded userdb from {userdb_path}: {len(userdb_lines)} entries")
+                    break
+            except Exception as e:
+                print(f"[!] Failed to read {userdb_path}: {e}")
+
+    if not system_data["userdb_entries"]:
+        print(f"[!] No userdb.txt found in any location")
 
     # Get canary token information
     honeyfs_path = CONFIG.get("honeyfs_path", "/cowrie-data/share/cowrie/contents")
@@ -1934,6 +1976,38 @@ def canary_webhook():
 
         print(f"[+] Canary webhook received: {webhook_data['token_type']} - {webhook_data['token_name']} from {webhook_data['trigger_ip']}")
 
+        # Add to real-time event queue for SSE streaming
+        try:
+            # Enrich with GeoIP data for the map (use global instance)
+            geo = global_geoip.lookup(webhook_data['trigger_ip']) if webhook_data['trigger_ip'] else {}
+
+            print(f"[+] GeoIP lookup for {webhook_data['trigger_ip']}: {geo}")
+
+            canary_event = {
+                "id": webhook_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "geo": geo,
+                **webhook_data
+            }
+
+            # Non-blocking put with timeout
+            with canary_queue_lock:
+                try:
+                    canary_event_queue.put_nowait(canary_event)
+                    print(f"[+] Canary event added to queue. Queue size: {canary_event_queue.qsize()}")
+                except queue.Full:
+                    # Queue full, remove oldest and add new
+                    try:
+                        canary_event_queue.get_nowait()
+                        canary_event_queue.put_nowait(canary_event)
+                        print(f"[+] Queue was full, replaced oldest event")
+                    except queue.Empty:
+                        pass
+        except Exception as e:
+            print(f"[!] Error adding canary event to queue: {e}")
+            import traceback
+            traceback.print_exc()
+
         return jsonify({"success": True, "id": webhook_id}), 200
 
     except Exception as e:
@@ -1947,11 +2021,10 @@ def api_canary_webhooks():
     limit = request.args.get("limit", 100, type=int)
     webhooks = canary_webhook_db.get_recent_webhooks(limit=limit)
 
-    # Enrich with GeoIP data if available
-    geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+    # Enrich with GeoIP data if available (use global instance)
     for webhook in webhooks:
         if webhook.get("trigger_ip"):
-            webhook["geo"] = geoip.lookup(webhook["trigger_ip"])
+            webhook["geo"] = global_geoip.lookup(webhook["trigger_ip"])
 
     return jsonify({
         "webhooks": webhooks,
@@ -1965,11 +2038,10 @@ def canary_alerts():
     limit = request.args.get("limit", 100, type=int)
     webhooks = canary_webhook_db.get_recent_webhooks(limit=limit)
 
-    # Enrich with GeoIP data
-    geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+    # Enrich with GeoIP data (use global instance)
     for webhook in webhooks:
         if webhook.get("trigger_ip"):
-            webhook["geo"] = geoip.lookup(webhook["trigger_ip"])
+            webhook["geo"] = global_geoip.lookup(webhook["trigger_ip"])
 
     # Check if user is accessing via proxy (hide manage links if proxied)
     is_proxied = "X-Forwarded-For" in request.headers
@@ -1981,26 +2053,91 @@ def canary_alerts():
 def attack_stream():
     """Server-Sent Events endpoint for real-time attack feed."""
     def generate():
-        """Generate SSE events from Cowrie log file."""
+        """Generate SSE events from Cowrie log file and canary webhooks."""
         import subprocess
+        import select
 
         log_path = CONFIG["log_path"]
 
-        # Use tail -F to follow the log file
-        proc = subprocess.Popen(
-            ["tail", "-F", "-n", "0", log_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True
-        )
+        # Check if log file exists
+        if not os.path.exists(log_path):
+            print(f"[!] Log file not found: {log_path}")
+            yield f"data: {json.dumps({'event': 'error', 'message': 'Log file not found'})}\n\n"
+            return
 
-        geoip = GeoIPLookup(CONFIG["geoip_db_path"], CONFIG.get("geoip_asn_path"))
+        # Use tail -F to follow the log file
+        try:
+            proc = subprocess.Popen(
+                ["tail", "-F", "-n", "0", log_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+        except Exception as e:
+            print(f"[!] Failed to start tail process: {e}")
+            yield f"data: {json.dumps({'event': 'error', 'message': f'Failed to start log tail: {str(e)}'})}\n\n"
+            return
+
+        # Use global GeoIP instance (already loaded at startup)
         active_sessions = {}  # Track active sessions
+        last_keepalive = time.time()
+        keepalive_interval = 30  # Send keepalive every 30 seconds
+
+        print(f"[+] SSE stream started, monitoring {log_path}")
+
+        # Send initial connected message to establish SSE connection
+        yield f"data: {json.dumps({'event': 'connected', 'message': 'Live stream connected'})}\n\n"
 
         try:
             while True:
-                line = proc.stdout.readline()
+                # Send keepalive comment to prevent timeout
+                if time.time() - last_keepalive > keepalive_interval:
+                    yield ": keepalive\n\n"
+                    last_keepalive = time.time()
+                # Check for canary token events first (non-blocking)
+                try:
+                    with canary_queue_lock:
+                        canary_event = canary_event_queue.get_nowait()
+
+                    print(f"[+] SSE: Got canary event from queue: {canary_event.get('token_name')}")
+
+                    # Send canary token trigger event
+                    if canary_event.get("geo") and "latitude" in canary_event["geo"] and "longitude" in canary_event["geo"]:
+                        event_data = {
+                            "event": "canary_trigger",
+                            "id": canary_event.get("id"),
+                            "ip": canary_event.get("trigger_ip"),
+                            "lat": canary_event["geo"].get("latitude"),
+                            "lon": canary_event["geo"].get("longitude"),
+                            "city": canary_event["geo"].get("city", "-"),
+                            "country": canary_event["geo"].get("country", "-"),
+                            "asn": canary_event["geo"].get("asn"),
+                            "asn_org": canary_event["geo"].get("asn_org"),
+                            "timestamp": canary_event.get("timestamp"),
+                            "token_type": canary_event.get("token_type"),
+                            "token_name": canary_event.get("token_name"),
+                            "trigger_user_agent": canary_event.get("trigger_user_agent"),
+                            "trigger_location": canary_event.get("trigger_location"),
+                        }
+                        print(f"[+] SSE: Sending canary_trigger event: {event_data}")
+                        yield f"data: {json.dumps(event_data)}\n\n"
+                    else:
+                        print(f"[!] SSE: Canary event has no geo coordinates: {canary_event.get('geo')}")
+                except queue.Empty:
+                    pass  # No canary events, continue
+                except Exception as e:
+                    print(f"[!] Error processing canary event from queue: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+                # Check if there's data available from tail process (non-blocking)
+                line = None
+                ready, _, _ = select.select([proc.stdout], [], [], 0.1)
+                if ready:
+                    line = proc.stdout.readline()
+
                 if not line:
+                    # No data available, sleep briefly to prevent tight loop
                     time.sleep(0.1)
                     continue
 
@@ -2013,7 +2150,7 @@ def attack_stream():
                     if event_id == "cowrie.session.connect":
                         src_ip = entry.get("src_ip")
                         if src_ip and session_id:
-                            geo = geoip.lookup(src_ip)
+                            geo = global_geoip.lookup(src_ip)
                             active_sessions[session_id] = {
                                 "src_ip": src_ip,
                                 "geo": geo,
