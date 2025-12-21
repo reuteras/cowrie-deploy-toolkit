@@ -202,6 +202,7 @@ class IPUserDB:
 
         if locked:
             if locked != (thelogin, thepasswd):
+                log.msg("Password wrong fro IP")
                 # Log failed due to locked
                 return False
 
