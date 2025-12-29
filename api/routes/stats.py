@@ -5,7 +5,7 @@ Provides aggregated statistics from Cowrie data
 """
 
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Query
 from services.log_parser import parser
@@ -32,7 +32,7 @@ async def get_stats_overview(days: int = Query(7, ge=1, le=365)):
     all_sessions = parser.get_sessions(limit=10000)  # Get a large number
 
     # Filter by time range
-    cutoff = datetime.now() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     recent_sessions = []
     for session in all_sessions:
         if session.get("start_time"):
@@ -71,7 +71,7 @@ async def get_stats_overview(days: int = Query(7, ge=1, le=365)):
     top_commands = [{"command": cmd, "count": count} for cmd, count in command_counter.most_common(10)]
 
     return {
-        "time_range": {"start": cutoff.isoformat(), "end": datetime.now().isoformat(), "days": days},
+        "time_range": {"start": cutoff.isoformat(), "end": datetime.now(timezone.utc).isoformat(), "days": days},
         "totals": {
             "sessions": total_sessions,
             "unique_ips": unique_ips,
