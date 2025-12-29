@@ -4,6 +4,7 @@ Downloads endpoints
 Provides access to downloaded files (malware samples)
 """
 
+from datetime import datetime
 from pathlib import Path
 
 from config import config
@@ -79,6 +80,3 @@ async def download_file(sha256: str):
 
     return FileResponse(filepath, media_type="application/octet-stream", filename=sha256)
 
-
-# Import datetime for file timestamps
-from datetime import datetime

@@ -492,12 +492,6 @@ if [ "$GREYNOISE_ENABLED" = "true" ]; then
     echo_info "GreyNoise threat intelligence enabled"
 fi
 
-# Canary webhook configuration
-CANARY_WEBHOOK_ENABLED=$(get_config "canary_webhook_enabled" "false")
-
-# Advanced configuration
-REPORT_HOURS=$(get_config "report_hours" "24")
-
 echo_info "Configuration loaded successfully"
 
 SERVER_NAME="cowrie-honeypot-$(date +%s)"
