@@ -685,7 +685,6 @@ TAILSCALE_IP=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -
 
 echo_info "Tailscale configured successfully"
 echo_info "Tailscale IP: $TAILSCALE_IP"
-echo_info "RECOMMENDED: Use Tailscale for management SSH: ssh root@$TAILSCALE_IP"
 
 # ============================================================
 # STEP 4 — Install Docker
