@@ -1765,19 +1765,35 @@ echo "[remote] Cowrie API deployed on internal network"
 
 # Expose via Tailscale if configured
 if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && command -v tailscale &> /dev/null; then
-    echo "[remote] Exposing API via Tailscale Serve..."
-    # Note: API runs on port 8000 internally
-    # Tailscale Serve needs to proxy localhost:8000
-    # We'll need to expose the port to localhost first
-    echo "[remote] Note: API exposed via Tailscale at https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
-    echo "[remote] You may need to configure Tailscale Serve manually for port 8000"
+    echo "[remote] Configuring Tailscale Serve for API..."
+
+    # Check if web dashboard is already using port 443
+    if tailscale serve status 2>/dev/null | grep -q ":443"; then
+        echo "[remote] WARNING: Port 443 already in use by another service (likely web dashboard)"
+        echo "[remote] Using path-based routing: /api -> localhost:8000"
+        tailscale serve --bg --https=443 /api http://localhost:8000 > /dev/null 2>&1
+    else
+        echo "[remote] Configuring Tailscale Serve for API on port 443..."
+        tailscale serve --bg --https=443 http://localhost:8000 > /dev/null 2>&1
+    fi
+
+    # Add @reboot cron job to ensure Tailscale Serve persists after reboot
+    (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve.*8000" | crontab -
+    if tailscale serve status 2>/dev/null | grep -q "/api"; then
+        # Path-based routing
+        (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 /api http://localhost:8000 > /dev/null 2>&1") | crontab -
+    else
+        # Direct port mapping
+        (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 http://localhost:8000 > /dev/null 2>&1") | crontab -
+    fi
+
+    echo "[remote] API available at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
 fi
 APIEOF
 
     echo_info "Cowrie API configured successfully"
     if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ]; then
-        echo_info "API will be available at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
-        echo_warn "Note: Multi-host API access requires additional Tailscale Serve configuration"
+        echo_info "API available at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
     else
         echo_info "API accessible within Docker network at: http://cowrie-api:8000"
     fi
