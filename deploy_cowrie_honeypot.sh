@@ -1748,8 +1748,8 @@ set -e
 cd /opt/cowrie
 
 # Build and start API with the main compose file
-echo "[remote] Building Cowrie API container..."
-if ! docker compose -f docker-compose.yml -f docker-compose.api.yml build cowrie-api 2>&1; then
+echo "[remote] Building Cowrie API container (this may take a minute)..."
+if ! docker compose -f docker-compose.yml -f docker-compose.api.yml build --quiet cowrie-api 2>&1 | grep -E "ERROR|WARN" || true; then
   echo "[remote] WARNING: Build reported errors, but continuing..."
 fi
 
