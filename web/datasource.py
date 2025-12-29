@@ -7,7 +7,6 @@ Provides a unified interface for accessing Cowrie data in two modes:
 - Remote mode: API calls via HTTP (multi-host deployment)
 """
 
-import json
 import os
 from typing import Optional
 
@@ -35,7 +34,10 @@ class DataSource:
         if self.api_base_url:
             self.api_base_url = self.api_base_url.rstrip("/")
 
-        print(f"[DataSource] Initialized in {self.mode} mode" + (f" with API: {self.api_base_url}" if self.mode == "remote" else ""))
+        print(
+            f"[DataSource] Initialized in {self.mode} mode"
+            + (f" with API: {self.api_base_url}" if self.mode == "remote" else "")
+        )
 
     def get_sessions(
         self,
@@ -67,9 +69,7 @@ class DataSource:
         else:
             return self._get_sessions_remote(hours, limit, offset, src_ip, username, start_time, end_time)
 
-    def _get_sessions_local(
-        self, hours, limit, offset, src_ip, username, start_time, end_time
-    ) -> dict:
+    def _get_sessions_local(self, hours, limit, offset, src_ip, username, start_time, end_time) -> dict:
         """Get sessions from local files (uses existing SessionParser)."""
         from app import session_parser
 
@@ -93,9 +93,7 @@ class DataSource:
 
         return {"total": total, "sessions": paginated}
 
-    def _get_sessions_remote(
-        self, hours, limit, offset, src_ip, username, start_time, end_time
-    ) -> dict:
+    def _get_sessions_remote(self, hours, limit, offset, src_ip, username, start_time, end_time) -> dict:
         """Get sessions from remote API."""
         params = {
             "hours": hours,
@@ -141,6 +139,7 @@ class DataSource:
     def _get_session_local(self, session_id: str) -> Optional[dict]:
         """Get session from local files."""
         from app import session_parser
+
         return session_parser.get_session(session_id)
 
     def _get_session_remote(self, session_id: str) -> Optional[dict]:
@@ -223,6 +222,7 @@ class DataSource:
     def _get_stats_local(self, hours: int) -> dict:
         """Get stats from local files."""
         from app import session_parser
+
         return session_parser.get_stats(hours=hours)
 
     def _get_stats_remote(self, hours: int) -> dict:

@@ -8,21 +8,18 @@ Provides REST API endpoints for Cowrie honeypot data:
 - Threat intelligence (GeoIP, VirusTotal, AbuseIPDB)
 - Live event streaming (SSE)
 """
+
 import logging
 from contextlib import asynccontextmanager
 
+from config import config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
-from config import config
-from routes import health, sessions, downloads, stats, threat
+from routes import downloads, health, sessions, stats, threat
 
 # Configure logging
-logging.basicConfig(
-    level=getattr(logging, config.LOG_LEVEL),
-    format="[%(asctime)s] %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=getattr(logging, config.LOG_LEVEL), format="[%(asctime)s] %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -47,12 +44,7 @@ async def lifespan(app: FastAPI):
 
 
 # Create FastAPI app
-app = FastAPI(
-    title="Cowrie API",
-    description="REST API for Cowrie honeypot data",
-    version="2.1.0",
-    lifespan=lifespan
-)
+app = FastAPI(title="Cowrie API", description="REST API for Cowrie honeypot data", version="2.1.0", lifespan=lifespan)
 
 # CORS middleware (for development and multi-host scenarios)
 app.add_middleware(
@@ -75,12 +67,10 @@ app.include_router(threat.router, prefix="/api/v1", tags=["threat-intel"])
 async def global_exception_handler(request, exc):
     """Global exception handler"""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"}
-    )
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

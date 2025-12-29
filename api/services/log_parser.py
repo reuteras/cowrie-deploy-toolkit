@@ -3,12 +3,13 @@ Cowrie log parser service
 
 Parses cowrie.json log file and extracts session information
 """
+
 import json
 import logging
-from pathlib import Path
-from typing import Dict, List, Optional
-from datetime import datetime
 from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 from config import config
 
@@ -28,8 +29,8 @@ class CowrieLogParser:
         src_ip: Optional[str] = None,
         username: Optional[str] = None,
         start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
-    ) -> List[Dict]:
+        end_time: Optional[datetime] = None,
+    ) -> list[dict]:
         """
         Parse log file and return sessions with filters
 
@@ -48,21 +49,21 @@ class CowrieLogParser:
 
         # Apply filters
         filtered = []
-        for session_id, session in sessions.items():
+        for _session_id, session in sessions.items():
             # Filter by IP
-            if src_ip and session.get('src_ip') != src_ip:
+            if src_ip and session.get("src_ip") != src_ip:
                 continue
 
             # Filter by username
-            if username and session.get('username') != username:
+            if username and session.get("username") != username:
                 continue
 
             # Filter by time range
             if start_time or end_time:
-                session_time = session.get('start_time')
+                session_time = session.get("start_time")
                 if session_time:
                     try:
-                        dt = datetime.fromisoformat(session_time.replace('Z', '+00:00'))
+                        dt = datetime.fromisoformat(session_time.replace("Z", "+00:00"))
                         if start_time and dt < start_time:
                             continue
                         if end_time and dt > end_time:
@@ -73,17 +74,17 @@ class CowrieLogParser:
             filtered.append(session)
 
         # Sort by start time (newest first)
-        filtered.sort(key=lambda x: x.get('start_time', ''), reverse=True)
+        filtered.sort(key=lambda x: x.get("start_time", ""), reverse=True)
 
         # Apply pagination
-        return filtered[offset:offset + limit]
+        return filtered[offset : offset + limit]
 
-    def get_session(self, session_id: str) -> Optional[Dict]:
+    def get_session(self, session_id: str) -> Optional[dict]:
         """Get a single session by ID"""
         sessions = self._build_sessions()
         return sessions.get(session_id)
 
-    def _build_sessions(self) -> Dict[str, Dict]:
+    def _build_sessions(self) -> dict[str, dict]:
         """
         Build sessions from log file
         Returns dict of session_id -> session data
@@ -92,62 +93,62 @@ class CowrieLogParser:
             logger.warning(f"Log file not found: {self.log_path}")
             return {}
 
-        sessions = defaultdict(lambda: {
-            'commands': [],
-            'downloads': [],
-            'events': []
-        })
+        sessions = defaultdict(lambda: {"commands": [], "downloads": [], "events": []})
 
         try:
-            with open(self.log_path, 'r') as f:
+            with open(self.log_path) as f:
                 for line in f:
                     try:
                         event = json.loads(line.strip())
-                        session_id = event.get('session')
+                        session_id = event.get("session")
 
                         if not session_id:
                             continue
 
                         # Initialize session if first event
-                        if 'session_id' not in sessions[session_id]:
-                            sessions[session_id]['session_id'] = session_id
-                            sessions[session_id]['src_ip'] = event.get('src_ip')
-                            sessions[session_id]['src_port'] = event.get('src_port')
-                            sessions[session_id]['dst_ip'] = event.get('dst_ip', event.get('sensor'))
-                            sessions[session_id]['dst_port'] = event.get('dst_port', 22)
-                            sessions[session_id]['start_time'] = event.get('timestamp')
+                        if "session_id" not in sessions[session_id]:
+                            sessions[session_id]["session_id"] = session_id
+                            sessions[session_id]["src_ip"] = event.get("src_ip")
+                            sessions[session_id]["src_port"] = event.get("src_port")
+                            sessions[session_id]["dst_ip"] = event.get("dst_ip", event.get("sensor"))
+                            sessions[session_id]["dst_port"] = event.get("dst_port", 22)
+                            sessions[session_id]["start_time"] = event.get("timestamp")
 
                         # Track session end time
-                        sessions[session_id]['end_time'] = event.get('timestamp')
+                        sessions[session_id]["end_time"] = event.get("timestamp")
 
                         # Handle login events
-                        if event.get('eventid') == 'cowrie.login.success':
-                            sessions[session_id]['username'] = event.get('username')
-                            sessions[session_id]['password'] = event.get('password')
-                            sessions[session_id]['authentication_success'] = True
+                        if event.get("eventid") == "cowrie.login.success":
+                            sessions[session_id]["username"] = event.get("username")
+                            sessions[session_id]["password"] = event.get("password")
+                            sessions[session_id]["authentication_success"] = True
 
-                        elif event.get('eventid') == 'cowrie.login.failed':
-                            if 'authentication_success' not in sessions[session_id]:
-                                sessions[session_id]['authentication_success'] = False
+                        elif event.get("eventid") == "cowrie.login.failed":
+                            if "authentication_success" not in sessions[session_id]:
+                                sessions[session_id]["authentication_success"] = False
 
                         # Handle commands
-                        elif event.get('eventid') == 'cowrie.command.input':
-                            sessions[session_id]['commands'].append({
-                                'timestamp': event.get('timestamp'),
-                                'input': event.get('input'),
-                            })
+                        elif event.get("eventid") == "cowrie.command.input":
+                            sessions[session_id]["commands"].append(
+                                {
+                                    "timestamp": event.get("timestamp"),
+                                    "input": event.get("input"),
+                                }
+                            )
 
                         # Handle downloads
-                        elif event.get('eventid') == 'cowrie.session.file_download':
-                            sessions[session_id]['downloads'].append({
-                                'timestamp': event.get('timestamp'),
-                                'url': event.get('url'),
-                                'shasum': event.get('shasum'),
-                                'outfile': event.get('outfile'),
-                            })
+                        elif event.get("eventid") == "cowrie.session.file_download":
+                            sessions[session_id]["downloads"].append(
+                                {
+                                    "timestamp": event.get("timestamp"),
+                                    "url": event.get("url"),
+                                    "shasum": event.get("shasum"),
+                                    "outfile": event.get("outfile"),
+                                }
+                            )
 
                         # Store all events for detailed view
-                        sessions[session_id]['events'].append(event)
+                        sessions[session_id]["events"].append(event)
 
                     except json.JSONDecodeError:
                         continue
@@ -158,18 +159,18 @@ class CowrieLogParser:
 
         # Calculate session metadata
         for session_id, session in sessions.items():
-            session['commands_count'] = len(session['commands'])
-            session['downloads_count'] = len(session['downloads'])
-            session['has_tty'] = any(e.get('eventid') == 'cowrie.log.open' for e in session['events'])
+            session["commands_count"] = len(session["commands"])
+            session["downloads_count"] = len(session["downloads"])
+            session["has_tty"] = any(e.get("eventid") == "cowrie.log.open" for e in session["events"])
 
             # Calculate duration
-            if session.get('start_time') and session.get('end_time'):
+            if session.get("start_time") and session.get("end_time"):
                 try:
-                    start = datetime.fromisoformat(session['start_time'].replace('Z', '+00:00'))
-                    end = datetime.fromisoformat(session['end_time'].replace('Z', '+00:00'))
-                    session['duration'] = int((end - start).total_seconds())
+                    start = datetime.fromisoformat(session["start_time"].replace("Z", "+00:00"))
+                    end = datetime.fromisoformat(session["end_time"].replace("Z", "+00:00"))
+                    session["duration"] = int((end - start).total_seconds())
                 except (ValueError, AttributeError):
-                    session['duration'] = 0
+                    session["duration"] = 0
 
         return dict(sessions)
 

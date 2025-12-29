@@ -3,10 +3,11 @@ Session endpoints
 
 Provides access to Cowrie session data
 """
-from fastapi import APIRouter, Query, HTTPException
-from typing import Optional
-from datetime import datetime
 
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query
 from services.log_parser import parser
 
 router = APIRouter()
@@ -31,32 +32,22 @@ async def get_sessions(
     end_dt = None
     if start_time:
         try:
-            start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid start_time format")
 
     if end_time:
         try:
-            end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+            end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid end_time format")
 
     # Get sessions from parser
     sessions = parser.get_sessions(
-        limit=limit,
-        offset=offset,
-        src_ip=src_ip,
-        username=username,
-        start_time=start_dt,
-        end_time=end_dt
+        limit=limit, offset=offset, src_ip=src_ip, username=username, start_time=start_dt, end_time=end_dt
     )
 
-    return {
-        "total": len(sessions),
-        "limit": limit,
-        "offset": offset,
-        "sessions": sessions
-    }
+    return {"total": len(sessions), "limit": limit, "offset": offset, "sessions": sessions}
 
 
 @router.get("/sessions/{session_id}")
@@ -88,6 +79,6 @@ async def get_session_commands(session_id: str):
 
     return {
         "session_id": session_id,
-        "commands_count": len(session.get('commands', [])),
-        "commands": session.get('commands', [])
+        "commands_count": len(session.get("commands", [])),
+        "commands": session.get("commands", []),
     }

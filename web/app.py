@@ -1172,21 +1172,23 @@ def index():
     honeypot_locations = []
 
     # For multi-source mode, get all honeypot locations
-    if hasattr(session_parser, 'sources'):
+    if hasattr(session_parser, "sources"):
         # Multi-source mode
         for source_name, source in session_parser.sources.items():
             # Get location from source config and map to coordinates
             location_info = {}
             if source.location and source.location in HETZNER_LOCATIONS:
                 location_info = HETZNER_LOCATIONS[source.location]
-                honeypot_locations.append({
-                    "name": source_name,
-                    "lat": location_info["lat"],
-                    "lon": location_info["lon"],
-                    "city": location_info.get("city", source_name),
-                    "country": location_info.get("country", "-"),
-                    "type": "honeypot"
-                })
+                honeypot_locations.append(
+                    {
+                        "name": source_name,
+                        "lat": location_info["lat"],
+                        "lon": location_info["lon"],
+                        "city": location_info.get("city", source_name),
+                        "country": location_info.get("country", "-"),
+                        "type": "honeypot",
+                    }
+                )
             else:
                 # No location configured - skip marker for this honeypot
                 print(f"[Dashboard] No location configured for source: {source_name}")
@@ -1195,14 +1197,16 @@ def index():
         if CONFIG.get("server_ip"):
             honeypot_geo = global_geoip.lookup(CONFIG["server_ip"])
             if "latitude" in honeypot_geo and "longitude" in honeypot_geo:
-                honeypot_locations.append({
-                    "name": CONFIG.get("honeypot_hostname", "local"),
-                    "lat": honeypot_geo["latitude"],
-                    "lon": honeypot_geo["longitude"],
-                    "city": honeypot_geo.get("city", "-"),
-                    "country": honeypot_geo.get("country", "-"),
-                    "type": "honeypot"
-                })
+                honeypot_locations.append(
+                    {
+                        "name": CONFIG.get("honeypot_hostname", "local"),
+                        "lat": honeypot_geo["latitude"],
+                        "lon": honeypot_geo["longitude"],
+                        "city": honeypot_geo.get("city", "-"),
+                        "country": honeypot_geo.get("country", "-"),
+                        "type": "honeypot",
+                    }
+                )
 
     # Get recent canary webhook alerts (last 5)
     recent_webhooks = canary_webhook_db.get_recent_webhooks(limit=5)

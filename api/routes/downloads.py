@@ -3,22 +3,18 @@ Downloads endpoints
 
 Provides access to downloaded files (malware samples)
 """
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+
 from pathlib import Path
-from typing import Optional
-import os
 
 from config import config
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 
 router = APIRouter()
 
 
 @router.get("/downloads")
-async def get_downloads(
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0)
-):
+async def get_downloads(limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0)):
     """
     Get list of downloaded files
 
@@ -34,26 +30,23 @@ async def get_downloads(
     for filepath in downloads_path.iterdir():
         if filepath.is_file():
             stat = filepath.stat()
-            files.append({
-                "sha256": filepath.name,
-                "size": stat.st_size,
-                "first_seen": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            })
+            files.append(
+                {
+                    "sha256": filepath.name,
+                    "size": stat.st_size,
+                    "first_seen": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                }
+            )
 
     # Sort by first seen (newest first)
-    files.sort(key=lambda x: x['first_seen'], reverse=True)
+    files.sort(key=lambda x: x["first_seen"], reverse=True)
 
     # Pagination
     total = len(files)
-    paginated = files[offset:offset + limit]
+    paginated = files[offset : offset + limit]
 
-    return {
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "downloads": paginated
-    }
+    return {"total": total, "limit": limit, "offset": offset, "downloads": paginated}
 
 
 @router.get("/downloads/{sha256}")
@@ -84,11 +77,7 @@ async def download_file(sha256: str):
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
-    return FileResponse(
-        filepath,
-        media_type="application/octet-stream",
-        filename=sha256
-    )
+    return FileResponse(filepath, media_type="application/octet-stream", filename=sha256)
 
 
 # Import datetime for file timestamps

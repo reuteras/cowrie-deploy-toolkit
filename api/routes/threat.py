@@ -3,8 +3,10 @@ Threat intelligence endpoints
 
 Provides GeoIP and other threat intelligence data
 """
-from fastapi import APIRouter, HTTPException
+
 from pathlib import Path
+
+from fastapi import APIRouter
 
 router = APIRouter()
 
@@ -21,16 +23,12 @@ async def get_ip_intel(ip: str):
     """
     from config import config
 
-    result = {
-        "ip": ip,
-        "geo": {"country": "-", "city": "-"},
-        "asn": None,
-        "asn_org": None
-    }
+    result = {"ip": ip, "geo": {"country": "-", "city": "-"}, "asn": None, "asn_org": None}
 
     # GeoIP lookup
     try:
         import geoip2.database
+
         city_db = Path(config.GEOIP_CITY_DB)
         asn_db = Path(config.GEOIP_ASN_DB)
 
@@ -42,7 +40,7 @@ async def get_ip_intel(ip: str):
                     "country_code": response.country.iso_code or "XX",
                     "city": response.city.name or "-",
                     "latitude": response.location.latitude,
-                    "longitude": response.location.longitude
+                    "longitude": response.location.longitude,
                 }
 
         if asn_db.exists():

@@ -1,6 +1,7 @@
 """
 Configuration management for Cowrie API
 """
+
 import os
 from pathlib import Path
 

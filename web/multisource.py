@@ -7,8 +7,7 @@ Supports parallel querying with graceful degradation on partial failures.
 """
 
 import concurrent.futures
-import os
-from typing import List, Optional
+from typing import Optional
 
 from datasource import DataSource
 
@@ -69,7 +68,7 @@ class HoneypotSource:
 class MultiSourceDataSource:
     """Aggregate data from multiple honeypot sources."""
 
-    def __init__(self, sources: List[HoneypotSource]):
+    def __init__(self, sources: list[HoneypotSource]):
         """
         Initialize multi-source data aggregator.
 
@@ -324,16 +323,14 @@ class MultiSourceDataSource:
         # Calculate average VT detection rate
         vt_total = aggregated["vt_stats"]["total_scanned"]
         if vt_total > 0:
-            aggregated["vt_stats"]["avg_detection_rate"] = (
-                aggregated["vt_stats"]["total_malicious"] / vt_total * 100
-            )
+            aggregated["vt_stats"]["avg_detection_rate"] = aggregated["vt_stats"]["total_malicious"] / vt_total * 100
         aggregated["vt_stats"]["total_threat_families"] = len(aggregated["vt_stats"]["total_threat_families"])
 
         aggregated["sources_queried"] = list(sources_to_query.keys())
 
         return aggregated
 
-    def get_available_sources(self) -> List[dict]:
+    def get_available_sources(self) -> list[dict]:
         """
         Get list of available data sources.
 
@@ -375,7 +372,11 @@ class MultiSourceDataSource:
                         "type": source.type,
                     }
                 except Exception as e:
-                    health_status["sources"][source.name] = {"status": "unhealthy", "error": str(e), "type": source.type}
+                    health_status["sources"][source.name] = {
+                        "status": "unhealthy",
+                        "error": str(e),
+                        "type": source.type,
+                    }
 
         return health_status
 

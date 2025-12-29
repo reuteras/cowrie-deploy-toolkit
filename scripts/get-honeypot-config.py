@@ -21,15 +21,15 @@ Usage:
     python3 scripts/get-honeypot-config.py master-config.toml --count
 """
 
-import sys
 import json
+import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import tomllib
 
 
-def merge_configs(shared: Dict[str, Any], honeypot: Dict[str, Any]) -> Dict[str, Any]:
+def merge_configs(shared: dict[str, Any], honeypot: dict[str, Any]) -> dict[str, Any]:
     """
     Merge shared configuration with honeypot-specific configuration.
 
@@ -59,25 +59,23 @@ def merge_configs(shared: Dict[str, Any], honeypot: Dict[str, Any]) -> Dict[str,
     return merged
 
 
-def get_honeypots(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def get_honeypots(data: dict[str, Any]) -> list[dict[str, Any]]:
     """Get list of honeypot configurations."""
     return data.get("honeypots", [])
 
 
-def has_honeypots_array(data: Dict[str, Any]) -> bool:
+def has_honeypots_array(data: dict[str, Any]) -> bool:
     """Check if [[honeypots]] array exists and has items."""
     honeypots = data.get("honeypots", [])
     return isinstance(honeypots, list) and len(honeypots) > 0
 
 
-def get_shared_config(data: Dict[str, Any]) -> Dict[str, Any]:
+def get_shared_config(data: dict[str, Any]) -> dict[str, Any]:
     """Extract shared configuration from [shared.*] sections."""
     return data.get("shared", {})
 
 
-def get_honeypot_by_name(
-    data: Dict[str, Any], name: str
-) -> Optional[Dict[str, Any]]:
+def get_honeypot_by_name(data: dict[str, Any], name: str) -> Optional[dict[str, Any]]:
     """
     Get specific honeypot configuration by name, merged with shared config.
 
@@ -100,7 +98,10 @@ def get_honeypot_by_name(
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: python3 get-honeypot-config.py <toml_file> <--list|--name NAME|--has-array|--count|--shared>", file=sys.stderr)
+        print(
+            "Usage: python3 get-honeypot-config.py <toml_file> <--list|--name NAME|--has-array|--count|--shared>",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     toml_file = Path(sys.argv[1])

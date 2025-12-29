@@ -1,9 +1,11 @@
 """
 Health check endpoints
 """
-from fastapi import APIRouter
+
 from pathlib import Path
+
 from config import config
+from fastapi import APIRouter
 
 router = APIRouter()
 
@@ -21,7 +23,7 @@ async def health_check():
             "cowrie_log": Path(config.COWRIE_LOG_PATH).exists() or Path(config.COWRIE_LOG_PATH).parent.exists(),
             "tty_recordings": Path(config.COWRIE_TTY_PATH).exists(),
             "downloads": Path(config.COWRIE_DOWNLOADS_PATH).exists(),
-        }
+        },
     }
 
 
@@ -39,6 +41,6 @@ async def get_info():
             "sessions": "/api/v1/sessions",
             "downloads": "/api/v1/downloads",
             "stats": "/api/v1/stats/overview",
-            "threat_intel": "/api/v1/threat/ip/{ip}"
-        }
+            "threat_intel": "/api/v1/threat/ip/{ip}",
+        },
     }
