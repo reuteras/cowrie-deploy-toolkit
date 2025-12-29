@@ -1683,11 +1683,24 @@ echo "[remote] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:50
 # Configure Tailscale Serve if Tailscale is enabled
 if command -v tailscale &> /dev/null; then
     echo "[remote] Configuring Tailscale Serve for web dashboard..."
-    tailscale serve --bg --https=443 5000 > /dev/null 2>&1
 
-    # Add @reboot cron job to ensure Tailscale Serve persists after reboot
-    (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve" | crontab -
-    (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 5000 > /dev/null 2>&1") | crontab -
+    # Check if API will also be exposed via Tailscale (requires path-based routing)
+    if [ "$ENABLE_API" = "true" ] && [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ]; then
+        echo "[remote] API will also be exposed - using path-based routing"
+        echo "[remote] Dashboard: / -> port 5000, API: /api -> port 8000"
+        tailscale serve --bg --https=443 / 5000 > /dev/null 2>&1
+
+        # Add @reboot cron job (path-based routing for dashboard)
+        (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve.*5000" | crontab -
+        (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 / 5000 > /dev/null 2>&1") | crontab -
+    else
+        echo "[remote] Dashboard only - using direct port mapping"
+        tailscale serve --bg --https=443 5000 > /dev/null 2>&1
+
+        # Add @reboot cron job (direct port mapping)
+        (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve.*5000" | crontab -
+        (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 5000 > /dev/null 2>&1") | crontab -
+    fi
 
     echo "[remote] Web dashboard available at: https://\$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
 fi
