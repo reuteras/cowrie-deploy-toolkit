@@ -27,6 +27,8 @@ try:
 except ImportError:
     geoip2 = None
 
+__version__ = "2.1.0"
+
 app = Flask(__name__)
 
 # Configuration from environment variables
@@ -1160,6 +1162,43 @@ HETZNER_LOCATIONS = {
     "ash": {"lat": 39.0438, "lon": -77.4874, "city": "Ashburn", "country": "USA"},
     "hil": {"lat": 45.5231, "lon": -122.6765, "city": "Hillsboro", "country": "USA"},
 }
+
+
+@app.route("/health")
+def health():
+    """Health check endpoint for update validation."""
+    # Check if critical data sources are accessible
+    data_sources_ok = True
+    errors = []
+
+    # Check log path
+    log_path = Path(CONFIG["log_path"])
+    if not log_path.exists() and not log_path.parent.exists():
+        data_sources_ok = False
+        errors.append(f"Log path not accessible: {CONFIG['log_path']}")
+
+    # Check TTY path
+    tty_path = Path(CONFIG["tty_path"])
+    if not tty_path.exists():
+        # TTY path might not exist initially, but parent should
+        if not tty_path.parent.exists():
+            data_sources_ok = False
+            errors.append(f"TTY path parent not accessible: {CONFIG['tty_path']}")
+
+    status = "healthy" if data_sources_ok else "degraded"
+
+    return jsonify(
+        {
+            "status": status,
+            "version": __version__,
+            "data_sources": {
+                "cowrie_log": log_path.exists() or log_path.parent.exists(),
+                "tty_recordings": tty_path.exists(),
+                "downloads": Path(CONFIG["download_path"]).exists(),
+            },
+            "errors": errors if errors else None,
+        }
+    )
 
 
 @app.route("/")

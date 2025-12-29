@@ -1586,10 +1586,10 @@ services:
       - cowrie-internal
 
   cowrie-web:
+    image: ghcr.io/reuteras/cowrie-web:latest
     build:
       context: /opt/cowrie/web
       dockerfile: Dockerfile
-    image: cowrie-web:local
     container_name: cowrie-web
     restart: unless-stopped
     ports:
@@ -1821,6 +1821,43 @@ echo "[remote] Cron job installed for daily Docker updates at 3 AM"
 AUTOUPDATEEOF
 
 echo_info "Automatic Docker updates configured"
+
+# ============================================================
+# STEP 15 — Initialize Git Repository for Updates
+# ============================================================
+
+echo_info "Initializing git repository for future updates..."
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'GITEOF'
+set -e
+
+# Initialize git repository
+cd /opt/cowrie
+
+if [ ! -d ".git" ]; then
+    echo "[remote] Initializing git repository..."
+    git init
+    git remote add origin https://github.com/reuteras/cowrie-deploy-toolkit.git
+    echo "[remote] Git repository initialized"
+else
+    echo "[remote] Git repository already exists"
+fi
+
+# Fetch latest code
+echo "[remote] Fetching latest code from GitHub..."
+git fetch origin main
+
+# Reset to main branch (preserve local modifications in working tree)
+echo "[remote] Resetting to origin/main..."
+git reset --hard origin/main
+
+# Create initial VERSION.json
+echo "[remote] Creating initial VERSION.json..."
+bash /opt/cowrie/scripts/update-agent.sh --init-version
+
+echo "[remote] Git initialization complete"
+GITEOF
+
+echo_info "Git repository initialized for updates"
 
 # ============================================================
 # DONE
