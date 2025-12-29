@@ -104,7 +104,7 @@ cp example-config.toml master-config.toml
 - **Security**: Honeypot runs on modern Debian (e.g., debian-13)
 - **Flexibility**: Test filesystem compatibility across versions
 
-### Configuration
+### OS Version Configuration
 
 ```toml
 [deployment]
@@ -115,7 +115,7 @@ deployment_image = "debian-13"   # What actually runs
 server_image = "debian-13"
 ```
 
-### How It Works
+### OS Version Compatibility
 
 **Generation:** Creates `source_metadata.json` with OS version info
 **Deployment:** Validates compatibility, warns if gap >2 major versions
@@ -129,7 +129,7 @@ server_image = "debian-13"
 
 **FastAPI service for remote access to Cowrie data.**
 
-### Features
+### API Features
 
 - RESTful API with sessions, downloads, stats endpoints
 - Read-only access (security hardened)
@@ -137,7 +137,7 @@ server_image = "debian-13"
 - TTY recording retrieval
 - Runs with dropped capabilities and read-only filesystem
 
-### Configuration
+### API Configuration
 
 **Single-Host Mode** (internal use):
 ```toml
@@ -157,7 +157,7 @@ tailscale_api_hostname = "cowrie-api"
 ### Key Endpoints
 
 | Endpoint | Description |
-|----------|-------------|
+| -------- | ----------- |
 | `GET /api/v1/health` | Health check |
 | `GET /api/v1/sessions` | List sessions (filters/pagination) |
 | `GET /api/v1/sessions/{id}` | Session detail |
@@ -260,7 +260,7 @@ dashboard_sources = ["cowrie-hp-1", "cowrie-hp-2"]
 
 **Tailscale is now REQUIRED for all deployments.**
 
-### Configuration
+### Tailscale Configuration
 
 ```toml
 [tailscale]
@@ -295,7 +295,7 @@ https://cowrie-honeypot.tail9e5e41.ts.net
 
 **Flask-based dashboard with session playback and live attack map.**
 
-### Features
+### Dashboard Features
 
 - 📊 Dashboard with attack statistics
 - 🗺️ Live attack map with geographic visualization
@@ -307,7 +307,7 @@ https://cowrie-honeypot.tail9e5e41.ts.net
 - 🔗 Email report session links
 - 🔒 Tailscale/SSH tunnel only (not public)
 
-### Configuration
+### Dashboard Configuration
 
 ```toml
 [web_dashboard]
@@ -321,7 +321,7 @@ Access via: `https://<tailscale_name>.<tailscale_domain>`
 
 **IPs locked to first successful credentials** (prevents honeypot fingerprinting).
 
-### How It Works
+### IP-Lock Mechanism
 
 ```text
 1. IP 1.2.3.4: root:password → Success ✓ (IP locked)
@@ -375,7 +375,7 @@ enabled = true
 
 **Automated email reports with threat intelligence.**
 
-### Configuration
+### Reporting Configuration
 
 ```toml
 [honeypot]
@@ -417,7 +417,7 @@ uv run scripts/daily-report.py --test
 
 **Background daemon scans downloaded malware automatically.**
 
-### Features
+### YARA Features
 
 - Inotify monitoring of downloads directory
 - YARA Forge full ruleset (~1000+ rules)

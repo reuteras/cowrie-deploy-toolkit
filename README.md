@@ -180,7 +180,7 @@ cp master-config-dashboard.toml master-config.toml
 
 **7. Access centralized dashboard**
 
-```
+```text
 https://cowrie-dashboard.tail9e5e41.ts.net
 ```
 
@@ -230,7 +230,7 @@ chmod +x deploy-multi.sh
 
 **Recommended structure:**
 
-```
+```text
 cowrie-deploy-toolkit/
 ├── master-config-hp1.toml       # Honeypot 1 config
 ├── master-config-hp2.toml       # Honeypot 2 config

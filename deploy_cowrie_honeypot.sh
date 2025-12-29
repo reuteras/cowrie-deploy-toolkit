@@ -109,7 +109,8 @@ find_latest_output() {
 
     # Find all matching directories, sorted by timestamp (newest first)
     # Pattern: output_<honeypot-name>_YYYYMMDD_HHMMSS
-    local latest=$(find . -maxdepth 1 -type d -name "output_${honeypot_name}_*" | sort -r | head -n1)
+    local latest
+    latest=$(find . -maxdepth 1 -type d -name "output_${honeypot_name}_*" | sort -r | head -n1)
 
     if [ -z "$latest" ]; then
         return 1
@@ -154,8 +155,7 @@ if [ "$DEPLOY_ALL" = true ]; then
     MISSING_OUTPUTS=()
 
     for name in "${HONEYPOT_NAMES[@]}"; do
-        latest_output=$(find_latest_output "$name")
-        if [ $? -eq 0 ]; then
+        if latest_output=$(find_latest_output "$name"); then
             HONEYPOT_OUTPUTS["$name"]="$latest_output"
             echo_info "  $name: $latest_output"
         else
@@ -234,8 +234,6 @@ fi
 # Default deployment configuration
 SERVER_TYPE="cpx11"
 SERVER_IMAGE="debian-13"
-SSH_KEY_NAME1="SSH Key 1"
-SSH_KEY_NAME2="SSH Key 2"
 COWRIE_SSH_PORT="22"        # Cowrie listens on port 22
 REAL_SSH_PORT="2222"        # Move real SSH to 2222
 
@@ -1744,6 +1742,7 @@ if [ "$ENABLE_API" = "true" ]; then
 
     # Deploy API container
     echo_info "Building and starting Cowrie API container..."
+    # shellcheck disable=SC2087
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << APIEOF
 set -e
 cd /opt/cowrie
