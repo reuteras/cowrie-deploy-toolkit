@@ -374,10 +374,8 @@ cleanup_tailscale_device() {
 
     # List all devices in the tailnet
     local devices_json
-    devices_json=$(curl -s -H "Authorization: Bearer $api_key" \
-        "https://api.tailscale.com/api/v2/tailnet/$tailnet/devices" 2>/dev/null)
-
-    if [ $? -ne 0 ] || [ -z "$devices_json" ]; then
+    if ! devices_json=$(curl -s -H "Authorization: Bearer $api_key" \
+        "https://api.tailscale.com/api/v2/tailnet/$tailnet/devices" 2>/dev/null) || [ -z "$devices_json" ]; then
         echo_warn "Failed to fetch devices from Tailscale API"
         return 1
     fi
@@ -402,11 +400,8 @@ cleanup_tailscale_device() {
 
             echo_info "Deleting device: $device_name (ID: $device_id)"
 
-            local delete_result
-            delete_result=$(curl -s -X DELETE -H "Authorization: Bearer $api_key" \
-                "https://api.tailscale.com/api/v2/device/$device_id" 2>/dev/null)
-
-            if [ $? -eq 0 ]; then
+            if curl -s -X DELETE -H "Authorization: Bearer $api_key" \
+                "https://api.tailscale.com/api/v2/device/$device_id" >/dev/null 2>&1; then
                 echo_info "Successfully deleted device: $device_name"
                 ((count++))
             else
