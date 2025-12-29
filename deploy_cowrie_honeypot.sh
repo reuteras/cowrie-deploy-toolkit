@@ -1907,7 +1907,13 @@ cat << UPDATEINFO
 
 Automatic Updates:
   Docker images:   Daily at 3 AM (auto-update-docker.sh)
-  Deploy changes:  ./deploy-updates.sh $SERVER_IP $REAL_SSH_PORT
+
+Update System:
+  Code updates:        ./update-honeypots.sh --all
+  Filesystem updates:  ./update-honeypots.sh --all --filesystem
+  Full updates:        ./update-honeypots.sh --all --full
+  Smart auto-detect:   ./update-honeypots.sh --all --auto
+  Check status:        ./update-honeypots.sh --status
 UPDATEINFO
 
 echo "============================================"

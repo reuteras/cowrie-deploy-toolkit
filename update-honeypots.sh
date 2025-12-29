@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 #
-# Update Honeypots Without Full Redeployment
+# Unified Update Script for Cowrie Honeypots
 #
-# This script orchestrates updates to honeypot servers without requiring
-# full redeployment. It connects via Tailscale SSH and runs update-agent.sh
-# on each honeypot.
+# This script handles ALL updates to honeypot servers:
+#   - Code updates (scripts, web, API) via git + Docker registry
+#   - Filesystem updates (fs.pickle, identity, contents) via rsync
+#   - Smart auto-detection of what needs updating
 #
 # Usage:
-#   ./update-honeypots.sh --all                  # Update all honeypots
-#   ./update-honeypots.sh --name cowrie-hp-1     # Update specific honeypot
-#   ./update-honeypots.sh --status               # Show versions
-#   ./update-honeypots.sh --rollback hp-1        # Manual rollback
+#   ./update-honeypots.sh --all                     # Update code (default)
+#   ./update-honeypots.sh --all --filesystem        # Update filesystem only
+#   ./update-honeypots.sh --all --full              # Update both
+#   ./update-honeypots.sh --all --auto              # Smart detection
+#   ./update-honeypots.sh --name cowrie-hp-1        # Update specific honeypot
+#   ./update-honeypots.sh --status                  # Show versions
+#   ./update-honeypots.sh --rollback hp-1           # Manual rollback
 #
 # Requirements:
 #   - master-config.toml with honeypot configuration
@@ -25,6 +29,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
@@ -33,6 +38,12 @@ CONFIG_FILE="${CONFIG_FILE:-${SCRIPT_DIR}/master-config.toml}"
 LOG_FILE="${SCRIPT_DIR}/updates.log"
 SSH_PORT=2222
 SSH_TIMEOUT=10
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+# Update modes
+UPDATE_CODE=false
+UPDATE_FILESYSTEM=false
+UPDATE_AUTO=false
 
 # Logging functions
 log() {
@@ -57,16 +68,28 @@ log_error() {
     log "${RED}[ERROR]${NC} $1"
 }
 
+log_mode() {
+    log "${CYAN}[MODE]${NC} $1"
+}
+
 # Usage information
 usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-Update honeypots without full redeployment.
+Unified update script for Cowrie honeypots - handles code AND filesystem updates.
 
-OPTIONS:
+UPDATE MODES:
+    --code                  Update code only (scripts, web, API) [default]
+    --filesystem            Update filesystem only (fs.pickle, identity, contents)
+    --full                  Update both code and filesystem
+    --auto                  Smart mode - auto-detect what needs updating
+
+HONEYPOT SELECTION:
     --all                   Update all honeypots in master-config.toml
     --name NAME             Update specific honeypot by name
+
+OTHER OPTIONS:
     --status                Show version information for all honeypots
     --rollback NAME         Rollback specific honeypot to previous state
     --parallel              Update multiple honeypots in parallel (default: sequential)
@@ -74,20 +97,30 @@ OPTIONS:
     --help                  Show this help message
 
 EXAMPLES:
-    # Update all honeypots sequentially
-    $0 --all
+    # Code updates (most common - scripts/web/API)
+    $0 --all                           # Update code on all honeypots
+    $0 --name cowrie-hp-1 --code       # Update code on one honeypot
 
-    # Update specific honeypot
-    $0 --name cowrie-hp-1
+    # Filesystem updates (after regenerating fs.pickle)
+    $0 --all --filesystem              # Update filesystem on all
 
-    # Check status of all honeypots
-    $0 --status
+    # Full update (both code and filesystem)
+    $0 --all --full                    # Update everything
 
-    # Rollback honeypot to previous version
-    $0 --rollback cowrie-hp-1
+    # Smart mode (auto-detects what changed)
+    $0 --all --auto                    # Checks timestamps, updates as needed
 
-    # Update all honeypots in parallel
-    $0 --all --parallel
+    # Status and rollback
+    $0 --status                        # Check versions
+    $0 --rollback cowrie-hp-1          # Rollback to previous version
+
+UPDATE MODES EXPLAINED:
+    --code:       Git pull + Docker pull from GHCR (fast, atomic)
+    --filesystem: Rsync fs.pickle, identity, contents (for new snapshots)
+    --full:       Both code and filesystem
+    --auto:       Detects which is needed based on file timestamps
+
+DEFAULT: If no mode specified, --code is assumed (most common use case)
 
 EOF
     exit 1
@@ -95,7 +128,7 @@ EOF
 
 # Check dependencies
 check_dependencies() {
-    local deps=("python3" "jq" "ssh" "tailscale")
+    local deps=("python3" "jq" "ssh" "tailscale" "rsync" "scp")
     local missing=()
 
     for dep in "${deps[@]}"; do
@@ -179,12 +212,66 @@ check_ssh() {
     fi
 }
 
+# SSH execute command
+ssh_exec() {
+    local host="$1"
+    local cmd="$2"
+    local port="${3:-${SSH_PORT}}"
+
+    ssh ${SSH_OPTS} -p "${port}" "root@${host}" "${cmd}"
+}
+
+# SCP copy file
+scp_copy() {
+    local src="$1"
+    local dest="$2"
+    local port="${3:-${SSH_PORT}}"
+
+    scp ${SSH_OPTS} -P "${port}" "${src}" "${dest}"
+}
+
+# Find latest output directory for honeypot
+find_latest_output_dir() {
+    local name="${1:-}"
+    local pattern
+
+    if [ -n "${name}" ]; then
+        pattern="${SCRIPT_DIR}/output_${name}_*"
+    else
+        pattern="${SCRIPT_DIR}/output_*"
+    fi
+
+    local latest_dir=""
+    local latest_time=0
+
+    for dir in ${pattern}; do
+        if [ -d "${dir}" ]; then
+            # Get modification time
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                dir_time=$(stat -f %m "${dir}" 2>/dev/null || echo 0)
+            else
+                dir_time=$(stat -c %Y "${dir}" 2>/dev/null || echo 0)
+            fi
+
+            if [ "${dir_time}" -gt "${latest_time}" ]; then
+                latest_time=${dir_time}
+                latest_dir="${dir}"
+            fi
+        fi
+    done
+
+    if [ -n "${latest_dir}" ]; then
+        echo "${latest_dir}"
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Get version information from honeypot
 get_version_info() {
     local name="$1"
     local ts_ip
-
-    log_info "Getting version info for ${name}..."
 
     ts_ip=$(get_tailscale_ip "${name}") || {
         log_error "Failed to get Tailscale IP for ${name}"
@@ -199,7 +286,7 @@ get_version_info() {
 
     # Get VERSION.json if it exists
     local version_json
-    version_json=$(ssh -p "${SSH_PORT}" "root@${ts_ip}" "cat /opt/cowrie/VERSION.json 2>/dev/null || echo '{}'")
+    version_json=$(ssh_exec "${ts_ip}" "cat /opt/cowrie/VERSION.json 2>/dev/null || echo '{}'")
 
     echo "${version_json}"
 }
@@ -242,12 +329,186 @@ show_status() {
     echo ""
 }
 
+# Sync filesystem to honeypot
+sync_filesystem() {
+    local name="$1"
+    local ts_ip="$2"
+    local output_dir
+
+    log_info "Finding latest output directory for ${name}..."
+
+    if ! output_dir=$(find_latest_output_dir "${name}"); then
+        log_error "No output directory found for ${name} (output_${name}_*)"
+        log_error "Generate filesystem first: ./generate_cowrie_fs_from_hetzner.sh"
+        return 1
+    fi
+
+    log_info "Using output directory: $(basename "${output_dir}")"
+
+    # Sync fs.pickle
+    if [ -f "${output_dir}/fs.pickle" ]; then
+        log_info "  - Uploading fs.pickle..."
+        if ! scp_copy "${output_dir}/fs.pickle" "root@${ts_ip}:/opt/cowrie/share/cowrie/" "${SSH_PORT}"; then
+            log_error "Failed to upload fs.pickle"
+            return 1
+        fi
+    else
+        log_warning "fs.pickle not found in ${output_dir}"
+    fi
+
+    # Sync identity directory
+    if [ -d "${output_dir}/identity" ]; then
+        log_info "  - Syncing identity/ directory..."
+        if ! rsync -az -e "ssh ${SSH_OPTS} -p ${SSH_PORT}" \
+            "${output_dir}/identity/" "root@${ts_ip}:/opt/cowrie/identity/"; then
+            log_error "Failed to sync identity directory"
+            return 1
+        fi
+    fi
+
+    # Sync contents directory
+    if [ -d "${output_dir}/contents" ]; then
+        log_info "  - Syncing contents/ directory..."
+        if ! rsync -az -e "ssh ${SSH_OPTS} -p ${SSH_PORT}" \
+            "${output_dir}/contents/" "root@${ts_ip}:/opt/cowrie/share/cowrie/contents/"; then
+            log_error "Failed to sync contents directory"
+            return 1
+        fi
+    fi
+
+    # Sync txtcmds directory
+    if [ -d "${output_dir}/txtcmds" ]; then
+        log_info "  - Syncing txtcmds/ directory..."
+        if ! rsync -az -e "ssh ${SSH_OPTS} -p ${SSH_PORT}" \
+            "${output_dir}/txtcmds/" "root@${ts_ip}:/opt/cowrie/share/cowrie/txtcmds/"; then
+            log_error "Failed to sync txtcmds directory"
+            return 1
+        fi
+    fi
+
+    log_success "Filesystem synced successfully"
+
+    # Restart Cowrie container to pick up new filesystem
+    log_info "Restarting Cowrie container..."
+    if ssh_exec "${ts_ip}" "cd /opt/cowrie && docker compose restart cowrie"; then
+        log_success "Cowrie container restarted"
+    else
+        log_error "Failed to restart Cowrie container"
+        return 1
+    fi
+
+    return 0
+}
+
+# Update honeypot code (via update-agent.sh)
+update_code() {
+    local name="$1"
+    local ts_ip="$2"
+
+    log_info "Executing update-agent.sh on ${name}..."
+
+    if ssh_exec "${ts_ip}" "cd /opt/cowrie && bash scripts/update-agent.sh" 2>&1 | tee -a "${LOG_FILE}"; then
+        log_success "Code update completed successfully for ${name}"
+        return 0
+    else
+        log_error "Code update failed for ${name}"
+        return 1
+    fi
+}
+
+# Auto-detect what needs updating
+auto_detect_updates() {
+    local name="$1"
+    local ts_ip="$2"
+
+    log_mode "Auto-detection mode for ${name}..."
+
+    local needs_code=false
+    local needs_filesystem=false
+
+    # Check if git has updates
+    local remote_commit
+    remote_commit=$(ssh_exec "${ts_ip}" "cd /opt/cowrie && git rev-parse origin/main 2>/dev/null || echo 'unknown'")
+
+    local local_commit
+    local_commit=$(ssh_exec "${ts_ip}" "cd /opt/cowrie && git rev-parse HEAD 2>/dev/null || echo 'unknown'")
+
+    if [ "${remote_commit}" != "${local_commit}" ] && [ "${remote_commit}" != "unknown" ]; then
+        log_info "Git updates available: ${local_commit:0:10} -> ${remote_commit:0:10}"
+        needs_code=true
+    else
+        log_info "Git is up to date"
+    fi
+
+    # Check if filesystem needs updating
+    local output_dir
+    if output_dir=$(find_latest_output_dir "${name}"); then
+        log_info "Found output directory: $(basename "${output_dir}")"
+
+        # Check if fs.pickle on server is older than local
+        if [ -f "${output_dir}/fs.pickle" ]; then
+            local local_fs_time
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                local_fs_time=$(stat -f %m "${output_dir}/fs.pickle" 2>/dev/null || echo 0)
+            else
+                local_fs_time=$(stat -c %Y "${output_dir}/fs.pickle" 2>/dev/null || echo 0)
+            fi
+
+            local remote_fs_time
+            remote_fs_time=$(ssh_exec "${ts_ip}" "stat -c %Y /opt/cowrie/share/cowrie/fs.pickle 2>/dev/null || echo 0" || echo 0)
+
+            if [ "${local_fs_time}" -gt "${remote_fs_time}" ]; then
+                log_info "Local fs.pickle is newer than remote"
+                needs_filesystem=true
+            else
+                log_info "Filesystem is up to date"
+            fi
+        fi
+    else
+        log_info "No output directory found for filesystem comparison"
+    fi
+
+    # Determine what to update
+    if [ "${needs_code}" = "true" ] && [ "${needs_filesystem}" = "true" ]; then
+        log_mode "Auto-detected: Both code AND filesystem need updating"
+        UPDATE_CODE=true
+        UPDATE_FILESYSTEM=true
+    elif [ "${needs_code}" = "true" ]; then
+        log_mode "Auto-detected: Code needs updating"
+        UPDATE_CODE=true
+    elif [ "${needs_filesystem}" = "true" ]; then
+        log_mode "Auto-detected: Filesystem needs updating"
+        UPDATE_FILESYSTEM=true
+    else
+        log_mode "Auto-detected: Everything is up to date"
+        log_success "${name} is already up to date"
+        return 0
+    fi
+
+    # Perform detected updates
+    if [ "${UPDATE_FILESYSTEM}" = "true" ]; then
+        if ! sync_filesystem "${name}" "${ts_ip}"; then
+            return 1
+        fi
+    fi
+
+    if [ "${UPDATE_CODE}" = "true" ]; then
+        if ! update_code "${name}" "${ts_ip}"; then
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
 # Update single honeypot
 update_honeypot() {
     local name="$1"
     local ts_ip
 
+    log_info "===================================================================="
     log_info "Starting update for honeypot: ${name}"
+    log_info "===================================================================="
 
     # Get Tailscale IP
     ts_ip=$(get_tailscale_ip "${name}") || {
@@ -267,23 +528,52 @@ update_honeypot() {
 
     # Show version before update
     log_info "Version before update:"
-    get_version_info "${name}" | jq '.' || true
+    get_version_info "${name}" | jq '.' 2>/dev/null || log_warning "VERSION.json not found"
+    echo ""
 
-    # Execute update-agent.sh on remote honeypot
-    log_info "Executing update-agent.sh on ${name}..."
-
-    if ssh -p "${SSH_PORT}" "root@${ts_ip}" "cd /opt/cowrie && bash scripts/update-agent.sh" 2>&1 | tee -a "${LOG_FILE}"; then
-        log_success "Update completed successfully for ${name}"
-
-        # Show version after update
-        log_info "Version after update:"
-        get_version_info "${name}" | jq '.' || true
-
-        return 0
-    else
-        log_error "Update failed for ${name}"
-        return 1
+    # Auto-detection mode
+    if [ "${UPDATE_AUTO}" = "true" ]; then
+        auto_detect_updates "${name}" "${ts_ip}"
+        local result=$?
+        echo ""
+        return ${result}
     fi
+
+    # Manual mode - update based on flags
+    local updated=false
+
+    if [ "${UPDATE_FILESYSTEM}" = "true" ]; then
+        log_mode "Filesystem update mode"
+        if sync_filesystem "${name}" "${ts_ip}"; then
+            updated=true
+        else
+            return 1
+        fi
+        echo ""
+    fi
+
+    if [ "${UPDATE_CODE}" = "true" ]; then
+        log_mode "Code update mode"
+        if update_code "${name}" "${ts_ip}"; then
+            updated=true
+        else
+            return 1
+        fi
+        echo ""
+    fi
+
+    if [ "${updated}" = "false" ]; then
+        log_warning "No update mode selected, nothing to do"
+        return 0
+    fi
+
+    # Show version after update
+    log_info "Version after update:"
+    get_version_info "${name}" | jq '.' 2>/dev/null || log_warning "VERSION.json not found"
+    echo ""
+
+    log_success "Update completed successfully for ${name}"
+    return 0
 }
 
 # Rollback honeypot
@@ -310,7 +600,7 @@ rollback_honeypot() {
     # Execute rollback
     log_warning "Executing rollback on ${name}..."
 
-    if ssh -p "${SSH_PORT}" "root@${ts_ip}" "cd /opt/cowrie && bash scripts/update-agent.sh --rollback" 2>&1 | tee -a "${LOG_FILE}"; then
+    if ssh_exec "${ts_ip}" "cd /opt/cowrie && bash scripts/update-agent.sh --rollback" 2>&1 | tee -a "${LOG_FILE}"; then
         log_success "Rollback completed successfully for ${name}"
         return 0
     else
@@ -382,6 +672,9 @@ main() {
     local honeypot_name=""
     local parallel="false"
 
+    # Default to code update if no mode specified
+    local mode_specified=false
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -403,6 +696,27 @@ main() {
                 honeypot_name="$2"
                 shift 2
                 ;;
+            --code)
+                UPDATE_CODE=true
+                mode_specified=true
+                shift
+                ;;
+            --filesystem)
+                UPDATE_FILESYSTEM=true
+                mode_specified=true
+                shift
+                ;;
+            --full)
+                UPDATE_CODE=true
+                UPDATE_FILESYSTEM=true
+                mode_specified=true
+                shift
+                ;;
+            --auto)
+                UPDATE_AUTO=true
+                mode_specified=true
+                shift
+                ;;
             --parallel)
                 parallel="true"
                 shift
@@ -420,6 +734,12 @@ main() {
                 ;;
         esac
     done
+
+    # Default to --code if no mode specified
+    if [ "${mode_specified}" = "false" ] && [ "${operation}" != "status" ] && [ "${operation}" != "rollback" ]; then
+        UPDATE_CODE=true
+        log_mode "No update mode specified, defaulting to --code"
+    fi
 
     # Validate operation
     if [ -z "${operation}" ]; then
