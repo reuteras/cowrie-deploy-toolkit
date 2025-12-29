@@ -1782,11 +1782,11 @@ if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && command -v tailscale &> /dev/null
 
     # Add @reboot cron job to ensure Tailscale Serve persists after reboot
     (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve.*8000" | crontab -
-    if tailscale serve status 2>/dev/null | grep -q "/api"; then
-        # Path-based routing
+    if tailscale serve status 2>/dev/null | grep -q ":443"; then
+        # Path-based routing (port 443 already in use by dashboard)
         (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --set-path=/api --bg localhost:8000 > /dev/null 2>&1") | crontab -
     else
-        # Direct port mapping
+        # Direct port mapping (API only, no dashboard)
         (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1") | crontab -
     fi
 
