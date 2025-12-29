@@ -8,6 +8,8 @@ on:
       - 'web/**'
       - 'api/**'
       - '.github/workflows/build-images.yml'
+  schedule:
+    - cron: '0 6 * * 1'  # Every Monday at 6:00 AM UTC
   #checkov:skip=CKV_GHA_7:Manual workflow with safe boolean input for tag control
   workflow_dispatch:  # Manual trigger for on-demand builds
     inputs:
