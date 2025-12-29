@@ -77,7 +77,6 @@ if [ "$DEPLOY_ALL" = false ] && [ -z "$OUTPUT_DIR" ]; then
     echo_error ""
     echo_error "  # Deploy all honeypots (auto-finds latest outputs):"
     echo_error "  $0 --all"
-    echo ""
     echo_error "Requires master-config.toml in project root with [[honeypots]] array defined"
     exit 1
 fi
@@ -147,7 +146,6 @@ if [ "$DEPLOY_ALL" = true ]; then
     fi
 
     echo_info "Found ${#HONEYPOT_NAMES[@]} honeypot(s): ${HONEYPOT_NAMES[*]}"
-    echo ""
 
     # Find latest output directories for all honeypots
     echo_info "Finding latest output directories..."
@@ -165,19 +163,15 @@ if [ "$DEPLOY_ALL" = true ]; then
 
     # Check if any outputs are missing
     if [ ${#MISSING_OUTPUTS[@]} -gt 0 ]; then
-        echo ""
         echo_error "Missing output directories for the following honeypots:"
         for name in "${MISSING_OUTPUTS[@]}"; do
             echo_error "  - $name (expected: output_${name}_*)"
         done
-        echo ""
         echo_error "Please run ./generate_cowrie_fs_from_hetzner.sh first to generate filesystems"
         exit 1
     fi
 
-    echo ""
     echo_info "All output directories found. Starting deployment..."
-    echo ""
 
     # Deploy each honeypot
     for name in "${HONEYPOT_NAMES[@]}"; do
@@ -198,9 +192,7 @@ if [ "$DEPLOY_ALL" = true ]; then
             exit $DEPLOY_STATUS
         fi
 
-        echo ""
         echo_info "Successfully deployed: $name"
-        echo ""
     done
 
     echo "========================================================================"
@@ -525,7 +517,6 @@ if [ -f "$METADATA_FILE" ]; then
 
         # Warn for large version gaps
         if [ "$VERSION_DIFF" -gt 2 ]; then
-            echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo_warn "  LARGE VERSION GAP DETECTED!"
             echo_warn "  Source: Debian $SOURCE_VERSION → Target: Debian $DEPLOY_VERSION"
@@ -564,7 +555,6 @@ else
     echo_info "This may be an older filesystem snapshot - proceeding without version validation"
 fi
 
-echo ""
 
 # ============================================================
 # STEP 1 — Create server
@@ -654,7 +644,6 @@ until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLeve
     printf "."
     sleep 2
 done
-echo ""
 echo_info "SSH confirmed on port $REAL_SSH_PORT."
 
 # ============================================================

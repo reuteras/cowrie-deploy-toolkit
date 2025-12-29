@@ -70,7 +70,6 @@ if [ "$1" = "--all" ]; then
     fi
 
     echo_info "Found ${#HONEYPOT_NAMES[@]} honeypot(s): ${HONEYPOT_NAMES[*]}"
-    echo ""
 
     # Get Tailscale domain from shared config
     SHARED_CONFIG=$(python3 "$SCRIPT_DIR/scripts/get-honeypot-config.py" "$MASTER_CONFIG" --shared 2>/dev/null || echo "{}")
@@ -97,7 +96,6 @@ if [ "$1" = "--all" ]; then
 
         # Call this script recursively for each honeypot (port 22 for Tailscale SSH)
         "$0" "$HP_HOSTNAME" 22 "$name"
-        echo ""
     done
 
     echo_info "✓ All honeypots updated!"

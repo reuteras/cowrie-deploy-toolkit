@@ -68,12 +68,10 @@ if [ ${#HONEYPOT_NAMES[@]} -eq 0 ]; then
     exit 1
 fi
 
-echo ""
 echo_info "Found ${#HONEYPOT_NAMES[@]} honeypot(s) to generate filesystems for:"
 for name in "${HONEYPOT_NAMES[@]}"; do
     echo "  - $name"
 done
-echo ""
 
 # Generate timestamp once for all outputs
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -743,10 +741,8 @@ echo_info " Source metadata created: source_metadata.json"
     echo_info " Temporary server deleted."
 
     CLEAN_OUTPUT_DIR=$(echo "$OUTPUT_DIR" | tr -d "./")
-    echo ""
     echo_info "Filesystem for $HONEYPOT_NAME created successfully!"
     echo_info "  Output: $CLEAN_OUTPUT_DIR"
-    echo ""
 
 done  # End of honeypot loop
 
