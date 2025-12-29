@@ -490,6 +490,7 @@ get_honeypot_count() {
 # Example: get_honeypot_names "config.toml" HONEYPOT_NAMES
 get_honeypot_names() {
     local toml_file="$1"
+    # shellcheck disable=SC2178
     local -n array_ref="$2"  # nameref to the array variable
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
