@@ -344,14 +344,14 @@ update_version_file() {
     web_image_id=$(docker compose images cowrie-web --format json 2>/dev/null | jq -r '.[0].ID // "unknown"')
 
     local web_version
-    web_version=$(docker compose exec -T cowrie-web python -c "import sys; sys.path.insert(0, '/app'); from app import __version__; print(__version__)" 2>/dev/null || echo "unknown")
+    web_version=$(docker compose exec -T cowrie-web python -c "import sys; sys.path.insert(0, '/app'); from app import __version__; print(__version__)" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | tr -d '\000-\037' | sed 's/[[:space:]]*$//' || echo "unknown")
 
     local api_image_id="N/A"
     local api_version="N/A"
 
     if [ -f "${COWRIE_DIR}/docker-compose.api.yml" ]; then
         api_image_id=$(docker compose -f docker-compose.yml -f docker-compose.api.yml images cowrie-api --format json 2>/dev/null | jq -r '.[0].ID // "unknown"')
-        api_version=$(docker compose -f docker-compose.yml -f docker-compose.api.yml exec -T cowrie-api python -c "import sys; sys.path.insert(0, '/app'); from app import __version__; print(__version__)" 2>/dev/null || echo "unknown")
+        api_version=$(docker compose -f docker-compose.yml -f docker-compose.api.yml exec -T cowrie-api python -c "import sys; sys.path.insert(0, '/app'); from app import __version__; print(__version__)" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | tr -d '\000-\037' | sed 's/[[:space:]]*$//' || echo "unknown")
     fi
 
     local tailscale_ip
