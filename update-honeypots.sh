@@ -47,8 +47,6 @@ UPDATE_AUTO=false
 
 # Logging functions
 log() {
-    local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo -e "${1}" | tee -a "${LOG_FILE}"
 }
 
@@ -218,6 +216,7 @@ ssh_exec() {
     local cmd="$2"
     local port="${3:-${SSH_PORT}}"
 
+    # shellcheck disable=SC2086
     ssh ${SSH_OPTS} -p "${port}" "root@${host}" "${cmd}"
 }
 
