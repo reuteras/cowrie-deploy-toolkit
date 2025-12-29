@@ -3,6 +3,6 @@ uvicorn[standard]==0.40.0
 pydantic==2.12.5
 pydantic-settings==2.12.0
 httpx==0.28.1
-python-multipart==0.0.18
+python-multipart==0.0.21
 geoip2==5.2.0
 sse-starlette==3.0.4
