@@ -108,7 +108,7 @@ cleanup_old_snapshots() {
 
     log_info "Cleaning up old rollback snapshots (keeping ${MAX_ROLLBACK_SNAPSHOTS})"
 
-    for ((i=${MAX_ROLLBACK_SNAPSHOTS}; i<${#snapshots[@]}; i++)); do
+    for ((i=MAX_ROLLBACK_SNAPSHOTS; i<${#snapshots[@]}; i++)); do
         local old_snapshot="${ROLLBACK_DIR}/${snapshots[$i]}"
         log_info "Removing old snapshot: ${old_snapshot}"
         rm -rf "${old_snapshot}"
@@ -125,8 +125,13 @@ perform_rollback() {
         return 1
     fi
 
-    local latest_snapshot
-    latest_snapshot=$(ls -1t "${ROLLBACK_DIR}" 2>/dev/null | head -n 1)
+    local snapshots
+    mapfile -t snapshots < <(ls -1t "${ROLLBACK_DIR}" 2>/dev/null || true)
+
+    local latest_snapshot=""
+    if [ ${#snapshots[@]} -gt 0 ]; then
+        latest_snapshot="${snapshots[0]}"
+    fi
 
     if [ -z "${latest_snapshot}" ]; then
         log_error "No rollback snapshots found"

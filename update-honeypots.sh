@@ -226,6 +226,7 @@ scp_copy() {
     local dest="$2"
     local port="${3:-${SSH_PORT}}"
 
+    # shellcheck disable=SC2086
     scp ${SSH_OPTS} -P "${port}" "${src}" "${dest}"
 }
 

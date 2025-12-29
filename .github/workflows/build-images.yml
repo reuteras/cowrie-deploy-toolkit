@@ -1,6 +1,7 @@
 name: Build Docker Images
 
 on:
+  #checkov:skip=CKV_GHA_7:Manual workflow with safe boolean input for tag control
   workflow_dispatch:  # Manual trigger only (no automatic deploys)
     inputs:
       push_latest:
@@ -121,21 +122,21 @@ jobs:
     steps:
       - name: Job Summary
         run: |
-          echo "## Docker Images Built Successfully" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Web Dashboard" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image:** \`ghcr.io/${{ github.repository_owner }}/cowrie-web\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tags:** latest, ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### API Service" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image:** \`ghcr.io/${{ github.repository_owner }}/cowrie-api\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tags:** latest, ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Update Honeypots" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# Update all honeypots" >> $GITHUB_STEP_SUMMARY
-          echo "./update-honeypots.sh --all" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# Update specific honeypot" >> $GITHUB_STEP_SUMMARY
-          echo "./update-honeypots.sh --name cowrie-hp-1" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Images Built Successfully" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Web Dashboard" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image:** \`ghcr.io/${{ github.repository_owner }}/cowrie-web\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tags:** latest, ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### API Service" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image:** \`ghcr.io/${{ github.repository_owner }}/cowrie-api\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tags:** latest, ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Update Honeypots" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
+          echo "# Update all honeypots" >> "$GITHUB_STEP_SUMMARY"
+          echo "./update-honeypots.sh --all" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "# Update specific honeypot" >> "$GITHUB_STEP_SUMMARY"
+          echo "./update-honeypots.sh --name cowrie-hp-1" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
