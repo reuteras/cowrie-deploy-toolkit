@@ -46,6 +46,9 @@ CONFIG = {
     "server_ip": os.getenv("SERVER_IP", ""),
     "honeypot_hostname": os.getenv("HONEYPOT_HOSTNAME", ""),
     "canary_webhook_db_path": os.getenv("CANARY_WEBHOOK_DB_PATH", "/cowrie-data/var/canary-webhooks.db"),
+    # Dashboard mode configuration (NEW in v2.1)
+    "dashboard_mode": os.getenv("DASHBOARD_MODE", "local"),
+    "dashboard_api_url": os.getenv("DASHBOARD_API_URL", ""),
 }
 
 
@@ -1082,9 +1085,81 @@ yara_cache = YARACache(CONFIG["yara_cache_db_path"])
 # Initialize Canary Webhook database
 canary_webhook_db = CanaryWebhookDB(CONFIG["canary_webhook_db_path"])
 
+# Initialize DataSource abstraction (NEW in v2.1)
+# Supports local, remote, and multi-source modes
+datasource = None
+multisource = None
+
+try:
+    dashboard_mode = CONFIG["dashboard_mode"]
+
+    if dashboard_mode == "multi":
+        # Multi-source mode: aggregate data from multiple honeypots
+        from multisource import HoneypotSource, MultiSourceDataSource
+
+        # Read sources from environment variable (JSON format)
+        # Format: [{"name": "...", "type": "...", "api_base_url": "...", "enabled": true}, ...]
+        sources_json = os.getenv("DASHBOARD_SOURCES", "[]")
+        try:
+            import json
+
+            sources_config = json.loads(sources_json)
+            sources = []
+
+            for sc in sources_config:
+                sources.append(
+                    HoneypotSource(
+                        name=sc.get("name"),
+                        source_type=sc.get("type", "cowrie-ssh"),
+                        mode=sc.get("mode", "remote"),
+                        api_base_url=sc.get("api_base_url"),
+                        location=sc.get("location"),
+                        enabled=sc.get("enabled", True),
+                    )
+                )
+
+            if sources:
+                session_parser = MultiSourceDataSource(sources)
+                print(f"[+] MultiSourceDataSource initialized with {len(sources)} sources")
+            else:
+                print("[!] Warning: Multi-source mode enabled but no sources configured")
+                print("[!] Dashboard will operate in local mode only")
+
+        except Exception as e:
+            print(f"[!] Error parsing DASHBOARD_SOURCES: {e}")
+            print("[!] Dashboard will operate in local mode only")
+
+    elif dashboard_mode in ["remote", "local"]:
+        # Single-source mode (remote API or local files)
+        from datasource import DataSource
+
+        datasource = DataSource(
+            mode=dashboard_mode,
+            api_base_url=CONFIG["dashboard_api_url"] if CONFIG["dashboard_api_url"] else None,
+        )
+        print(f"[+] DataSource initialized in {dashboard_mode} mode")
+
+    else:
+        print(f"[!] Unknown dashboard mode: {dashboard_mode}")
+        print("[!] Dashboard will operate in local mode only")
+
+except Exception as e:
+    print(f"[!] Warning: DataSource initialization failed: {e}")
+    print("[!] Dashboard will operate in local mode only")
+
 # Global queue for real-time canary token events (for SSE streaming)
 canary_event_queue = queue.Queue(maxsize=1000)
 canary_queue_lock = threading.Lock()
+
+
+# Hetzner datacenter locations (approximate coordinates)
+HETZNER_LOCATIONS = {
+    "fsn1": {"lat": 50.1109, "lon": 8.6821, "city": "Falkenstein", "country": "Germany"},
+    "nbg1": {"lat": 49.4521, "lon": 11.0767, "city": "Nuremberg", "country": "Germany"},
+    "hel1": {"lat": 60.1699, "lon": 24.9384, "city": "Helsinki", "country": "Finland"},
+    "ash": {"lat": 39.0438, "lon": -77.4874, "city": "Ashburn", "country": "USA"},
+    "hil": {"lat": 45.5231, "lon": -122.6765, "city": "Hillsboro", "country": "USA"},
+}
 
 
 @app.route("/")
@@ -1092,6 +1167,42 @@ def index():
     """Dashboard page."""
     hours = request.args.get("hours", 24, type=int)
     stats = session_parser.get_stats(hours=hours)
+
+    # Get honeypot locations for map markers
+    honeypot_locations = []
+
+    # For multi-source mode, get all honeypot locations
+    if hasattr(session_parser, 'sources'):
+        # Multi-source mode
+        for source_name, source in session_parser.sources.items():
+            # Get location from source config and map to coordinates
+            location_info = {}
+            if source.location and source.location in HETZNER_LOCATIONS:
+                location_info = HETZNER_LOCATIONS[source.location]
+                honeypot_locations.append({
+                    "name": source_name,
+                    "lat": location_info["lat"],
+                    "lon": location_info["lon"],
+                    "city": location_info.get("city", source_name),
+                    "country": location_info.get("country", "-"),
+                    "type": "honeypot"
+                })
+            else:
+                # No location configured - skip marker for this honeypot
+                print(f"[Dashboard] No location configured for source: {source_name}")
+    else:
+        # Single source mode - use server IP
+        if CONFIG.get("server_ip"):
+            honeypot_geo = global_geoip.lookup(CONFIG["server_ip"])
+            if "latitude" in honeypot_geo and "longitude" in honeypot_geo:
+                honeypot_locations.append({
+                    "name": CONFIG.get("honeypot_hostname", "local"),
+                    "lat": honeypot_geo["latitude"],
+                    "lon": honeypot_geo["longitude"],
+                    "city": honeypot_geo.get("city", "-"),
+                    "country": honeypot_geo.get("country", "-"),
+                    "type": "honeypot"
+                })
 
     # Get recent canary webhook alerts (last 5)
     recent_webhooks = canary_webhook_db.get_recent_webhooks(limit=5)
@@ -1124,7 +1235,13 @@ def index():
     is_proxied = "X-Forwarded-For" in request.headers
 
     return render_template(
-        "index.html", stats=stats, hours=hours, config=CONFIG, recent_webhooks=filtered_webhooks, is_proxied=is_proxied
+        "index.html",
+        stats=stats,
+        hours=hours,
+        config=CONFIG,
+        recent_webhooks=filtered_webhooks,
+        is_proxied=is_proxied,
+        honeypot_locations=honeypot_locations,
     )
 
 
@@ -1570,7 +1687,7 @@ def system_info():
                 }
             )
 
-    return render_template("system_info.html", system=system_data, canary_tokens=canary_tokens)
+    return render_template("system_info.html", system=system_data, canary_tokens=canary_tokens, config=CONFIG)
 
 
 @app.route("/downloads")

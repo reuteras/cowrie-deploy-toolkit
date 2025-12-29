@@ -8,10 +8,36 @@
     <a href="{{ url_for('index') }}" class="btn">← Back to Dashboard</a>
 </div>
 
+{% if config.dashboard_mode == 'multi' and config.dashboard_sources %}
+<div class="dashboard-card" style="margin-bottom: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+    <h2 style="color: white; margin-bottom: 10px;">🌐 Multi-Honeypot Deployment</h2>
+    <p style="margin: 0; opacity: 0.9;">Dashboard aggregates session data from {{ config.dashboard_sources | length }} honeypot(s)</p>
+    <p style="margin: 10px 0 0 0; opacity: 0.8; font-size: 0.9em;">
+        ℹ️ System information below shows details for the locally accessible honeypot only.
+        Remote honeypots require API access for full system details.
+    </p>
+    <div style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
+        {% for source in config.dashboard_sources %}
+        <span style="padding: 6px 12px; background: rgba(255,255,255,0.2); border-radius: 4px; font-size: 0.9em;">
+            🍯 {{ source }}
+        </span>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <div style="display: grid; gap: 20px;">
     <!-- Basic System Info -->
     <div class="dashboard-card">
-        <h2>Basic Information</h2>
+        <h2>Basic Information
+        {% if config.dashboard_mode == 'multi' %}
+            <span style="color: var(--text-secondary); font-size: 0.9em; font-weight: normal;">
+                (showing local honeypot: {{ system.honeypot_hostname or 'unknown' }})
+            </span>
+        {% elif config.dashboard_mode == 'local' %}
+            <span style="color: var(--text-secondary); font-size: 0.9em; font-weight: normal;">(Local Honeypot)</span>
+        {% endif %}
+        </h2>
         <table class="data-table">
             <tbody>
                 <tr>

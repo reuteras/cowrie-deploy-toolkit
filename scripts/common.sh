@@ -310,16 +310,21 @@ setup_server_cleanup_trap() {
     cleanup_server() {
         local exit_code="$?"
 
-        # Prevent double cleanup (trap fires on both ERR and EXIT)
+        # Prevent double cleanup (trap fires on multiple signals)
         if [ "$CLEANUP_DONE" = true ]; then
             return 0
         fi
         CLEANUP_DONE=true
 
-        # Only cleanup on error (non-zero exit code)
+        # Only cleanup on error (non-zero exit code) or interrupt
+        # Exit code 130 = SIGINT (Ctrl+C), 143 = SIGTERM
         if [ "$exit_code" -ne 0 ]; then
             echo ""
-            echo_warn "Deployment failed! Cleaning up..."
+            if [ "$exit_code" -eq 130 ]; then
+                echo_warn "Script interrupted (Ctrl+C)! Cleaning up..."
+            else
+                echo_warn "Deployment failed! Cleaning up..."
+            fi
             echo_info "Deleting server $CLEANUP_SERVER_ID..."
             if hcloud server delete "$CLEANUP_SERVER_ID" 2>/dev/null; then
                 echo_info "Server deleted successfully."
@@ -331,8 +336,8 @@ setup_server_cleanup_trap() {
         cleanup_temp_files
     }
 
-    # Trap both ERR and EXIT to catch all failure modes
-    trap cleanup_server ERR EXIT
+    # Trap ERR, EXIT, INT (Ctrl+C), and TERM to catch all failure modes
+    trap cleanup_server ERR EXIT INT TERM
 }
 
 # ============================================================
@@ -350,6 +355,183 @@ validate_or_fail() {
     fi
 }
 
+# Cleanup old Tailscale device with same hostname
+# Usage: cleanup_tailscale_device "hostname" "tailscale_domain" "api_key"
+cleanup_tailscale_device() {
+    local hostname="$1"
+    local domain="$2"
+    local api_key="$3"
+
+    # Extract tailnet from domain (e.g., "tail12345" from "tail12345.ts.net")
+    local tailnet="${domain%%.*}"
+
+    if [ -z "$tailnet" ]; then
+        echo_warn "Could not extract tailnet from domain: $domain"
+        return 1
+    fi
+
+    echo_info "Searching for existing device: $hostname in tailnet: $tailnet"
+
+    # List all devices in the tailnet
+    local devices_json
+    devices_json=$(curl -s -H "Authorization: Bearer $api_key" \
+        "https://api.tailscale.com/api/v2/tailnet/$tailnet/devices" 2>/dev/null)
+
+    if [ $? -ne 0 ] || [ -z "$devices_json" ]; then
+        echo_warn "Failed to fetch devices from Tailscale API"
+        return 1
+    fi
+
+    # Find device IDs matching the hostname (could be multiple: hostname, hostname-1, hostname-2, etc)
+    local device_ids
+    device_ids=$(echo "$devices_json" | jq -r --arg name "$hostname" \
+        '.devices[] | select(.hostname == $name or (.hostname | startswith($name + "-"))) | .id' 2>/dev/null)
+
+    if [ -z "$device_ids" ]; then
+        echo_info "No existing devices found with hostname: $hostname"
+        return 0
+    fi
+
+    # Delete each matching device
+    local count=0
+    while IFS= read -r device_id; do
+        if [ -n "$device_id" ]; then
+            local device_name
+            device_name=$(echo "$devices_json" | jq -r --arg id "$device_id" \
+                '.devices[] | select(.id == $id) | .hostname' 2>/dev/null)
+
+            echo_info "Deleting device: $device_name (ID: $device_id)"
+
+            local delete_result
+            delete_result=$(curl -s -X DELETE -H "Authorization: Bearer $api_key" \
+                "https://api.tailscale.com/api/v2/device/$device_id" 2>/dev/null)
+
+            if [ $? -eq 0 ]; then
+                echo_info "Successfully deleted device: $device_name"
+                ((count++))
+            else
+                echo_warn "Failed to delete device: $device_name"
+            fi
+        fi
+    done <<< "$device_ids"
+
+    if [ $count -gt 0 ]; then
+        echo_info "Cleaned up $count old device(s)"
+    fi
+
+    return 0
+}
+
+# Validate Tailscale configuration (NEW in v2.1)
+# Usage: validate_tailscale_config <authkey> <tailscale_domain>
+validate_tailscale_config() {
+    local authkey="$1"
+    local tailscale_domain="$2"
+
+    # Check authkey is provided
+    if [ -z "$authkey" ]; then
+        fatal_error "Tailscale authkey is REQUIRED but not set in master-config.toml
+
+Generate an authkey at: https://login.tailscale.com/admin/settings/keys
+Add to master-config.toml:
+  [tailscale]
+  authkey = \"tskey-auth-...\""
+    fi
+
+    # Check authkey format
+    if [[ ! "$authkey" =~ ^tskey- ]]; then
+        fatal_error "Invalid Tailscale authkey format. Expected: tskey-auth-...
+
+Current value: $authkey
+
+Generate a valid authkey at: https://login.tailscale.com/admin/settings/keys"
+    fi
+
+    # Check tailscale_domain is provided
+    if [ -z "$tailscale_domain" ]; then
+        fatal_error "Tailscale domain is REQUIRED but not set in master-config.toml
+
+Find your Tailscale domain at: https://login.tailscale.com/admin/dns
+Add to master-config.toml:
+  [tailscale]
+  tailscale_domain = \"your-tailnet.ts.net\""
+    fi
+
+    # Check domain format (warn only, don't fail)
+    if [[ ! "$tailscale_domain" =~ \.ts\.net$ ]]; then
+        echo_warn "Warning: Tailscale domain doesn't end with .ts.net: $tailscale_domain"
+        echo_warn "This may be correct for custom domains, but double-check"
+    fi
+}
+
+# ============================================================
+# Honeypot Configuration Functions (NEW in v2.1)
+# ============================================================
+
+# Check if honeypots array exists in config
+# Usage: has_honeypots_array "config.toml"
+# Returns: "true" or "false"
+has_honeypots_array() {
+    local toml_file="$1"
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    python3 "$script_dir/get-honeypot-config.py" "$toml_file" --has-array 2>/dev/null || echo "false"
+}
+
+# Get count of honeypots in config
+# Usage: get_honeypot_count "config.toml"
+# Returns: number of honeypots
+get_honeypot_count() {
+    local toml_file="$1"
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    python3 "$script_dir/get-honeypot-config.py" "$toml_file" --count 2>/dev/null || echo "0"
+}
+
+# Get list of honeypot names
+# Usage: get_honeypot_names "config.toml" array_var_name
+# Example: get_honeypot_names "config.toml" HONEYPOT_NAMES
+get_honeypot_names() {
+    local toml_file="$1"
+    local -n array_ref="$2"  # nameref to the array variable
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    array_ref=()  # Clear the array
+
+    # Read names line by line into array
+    while IFS= read -r name; do
+        if [ -n "$name" ]; then
+            array_ref+=("$name")
+        fi
+    done < <(python3 "$script_dir/get-honeypot-config.py" "$toml_file" --list 2>/dev/null)
+}
+
+# Get honeypot configuration (merged with shared settings)
+# Usage: get_honeypot_config "config.toml" "honeypot-name"
+# Returns: JSON configuration
+get_honeypot_config() {
+    local toml_file="$1"
+    local name="$2"
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    python3 "$script_dir/get-honeypot-config.py" "$toml_file" --name "$name" 2>/dev/null
+}
+
+
+# Read value from JSON config using jq
+# Usage: get_json_value "$json" ".key.path"
+# Returns: value or empty string if not found
+get_json_value() {
+    local json="$1"
+    local key_path="$2"
+
+    echo "$json" | jq -r "$key_path // empty" 2>/dev/null || echo ""
+}
+
 # ============================================================
 # Library Initialization
 # ============================================================
@@ -363,5 +545,6 @@ setup_cleanup_trap
 export -f echo_info echo_warn echo_error fatal_error
 export -f command_exists check_dependencies
 export -f read_toml_value read_toml_default read_toml_array
-export -f validate_ip validate_safe_string validate_server_id
+export -f validate_ip validate_safe_string validate_server_id validate_tailscale_config cleanup_tailscale_device
 export -f create_temp_file create_temp_dir cleanup_temp_files
+export -f has_honeypots_array get_honeypot_count get_honeypot_names get_honeypot_config get_json_value

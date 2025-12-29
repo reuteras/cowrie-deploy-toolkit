@@ -597,8 +597,9 @@ document.addEventListener('DOMContentLoaded', function() {
         arcLayers.push(arc);
 
         // Add popup to arc with attack count
+        const targetHoneypot = attack._source || 'local';
         arc.bindPopup(`
-            <strong>${attack.city}, ${attack.country}</strong><br>
+            <strong>${attack.city}, ${attack.country}</strong> → <strong style="color:#28a745;">🍯 ${targetHoneypot}</strong><br>
             IP: <a href="/sessions?ip=${attack.ip}" target="_blank">${attack.ip}</a><br>
             ${attack.attackCount > 1 ? `<span style="color: #ffc107; font-weight: bold;">⚡ ${attack.attackCount} attacks from this IP</span><br>` : ''}
             <a href="/session/${attack.sessionId}" target="_blank">View Session →</a>

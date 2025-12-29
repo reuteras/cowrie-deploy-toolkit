@@ -1,0 +1,58 @@
+services:
+  cowrie-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: cowrie-api
+    restart: unless-stopped
+    networks:
+      - cowrie-internal
+    volumes:
+      # Read-only access to Cowrie data
+      - cowrie-var:/cowrie-data:ro
+      - /opt/cowrie/var:/opt-cowrie-data:ro
+      - /var/lib/GeoIP:/geoip:ro
+    environment:
+      # Cowrie data paths
+      - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
+      - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
+      - COWRIE_DOWNLOADS_PATH=/cowrie-data/lib/cowrie/downloads
+
+      # GeoIP databases
+      - GEOIP_CITY_DB=/geoip/GeoLite2-City.mmdb
+      - GEOIP_ASN_DB=/geoip/GeoLite2-ASN.mmdb
+
+      # Cache databases
+      - YARA_CACHE_DB=/opt-cowrie-data/yara-cache.db
+      - CANARY_WEBHOOKS_DB=/opt-cowrie-data/canary-webhooks.db
+      - IPLOCK_DB=/cowrie-data/lib/cowrie/iplock.db
+
+      # API keys (passed from deployment script)
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
+
+      # Logging
+      - LOG_LEVEL=${API_LOG_LEVEL:-INFO}
+
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100M
+      - /app/.cache:noexec,nosuid,size=50M
+
+    # Internal network only by default
+    # For multi-host deployment, expose via Tailscale Serve
+    # ports:
+    #   - "127.0.0.1:8000:8000"  # Uncomment for local testing
+
+networks:
+  cowrie-internal:
+    name: cowrie-internal
+
+volumes:
+  cowrie-var:
+    name: cowrie-var

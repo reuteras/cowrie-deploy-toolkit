@@ -17,32 +17,234 @@ Deploy realistic [Cowrie](https://github.com/cowrie/cowrie) SSH honeypots on Het
 - **Security hardening** - Automatic updates, Docker isolation, capability dropping, read-only containers
 - **Real-time YARA scanning** - Background daemon scans malware as it's downloaded
 
+## What's New in v2.1
+
+**OS Version Decoupling:**
+- Generate filesystem on one Debian version (e.g., debian-11 for realism)
+- Deploy honeypot on different version (e.g., debian-13 for security)
+- Automatic compatibility validation
+
+**Multi-Host Architecture:**
+- FastAPI layer for remote access to Cowrie data
+- Dashboard modes: local (direct files), remote (single API), multi (aggregate multiple honeypots)
+- Tailscale VPN now REQUIRED for secure management
+- Centralized monitoring from multiple honeypots
+
+**Enhanced Dashboard:**
+- Aggregate data from multiple honeypots
+- Support for different honeypot types (SSH, web, VPN - future)
+- Parallel querying with graceful degradation
+- Source filtering and tagging
+
 ## Quick Start
 
-### 1. Generate filesystem snapshot
+### Single Honeypot Deployment
+
+**1. Generate filesystem snapshot**
 
 ```bash
 ./generate_cowrie_fs_from_hetzner.sh
 ```
 
-This creates a temporary Hetzner server, captures its filesystem and identity, then destroys it. Output is saved to `./output_YYYYMMDD_HHMMSS/`.
+Creates a temporary Hetzner server, captures its filesystem and identity, then destroys it. Output: `./output_YYYYMMDD_HHMMSS/`.
 
-### 2. Configure reporting (optional)
+**2. Configure (optional)**
 
 ```bash
 cp example-config.toml master-config.toml
 nano master-config.toml
 ```
 
-Edit `master-config.toml` with your API keys and email settings. Supports command execution for secrets (e.g., `"op read op://..."`). Set `enable_reporting = false` to skip automated reporting setup.
+Edit with your API keys, email settings, and Tailscale credentials. Supports command execution for secrets (e.g., `"op read op://..."`).
 
-### 3. Deploy honeypot
+**3. Deploy honeypot**
 
 ```bash
 ./deploy_cowrie_honeypot.sh ./output_YYYYMMDD_HHMMSS
 ```
 
-This deploys a new server with Cowrie running on port 22. Real SSH is moved to port 2222. If `master-config.toml` exists with `enable_reporting = true`, automatically sets up MaxMind GeoIP, Postfix email, and daily reports.
+Deploys server with Cowrie on port 22. Real SSH moved to port 2222. Automatically sets up reporting, web dashboard, and Tailscale VPN.
+
+### Multi-Honeypot Deployment
+
+Deploy multiple honeypots with centralized dashboard using one repository.
+
+#### Deployment Workflow
+
+**1. Create config files for each honeypot**
+
+```bash
+# Copy example config
+cp example-config.toml master-config-hp1.toml
+cp example-config.toml master-config-hp2.toml
+cp example-config.toml master-config-dashboard.toml
+```
+
+**2. Configure honeypot 1**
+
+Edit `master-config-hp1.toml`:
+
+```toml
+[deployment]
+honeypot_hostname = "dmz-web-01"
+
+[tailscale]
+authkey = "tskey-auth-..."
+tailscale_name = "cowrie-hp-1"
+tailscale_domain = "tail9e5e41.ts.net"
+
+[api]
+enabled = true
+expose_via_tailscale = true
+tailscale_api_hostname = "cowrie-hp-1"
+
+[web_dashboard]
+enabled = false  # No local dashboard
+```
+
+**3. Configure honeypot 2**
+
+Edit `master-config-hp2.toml`:
+
+```toml
+[deployment]
+honeypot_hostname = "dmz-db-01"
+
+[tailscale]
+authkey = "tskey-auth-..."
+tailscale_name = "cowrie-hp-2"
+tailscale_domain = "tail9e5e41.ts.net"
+
+[api]
+enabled = true
+expose_via_tailscale = true
+tailscale_api_hostname = "cowrie-hp-2"
+
+[web_dashboard]
+enabled = false  # No local dashboard
+```
+
+**4. Configure centralized dashboard**
+
+Edit `master-config-dashboard.toml`:
+
+```toml
+[tailscale]
+authkey = "tskey-auth-..."
+tailscale_name = "cowrie-dashboard"
+tailscale_domain = "tail9e5e41.ts.net"
+
+[api]
+enabled = false  # Dashboard doesn't need API
+
+[web_dashboard]
+enabled = true
+mode = "multi"
+
+[[web_dashboard.sources]]
+name = "honeypot-ssh-1"
+type = "cowrie-ssh"
+api_base_url = "https://cowrie-hp-1.tail9e5e41.ts.net"
+enabled = true
+
+[[web_dashboard.sources]]
+name = "honeypot-ssh-2"
+type = "cowrie-ssh"
+api_base_url = "https://cowrie-hp-2.tail9e5e41.ts.net"
+enabled = true
+```
+
+**5. Generate filesystem (once)**
+
+```bash
+# Use any config or default
+./generate_cowrie_fs_from_hetzner.sh
+# Output: ./output_20251226_143210
+```
+
+**6. Deploy honeypots**
+
+```bash
+# Deploy honeypot 1
+cp master-config-hp1.toml master-config.toml
+./deploy_cowrie_honeypot.sh ./output_20251226_143210
+
+# Deploy honeypot 2
+cp master-config-hp2.toml master-config.toml
+./deploy_cowrie_honeypot.sh ./output_20251226_143210
+
+# Deploy dashboard server
+cp master-config-dashboard.toml master-config.toml
+./deploy_cowrie_honeypot.sh ./output_20251226_143210
+```
+
+**7. Access centralized dashboard**
+
+```
+https://cowrie-dashboard.tail9e5e41.ts.net
+```
+
+Dashboard shows aggregated data from both honeypots with source filtering.
+
+#### Alternative: Helper Script
+
+Create `deploy-multi.sh`:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+OUTPUT_DIR="${1:-}"
+if [ -z "$OUTPUT_DIR" ]; then
+    echo "Usage: $0 <output_directory>"
+    exit 1
+fi
+
+# Deploy honeypot 1
+echo "Deploying honeypot 1..."
+cp master-config-hp1.toml master-config.toml
+./deploy_cowrie_honeypot.sh "$OUTPUT_DIR"
+
+# Deploy honeypot 2
+echo "Deploying honeypot 2..."
+cp master-config-hp2.toml master-config.toml
+./deploy_cowrie_honeypot.sh "$OUTPUT_DIR"
+
+# Deploy dashboard
+echo "Deploying dashboard..."
+cp master-config-dashboard.toml master-config.toml
+./deploy_cowrie_honeypot.sh "$OUTPUT_DIR"
+
+echo "Multi-honeypot deployment complete!"
+```
+
+Then:
+
+```bash
+chmod +x deploy-multi.sh
+./generate_cowrie_fs_from_hetzner.sh
+./deploy-multi.sh ./output_20251226_143210
+```
+
+#### Repository Organization
+
+**Recommended structure:**
+
+```
+cowrie-deploy-toolkit/
+├── master-config-hp1.toml       # Honeypot 1 config
+├── master-config-hp2.toml       # Honeypot 2 config
+├── master-config-dashboard.toml # Dashboard config
+├── master-config.toml           # Active config (gitignored)
+├── .gitignore                   # Ignore master-config.toml
+└── deploy-multi.sh              # Optional helper script
+```
+
+**Benefits:**
+- One repository for all deployments
+- Version control for configuration templates
+- Easy updates and maintenance
+- Shared scripts and improvements
 
 ## Requirements
 

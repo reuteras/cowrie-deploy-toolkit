@@ -48,6 +48,7 @@
         <thead>
             <tr>
                 <th>Session ID</th>
+                <th>Honeypot</th>
                 <th>IP Address</th>
                 <th>Country</th>
                 <th>Start Time</th>
@@ -64,6 +65,13 @@
                     <a href="{{ url_for('session_detail', session_id=session.id) }}">
                         {{ session.id | truncate_hash }}
                     </a>
+                </td>
+                <td>
+                    {% if session._source %}
+                    <span class="badge badge-info">{{ session._source }}</span>
+                    {% else %}
+                    <span class="badge">local</span>
+                    {% endif %}
                 </td>
                 <td>
                     <a href="?ip={{ session.src_ip }}&hours={{ hours }}">{{ session.src_ip }}</a>
@@ -103,7 +111,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="8" class="no-data">No sessions found</td>
+                <td colspan="9" class="no-data">No sessions found</td>
             </tr>
             {% endfor %}
         </tbody>

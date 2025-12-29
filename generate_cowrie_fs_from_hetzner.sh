@@ -33,36 +33,85 @@ fi
 
 echo_info "Found master-config.toml, reading deployment settings..."
 
-# Read configuration using Python TOML parser
-SERVER_TYPE=$(read_toml_default "$MASTER_CONFIG" "deployment.server_type" "cpx11")
-SERVER_IMAGE=$(read_toml_default "$MASTER_CONFIG" "deployment.server_image" "debian-13")
-HONEYPOT_HOSTNAME=$(read_toml_default "$MASTER_CONFIG" "deployment.honeypot_hostname" "dmz-web01")
+# Read shared configuration
+SERVER_TYPE=$(read_toml_default "$MASTER_CONFIG" "shared.deployment.server_type" "cpx11")
+GENERATION_IMAGE=$(read_toml_default "$MASTER_CONFIG" "shared.deployment.generation_image" "debian-13")
+SERVER_IMAGE="$GENERATION_IMAGE"
 
 # Read SSH keys array
 SSH_KEYS=()
-read_toml_array "$MASTER_CONFIG" "deployment.ssh_keys" SSH_KEYS
+read_toml_array "$MASTER_CONFIG" "shared.deployment.ssh_keys" SSH_KEYS
 
 if [ ${#SSH_KEYS[@]} -lt 1 ]; then
-    fatal_error "SSH keys not configured in master-config.toml. Please add deployment.ssh_keys array."
+    fatal_error "SSH keys not configured in master-config.toml. Please add shared.deployment.ssh_keys array."
 fi
 
-echo_info "Loaded ${#SSH_KEYS[@]} SSH key(s) from config:"
-for key in "${SSH_KEYS[@]}"; do
-    echo "  - $key"
+echo_info "Shared configuration:"
+echo_info "  Server type: $SERVER_TYPE"
+echo_info "  Server image: $SERVER_IMAGE"
+echo_info "  SSH keys: ${#SSH_KEYS[@]} key(s)"
+
+# Check if honeypots array exists
+HAS_HONEYPOTS=$(has_honeypots_array "$MASTER_CONFIG")
+if [ "$HAS_HONEYPOTS" != "true" ]; then
+    echo_error "No [[honeypots]] array found in master-config.toml"
+    echo_error "Please define at least one honeypot in the [[honeypots]] array"
+    exit 1
+fi
+
+# Get list of honeypot names
+HONEYPOT_NAMES=()
+get_honeypot_names "$MASTER_CONFIG" HONEYPOT_NAMES
+
+if [ ${#HONEYPOT_NAMES[@]} -eq 0 ]; then
+    echo_error "No honeypots defined in master-config.toml"
+    exit 1
+fi
+
+echo ""
+echo_info "Found ${#HONEYPOT_NAMES[@]} honeypot(s) to generate filesystems for:"
+for name in "${HONEYPOT_NAMES[@]}"; do
+    echo "  - $name"
 done
+echo ""
 
-# Validate configuration
-validate_safe_string "$HONEYPOT_HOSTNAME" || fatal_error "Invalid hostname: $HONEYPOT_HOSTNAME (only alphanumeric, dash, underscore, dot allowed)"
+# Generate timestamp once for all outputs
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-echo_info "Using config: $SERVER_TYPE, $SERVER_IMAGE, hostname=$HONEYPOT_HOSTNAME"
+# Generate filesystem for each honeypot
+for HONEYPOT_NAME in "${HONEYPOT_NAMES[@]}"; do
+    echo "========================================================================"
+    echo_info "Generating filesystem for honeypot: $HONEYPOT_NAME"
+    echo "========================================================================"
 
-# Output directory setup
-SERVER_NAME="$HONEYPOT_HOSTNAME"
-OUTPUT_DIR="./output_$(date +%Y%m%d_%H%M%S)"
-IDENTITY_DIR="$OUTPUT_DIR/identity"
+    # Get honeypot-specific config
+    CONFIG_JSON=$(get_honeypot_config "$MASTER_CONFIG" "$HONEYPOT_NAME")
+    if [ -z "$CONFIG_JSON" ]; then
+        echo_error "Failed to read configuration for honeypot: $HONEYPOT_NAME"
+        exit 1
+    fi
 
-echo_info "Output directory: $OUTPUT_DIR"
-mkdir -p "$IDENTITY_DIR"
+    # Extract hostname from config
+    HONEYPOT_HOSTNAME=$(echo "$CONFIG_JSON" | jq -r '.hostname // empty')
+    if [ -z "$HONEYPOT_HOSTNAME" ]; then
+        echo_error "No hostname defined for honeypot: $HONEYPOT_NAME"
+        exit 1
+    fi
+
+    # Validate hostname
+    validate_safe_string "$HONEYPOT_HOSTNAME" || fatal_error "Invalid hostname: $HONEYPOT_HOSTNAME (only alphanumeric, dash, underscore, dot allowed)"
+
+    echo_info "Hostname: $HONEYPOT_HOSTNAME"
+
+    # Output directory with honeypot name
+    OUTPUT_DIR="./output_${HONEYPOT_NAME}_${TIMESTAMP}"
+    IDENTITY_DIR="$OUTPUT_DIR/identity"
+
+    echo_info "Output directory: $OUTPUT_DIR"
+    mkdir -p "$IDENTITY_DIR"
+
+    # Set server name for this honeypot
+    SERVER_NAME="$HONEYPOT_HOSTNAME"
 
 # ============================================================
 # STEP 1 — Create temporary server
@@ -618,26 +667,110 @@ scp $SSH_OPTS "root@$SERVER_IP:/root/fs.pickle" "$OUTPUT_DIR/fs.pickle" > /dev/n
 echo_info " fs.pickle downloaded."
 
 # ============================================================
+# STEP 7.5 — Generate source metadata
+# ============================================================
+
+echo_info " Generating source metadata..."
+
+# Extract OS information from identity files
+OS_NAME=""
+OS_VERSION=""
+OS_VERSION_ID=""
+OS_CODENAME=""
+if [ -f "$OUTPUT_DIR/identity/os-release" ]; then
+    OS_NAME=$(grep "^NAME=" "$OUTPUT_DIR/identity/os-release" | cut -d'"' -f2 || echo "Unknown")
+    OS_VERSION=$(grep "^VERSION=" "$OUTPUT_DIR/identity/os-release" | cut -d'"' -f2 || echo "Unknown")
+    OS_VERSION_ID=$(grep "^VERSION_ID=" "$OUTPUT_DIR/identity/os-release" | cut -d'"' -f2 || echo "unknown")
+    OS_CODENAME=$(grep "^VERSION_CODENAME=" "$OUTPUT_DIR/identity/os-release" | cut -d'=' -f2 || echo "unknown")
+fi
+
+# Extract kernel version
+KERNEL_VERSION=""
+if [ -f "$OUTPUT_DIR/identity/kernel.txt" ]; then
+    KERNEL_VERSION=$(awk '{print $3}' "$OUTPUT_DIR/identity/kernel.txt" || echo "unknown")
+fi
+
+# Extract architecture
+ARCHITECTURE=""
+if [ -f "$OUTPUT_DIR/identity/kernel.txt" ]; then
+    ARCHITECTURE=$(awk '{print $NF}' "$OUTPUT_DIR/identity/kernel.txt" || echo "unknown")
+fi
+
+# Generate timestamp
+GENERATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# Create source_metadata.json
+cat > "$OUTPUT_DIR/source_metadata.json" << EOF
+{
+  "schema_version": "1.0",
+  "generated_at": "$GENERATED_AT",
+  "generation": {
+    "server_image": "$SERVER_IMAGE",
+    "server_type": "$SERVER_TYPE",
+    "hostname": "$HONEYPOT_HOSTNAME",
+    "os_info": {
+      "name": "$OS_NAME",
+      "version": "$OS_VERSION",
+      "version_id": "$OS_VERSION_ID",
+      "codename": "$OS_CODENAME"
+    },
+    "kernel_version": "$KERNEL_VERSION",
+    "architecture": "$ARCHITECTURE"
+  },
+  "compatibility": {
+    "tested_deployment_images": [],
+    "notes": "Filesystem is OS-agnostic, but file contents reflect source OS version"
+  },
+  "files": {
+    "fs_pickle": "fs.pickle",
+    "identity_dir": "identity/",
+    "contents_dir": "contents/",
+    "txtcmds_dir": "txtcmds/"
+  },
+  "toolkit_version": "2.1.0"
+}
+EOF
+
+echo_info " Source metadata created: source_metadata.json"
+
+# ============================================================
 # STEP 8 — Destroy server
 # ============================================================
 
-echo_info " Deleting temporary server..."
-hcloud server delete "$SERVER_ID"
+    echo_info " Deleting temporary server..."
+    hcloud server delete "$SERVER_ID"
 
-echo_info " Temporary server deleted."
+    echo_info " Temporary server deleted."
+
+    CLEAN_OUTPUT_DIR=$(echo "$OUTPUT_DIR" | tr -d "./")
+    echo ""
+    echo_info "Filesystem for $HONEYPOT_NAME created successfully!"
+    echo_info "  Output: $CLEAN_OUTPUT_DIR"
+    echo ""
+
+done  # End of honeypot loop
 
 # ============================================================
-# DONE
+# DONE - Summary
 # ============================================================
-
-CLEAN_OUTPUT_DIR=$(echo "$OUTPUT_DIR" | tr -d "./")
 
 echo ""
 echo "==========================================================="
-echo "  COMPLETED SUCCESSFULLY"
-echo "  Pickle + identity metadata stored in:"
-echo "     $OUTPUT_DIR"
+echo "  ALL FILESYSTEMS GENERATED SUCCESSFULLY"
+echo "==========================================================="
 echo ""
-echo "  You can deploy a honeypot with the command:"
-echo "    ./deploy_cowrie_honeypot.sh $CLEAN_OUTPUT_DIR"
+echo "Generated ${#HONEYPOT_NAMES[@]} filesystem(s):"
+echo ""
+
+for HONEYPOT_NAME in "${HONEYPOT_NAMES[@]}"; do
+    CLEAN_DIR="output_${HONEYPOT_NAME}_${TIMESTAMP}"
+    echo "  $HONEYPOT_NAME:"
+    echo "    Directory: $CLEAN_DIR"
+    echo "    Deploy:    ./deploy_cowrie_honeypot.sh $CLEAN_DIR --name $HONEYPOT_NAME"
+    echo ""
+done
+
+echo "Or deploy all honeypots at once:"
+echo "  ./deploy_cowrie_honeypot.sh --all"
+echo ""
 echo "==========================================================="

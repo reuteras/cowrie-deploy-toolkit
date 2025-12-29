@@ -27,8 +27,15 @@ fi
 check_dependencies "ssh" "scp" "rsync"
 
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <server_ip> [ssh_port]"
-    echo "Example: $0 192.168.1.100 2222"
+    echo "Usage: $0 <server_ip_or_hostname> [ssh_port]"
+    echo "   OR: $0 --all"
+    echo "   OR: $0 --name <honeypot_name>"
+    echo ""
+    echo "Examples:"
+    echo "  $0 --all                               # Update all honeypots (via Tailscale)"
+    echo "  $0 --name cowrie-hp-1                  # Update specific honeypot (via Tailscale)"
+    echo "  $0 cowrie-hp-1.tail9e5e41.ts.net 2222  # Update by Tailscale hostname"
+    echo "  $0 192.168.1.100 2222                  # Update by IP (if not using Tailscale)"
     echo ""
     echo "This script syncs local changes to the server:"
     echo "  - Latest output directory (fs.pickle, identity, contents)"
@@ -36,27 +43,146 @@ if [ $# -lt 1 ]; then
     echo "  - web/ directory (web dashboard files)"
     echo "  - pyproject.toml, README.md"
     echo "  - Restarts affected services"
+    echo ""
+    echo "Note: --all and --name modes use Tailscale hostnames from master-config.toml"
     exit 1
 fi
 
-SERVER_IP="$1"
-SSH_PORT="${2:-22}"  # Default to 22
+# Check for multi-deployment mode
+MASTER_CONFIG="$SCRIPT_DIR/master-config.toml"
 
-# Validate inputs
-validate_ip "$SERVER_IP" || fatal_error "Invalid IP address: $SERVER_IP"
+if [ "$1" = "--all" ]; then
+    # Multi-deployment mode: update all honeypots
+    if [ ! -f "$MASTER_CONFIG" ]; then
+        fatal_error "master-config.toml not found. Required for --all mode."
+    fi
+
+    if ! has_honeypots_array "$MASTER_CONFIG"; then
+        fatal_error "No [[honeypots]] array found in master-config.toml"
+    fi
+
+    # Get list of honeypot names
+    HONEYPOT_NAMES=()
+    get_honeypot_names "$MASTER_CONFIG" HONEYPOT_NAMES
+
+    if [ ${#HONEYPOT_NAMES[@]} -eq 0 ]; then
+        fatal_error "No honeypots defined in master-config.toml"
+    fi
+
+    echo_info "Found ${#HONEYPOT_NAMES[@]} honeypot(s): ${HONEYPOT_NAMES[*]}"
+    echo ""
+
+    # Get Tailscale domain from shared config
+    SHARED_CONFIG=$(python3 "$SCRIPT_DIR/scripts/get-honeypot-config.py" "$MASTER_CONFIG" --shared 2>/dev/null || echo "{}")
+    TAILSCALE_DOMAIN=$(echo "$SHARED_CONFIG" | jq -r '.tailscale_domain // empty')
+
+    if [ -z "$TAILSCALE_DOMAIN" ]; then
+        echo_warn "No tailscale_domain in shared config, will use hostname only"
+    fi
+
+    # Update each honeypot
+    for name in "${HONEYPOT_NAMES[@]}"; do
+        echo "========================================================================"
+        echo_info "Updating honeypot: $name"
+        echo "========================================================================"
+
+        # Construct Tailscale hostname
+        if [ -n "$TAILSCALE_DOMAIN" ]; then
+            HP_HOSTNAME="${name}.${TAILSCALE_DOMAIN}"
+        else
+            HP_HOSTNAME="$name"
+        fi
+
+        echo_info "Connecting to: $HP_HOSTNAME"
+
+        # Call this script recursively for each honeypot (port 22 for Tailscale SSH)
+        "$0" "$HP_HOSTNAME" 22 "$name"
+        echo ""
+    done
+
+    echo_info "✓ All honeypots updated!"
+    exit 0
+
+elif [ "$1" = "--name" ]; then
+    # Single honeypot by name
+    if [ -z "$2" ]; then
+        fatal_error "Missing honeypot name. Usage: $0 --name <honeypot_name>"
+    fi
+
+    HP_NAME="$2"
+
+    if [ ! -f "$MASTER_CONFIG" ]; then
+        fatal_error "master-config.toml not found. Required for --name mode."
+    fi
+
+    # Get honeypot config
+    HP_CONFIG=$(get_honeypot_config "$MASTER_CONFIG" "$HP_NAME")
+    if [ -z "$HP_CONFIG" ]; then
+        fatal_error "Honeypot '$HP_NAME' not found in master-config.toml"
+    fi
+
+    # Get Tailscale domain from shared config
+    SHARED_CONFIG=$(python3 "$SCRIPT_DIR/scripts/get-honeypot-config.py" "$MASTER_CONFIG" --shared 2>/dev/null || echo "{}")
+    TAILSCALE_DOMAIN=$(echo "$SHARED_CONFIG" | jq -r '.tailscale_domain // empty')
+
+    # Construct Tailscale hostname
+    if [ -n "$TAILSCALE_DOMAIN" ]; then
+        SERVER_IP="${HP_NAME}.${TAILSCALE_DOMAIN}"
+    else
+        SERVER_IP="$HP_NAME"
+    fi
+
+    echo_info "Connecting to: $SERVER_IP"
+    SSH_PORT=2222
+    # Continue with normal update below...
+
+else
+    # Original mode: update by IP address or hostname
+    SERVER_IP="$1"
+    SSH_PORT="${2:-22}"
+    HP_NAME="${3:-}"  # Optional name passed from recursive call
+
+    # Validate inputs - allow both IP addresses and hostnames
+    if ! validate_ip "$SERVER_IP" 2>/dev/null; then
+        # Not an IP, assume it's a hostname (for Tailscale)
+        echo_info "Using hostname: $SERVER_IP"
+    fi
+fi
 
 # ============================================================
 # Helper Functions
 # ============================================================
 
 # Find the latest output directory
+# If HP_NAME is set, finds output_<name>_*, otherwise finds latest output_*
 find_latest_output_dir() {
+    local name_filter="$1"  # Optional: honeypot name
     local latest_dir=""
+    local latest_time=0
 
-    # Find all output_* directories and sort by modification time
-    for dir in "$SCRIPT_DIR"/output_*; do
+    # Build pattern based on whether we have a name filter
+    if [ -n "$name_filter" ]; then
+        pattern="$SCRIPT_DIR/output_${name_filter}_*"
+    else
+        pattern="$SCRIPT_DIR/output_*"
+    fi
+
+    # Find all matching directories and get the most recent
+    for dir in $pattern; do
         if [ -d "$dir" ]; then
-            latest_dir="$dir"
+            # Get modification time
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                # macOS
+                dir_time=$(stat -f %m "$dir" 2>/dev/null || echo 0)
+            else
+                # Linux
+                dir_time=$(stat -c %Y "$dir" 2>/dev/null || echo 0)
+            fi
+
+            if [ "$dir_time" -gt "$latest_time" ]; then
+                latest_time=$dir_time
+                latest_dir="$dir"
+            fi
         fi
     done
 
@@ -68,7 +194,11 @@ find_latest_output_dir() {
     fi
 }
 
-echo_info "Deploying updates to Cowrie server at $SERVER_IP:$SSH_PORT"
+if [ -n "$HP_NAME" ]; then
+    echo_info "Deploying updates to honeypot '$HP_NAME' at $SERVER_IP:$SSH_PORT"
+else
+    echo_info "Deploying updates to Cowrie server at $SERVER_IP:$SSH_PORT"
+fi
 
 # ============================================================
 # Step 1: Verify connection
@@ -82,11 +212,15 @@ fi
 # Step 2: Find latest output directory
 # ============================================================
 OUTPUT_DIR=""
-if find_latest_output_dir > /dev/null 2>&1; then
-    OUTPUT_DIR=$(find_latest_output_dir)
+if find_latest_output_dir "$HP_NAME" > /dev/null 2>&1; then
+    OUTPUT_DIR=$(find_latest_output_dir "$HP_NAME")
     echo_info "Found latest output directory: $(basename "$OUTPUT_DIR")"
 else
-    echo_warn "No output directory found (output_YYYYMMDD_HHMMSS)"
+    if [ -n "$HP_NAME" ]; then
+        echo_warn "No output directory found for honeypot '$HP_NAME' (output_${HP_NAME}_*)"
+    else
+        echo_warn "No output directory found (output_YYYYMMDD_HHMMSS)"
+    fi
     echo_warn "Skipping filesystem and identity updates"
 fi
 

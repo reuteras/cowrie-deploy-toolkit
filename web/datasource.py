@@ -1,0 +1,477 @@
+#!/usr/bin/env python3
+"""
+Data Source Abstraction Layer for Cowrie Dashboard
+
+Provides a unified interface for accessing Cowrie data in two modes:
+- Local mode: Direct file access (single-host deployment)
+- Remote mode: API calls via HTTP (multi-host deployment)
+"""
+
+import json
+import os
+from typing import Optional
+
+import requests
+
+
+class DataSource:
+    """Abstract data source that supports both local and remote modes."""
+
+    def __init__(self, mode: str = "local", api_base_url: str = None):
+        """
+        Initialize data source.
+
+        Args:
+            mode: "local" for direct file access, "remote" for API calls
+            api_base_url: Base URL for API (required for remote mode)
+        """
+        self.mode = mode
+        self.api_base_url = api_base_url
+
+        if self.mode == "remote" and not self.api_base_url:
+            raise ValueError("api_base_url is required for remote mode")
+
+        # Normalize API URL (remove trailing slash)
+        if self.api_base_url:
+            self.api_base_url = self.api_base_url.rstrip("/")
+
+        print(f"[DataSource] Initialized in {self.mode} mode" + (f" with API: {self.api_base_url}" if self.mode == "remote" else ""))
+
+    def get_sessions(
+        self,
+        hours: int = 168,
+        limit: int = 100,
+        offset: int = 0,
+        src_ip: Optional[str] = None,
+        username: Optional[str] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+    ) -> dict:
+        """
+        Get sessions with optional filtering and pagination.
+
+        Args:
+            hours: Time range in hours
+            limit: Maximum number of sessions to return
+            offset: Offset for pagination
+            src_ip: Filter by source IP
+            username: Filter by username
+            start_time: Filter by start time (ISO format)
+            end_time: Filter by end time (ISO format)
+
+        Returns:
+            Dict with "total" and "sessions" keys
+        """
+        if self.mode == "local":
+            return self._get_sessions_local(hours, limit, offset, src_ip, username, start_time, end_time)
+        else:
+            return self._get_sessions_remote(hours, limit, offset, src_ip, username, start_time, end_time)
+
+    def _get_sessions_local(
+        self, hours, limit, offset, src_ip, username, start_time, end_time
+    ) -> dict:
+        """Get sessions from local files (uses existing SessionParser)."""
+        from app import session_parser
+
+        # Parse all sessions
+        all_sessions = session_parser.parse_all(hours=hours)
+        sessions_list = list(all_sessions.values())
+
+        # Apply filters
+        if src_ip:
+            sessions_list = [s for s in sessions_list if s.get("src_ip") == src_ip]
+        if username:
+            sessions_list = [s for s in sessions_list if s.get("username") == username]
+        # Note: start_time/end_time filtering could be added if needed
+
+        # Sort by start time (most recent first)
+        sessions_list = sorted(sessions_list, key=lambda x: x.get("start_time") or "", reverse=True)
+
+        # Paginate
+        total = len(sessions_list)
+        paginated = sessions_list[offset : offset + limit]
+
+        return {"total": total, "sessions": paginated}
+
+    def _get_sessions_remote(
+        self, hours, limit, offset, src_ip, username, start_time, end_time
+    ) -> dict:
+        """Get sessions from remote API."""
+        params = {
+            "hours": hours,
+            "limit": limit,
+            "offset": offset,
+        }
+        if src_ip:
+            params["src_ip"] = src_ip
+        if username:
+            params["username"] = username
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
+
+        try:
+            response = requests.get(
+                f"{self.api_base_url}/api/v1/sessions",
+                params=params,
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"[!] Error fetching sessions from API: {e}")
+            return {"total": 0, "sessions": []}
+
+    def get_session(self, session_id: str) -> Optional[dict]:
+        """
+        Get a specific session by ID.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Session dict or None if not found
+        """
+        if self.mode == "local":
+            return self._get_session_local(session_id)
+        else:
+            return self._get_session_remote(session_id)
+
+    def _get_session_local(self, session_id: str) -> Optional[dict]:
+        """Get session from local files."""
+        from app import session_parser
+        return session_parser.get_session(session_id)
+
+    def _get_session_remote(self, session_id: str) -> Optional[dict]:
+        """Get session from remote API."""
+        try:
+            response = requests.get(
+                f"{self.api_base_url}/api/v1/sessions/{session_id}",
+                timeout=10,
+            )
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"[!] Error fetching session {session_id} from API: {e}")
+            return None
+
+    def get_session_tty(self, session_id: str) -> Optional[dict]:
+        """
+        Get TTY recording for a session (asciicast format).
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            Asciicast dict or None
+        """
+        if self.mode == "local":
+            return self._get_session_tty_local(session_id)
+        else:
+            return self._get_session_tty_remote(session_id)
+
+    def _get_session_tty_local(self, session_id: str) -> Optional[dict]:
+        """Get TTY recording from local files."""
+        from app import CONFIG, session_parser, tty_parser
+
+        session = session_parser.get_session(session_id)
+        if not session:
+            return None
+
+        # Use merged TTY logs if available, otherwise fall back to single file
+        hostname = CONFIG.get("honeypot_hostname", "dmz-web01")
+        if session.get("tty_logs") and len(session["tty_logs"]) > 0:
+            return tty_parser.merge_tty_logs(session, hostname=hostname)
+        elif session.get("tty_log"):
+            return tty_parser.parse_tty_log(session["tty_log"])
+
+        return None
+
+    def _get_session_tty_remote(self, session_id: str) -> Optional[dict]:
+        """Get TTY recording from remote API."""
+        try:
+            response = requests.get(
+                f"{self.api_base_url}/api/v1/sessions/{session_id}/tty",
+                timeout=30,
+            )
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"[!] Error fetching TTY for session {session_id} from API: {e}")
+            return None
+
+    def get_stats(self, hours: int = 24) -> dict:
+        """
+        Get dashboard statistics.
+
+        Args:
+            hours: Time range in hours
+
+        Returns:
+            Stats dict with various metrics
+        """
+        if self.mode == "local":
+            return self._get_stats_local(hours)
+        else:
+            return self._get_stats_remote(hours)
+
+    def _get_stats_local(self, hours: int) -> dict:
+        """Get stats from local files."""
+        from app import session_parser
+        return session_parser.get_stats(hours=hours)
+
+    def _get_stats_remote(self, hours: int) -> dict:
+        """Get stats from remote API."""
+        try:
+            response = requests.get(
+                f"{self.api_base_url}/api/v1/stats/overview",
+                params={"hours": hours},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"[!] Error fetching stats from API: {e}")
+            return {
+                "total_sessions": 0,
+                "unique_ips": 0,
+                "sessions_with_commands": 0,
+                "total_downloads": 0,
+                "unique_downloads": 0,
+                "ip_list": [],
+                "ip_locations": [],
+                "top_countries": [],
+                "top_credentials": [],
+                "successful_credentials": [],
+                "top_commands": [],
+                "top_clients": [],
+                "top_asns": [],
+                "greynoise_ips": [],
+                "hourly_activity": [],
+                "vt_stats": {
+                    "total_scanned": 0,
+                    "total_malicious": 0,
+                    "avg_detection_rate": 0.0,
+                    "total_threat_families": 0,
+                },
+            }
+
+    def get_downloads(
+        self,
+        hours: int = 168,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict:
+        """
+        Get downloaded files with metadata.
+
+        Args:
+            hours: Time range in hours
+            limit: Maximum number of downloads to return
+            offset: Offset for pagination
+
+        Returns:
+            Dict with "total" and "downloads" keys
+        """
+        if self.mode == "local":
+            return self._get_downloads_local(hours, limit, offset)
+        else:
+            return self._get_downloads_remote(hours, limit, offset)
+
+    def _get_downloads_local(self, hours, limit, offset) -> dict:
+        """Get downloads from local files."""
+        from app import CONFIG, session_parser, vt_scanner, yara_cache
+
+        all_sessions = session_parser.parse_all(hours=hours)
+
+        # Collect all downloads
+        all_downloads = []
+        for session in all_sessions.values():
+            for download in session["downloads"]:
+                download["session_id"] = session["id"]
+                download["src_ip"] = session["src_ip"]
+                all_downloads.append(download)
+
+        # Deduplicate by shasum
+        unique_downloads = {}
+        for dl in all_downloads:
+            shasum = dl["shasum"]
+            if shasum not in unique_downloads:
+                unique_downloads[shasum] = dl
+                unique_downloads[shasum]["count"] = 1
+            else:
+                unique_downloads[shasum]["count"] += 1
+
+        # Check which files exist and get metadata
+        download_path = CONFIG["download_path"]
+        for shasum, dl in unique_downloads.items():
+            file_path = os.path.join(download_path, shasum)
+            dl["exists"] = os.path.exists(file_path)
+            if dl["exists"]:
+                dl["size"] = os.path.getsize(file_path)
+            else:
+                dl["size"] = 0
+
+            # Get YARA matches
+            yara_result = yara_cache.get_result(shasum)
+            if yara_result:
+                dl["yara_matches"] = yara_result.get("matches", [])
+                dl["file_type"] = yara_result.get("file_type")
+                dl["file_category"] = yara_result.get("file_category")
+                dl["is_previewable"] = yara_result.get("is_previewable", False)
+
+            # Get VirusTotal data
+            if vt_scanner and shasum:
+                vt_result = vt_scanner.scan_file(shasum)
+                if vt_result:
+                    dl["vt_detections"] = vt_result["detections"]
+                    dl["vt_total"] = vt_result["total_engines"]
+                    dl["vt_link"] = vt_result["link"]
+                    dl["vt_threat_label"] = vt_result.get("threat_label", "")
+
+        downloads_list = sorted(unique_downloads.values(), key=lambda x: x["timestamp"], reverse=True)
+
+        # Paginate
+        total = len(downloads_list)
+        paginated = downloads_list[offset : offset + limit]
+
+        return {"total": total, "downloads": paginated}
+
+    def _get_downloads_remote(self, hours, limit, offset) -> dict:
+        """Get downloads from remote API."""
+        try:
+            response = requests.get(
+                f"{self.api_base_url}/api/v1/downloads",
+                params={"hours": hours, "limit": limit, "offset": offset},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"[!] Error fetching downloads from API: {e}")
+            return {"total": 0, "downloads": []}
+
+    def get_download_file(self, sha256: str) -> Optional[bytes]:
+        """
+        Get raw download file content.
+
+        Args:
+            sha256: SHA256 hash of file
+
+        Returns:
+            File content as bytes or None
+        """
+        if self.mode == "local":
+            return self._get_download_file_local(sha256)
+        else:
+            return self._get_download_file_remote(sha256)
+
+    def _get_download_file_local(self, sha256: str) -> Optional[bytes]:
+        """Get download file from local storage."""
+        from app import CONFIG
+
+        download_path = CONFIG["download_path"]
+        file_path = os.path.join(download_path, sha256)
+
+        if not os.path.exists(file_path):
+            return None
+
+        try:
+            with open(file_path, "rb") as f:
+                return f.read()
+        except Exception as e:
+            print(f"[!] Error reading download file {sha256}: {e}")
+            return None
+
+    def _get_download_file_remote(self, sha256: str) -> Optional[bytes]:
+        """Get download file from remote API."""
+        try:
+            response = requests.get(
+                f"{self.api_base_url}/api/v1/downloads/{sha256}/file",
+                timeout=30,
+            )
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.content
+        except requests.RequestException as e:
+            print(f"[!] Error fetching download file {sha256} from API: {e}")
+            return None
+
+    def get_threat_intel(self, ip_address: str) -> dict:
+        """
+        Get threat intelligence for an IP address.
+
+        Args:
+            ip_address: IP address to lookup
+
+        Returns:
+            Threat intelligence dict with GeoIP, GreyNoise, etc.
+        """
+        if self.mode == "local":
+            return self._get_threat_intel_local(ip_address)
+        else:
+            return self._get_threat_intel_remote(ip_address)
+
+    def _get_threat_intel_local(self, ip_address: str) -> dict:
+        """Get threat intel from local sources."""
+        from app import global_geoip, session_parser
+
+        result = {
+            "ip": ip_address,
+            "geo": global_geoip.lookup(ip_address),
+            "greynoise": None,
+        }
+
+        # Get GreyNoise data from logs
+        threat_intel = session_parser.get_threat_intel_for_ip(ip_address)
+        if threat_intel.get("greynoise"):
+            result["greynoise"] = threat_intel["greynoise"]
+
+        return result
+
+    def _get_threat_intel_remote(self, ip_address: str) -> dict:
+        """Get threat intel from remote API."""
+        try:
+            response = requests.get(
+                f"{self.api_base_url}/api/v1/threat/ip/{ip_address}",
+                timeout=10,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"[!] Error fetching threat intel for {ip_address} from API: {e}")
+            return {
+                "ip": ip_address,
+                "geo": {"country": "-", "country_code": "XX", "city": "-"},
+                "greynoise": None,
+            }
+
+    def get_health(self) -> dict:
+        """
+        Get data source health status.
+
+        Returns:
+            Health status dict
+        """
+        if self.mode == "local":
+            return {"status": "healthy", "mode": "local"}
+        else:
+            try:
+                response = requests.get(
+                    f"{self.api_base_url}/api/v1/health",
+                    timeout=5,
+                )
+                response.raise_for_status()
+                return response.json()
+            except requests.RequestException as e:
+                return {
+                    "status": "unhealthy",
+                    "mode": "remote",
+                    "error": str(e),
+                }

@@ -1,6 +1,6 @@
 [project]
 name = "cowrie-deploy-toolkit"
-version = "1.0.0"
+version = "2.1.0"
 description = "Deploy realistic Cowrie SSH honeypots on Hetzner Cloud with automated daily reporting and threat intelligence"
 authors = [
     { name = "Cowrie Deploy Toolkit Contributors" }

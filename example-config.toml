@@ -3,60 +3,82 @@
 # This is an example configuration file. Copy to master-config.toml and customize.
 # Commands starting with "op read" will be executed to fetch secrets from 1Password.
 #
+# Multi-Honeypot Support
+# ======================
+# Deploy multiple honeypots from a single configuration file.
+# Define shared settings once, then specify unique settings per honeypot.
+#
 # Usage:
 #   cp example-config.toml master-config.toml
 #   # Edit master-config.toml with your settings
-#   ./generate_cowrie_fs_from_hetzner.sh  # Generate filesystem
-#   ./deploy_cowrie_honeypot.sh ./output_YYYYMMDD_HHMMSS  # Deploy
+#   ./generate_cowrie_fs_from_hetzner.sh  # Generate filesystem once
+#   ./deploy_cowrie_honeypot.sh ./output_YYYYMMDD_HHMMSS --name cowrie-hp-1  # Deploy specific
+#   ./deploy_cowrie_honeypot.sh ./output_YYYYMMDD_HHMMSS --all  # Deploy all
 
-[deployment]
-# Hetzner Cloud settings for server creation
-server_type = "cx23"          # Server size: cpx11 (cheapest), cpx21, cpx31, etc.
-server_image = "debian-13"     # OS image: debian-13, debian-12, ubuntu-24.04, etc.
-honeypot_hostname = "dmz-web01"  # Realistic hostname shown to attackers
+# =============================================================================
+# SHARED SETTINGS (Applied to all honeypots)
+# =============================================================================
+
+[shared.deployment]
+# Hetzner Cloud settings for all servers
+server_type = "cpx11"          # Server size: cpx11 (cheapest), cpx21, cpx31, etc.
+
+# OS Version Configuration (NEW in v2.1)
+generation_image = "debian-13"   # OS to capture filesystem FROM (what attackers see)
+deployment_image = "debian-13"   # OS to deploy honeypot ON (actual running server)
 
 # SSH keys registered in your Hetzner account (required for server access)
 # Update these to match your SSH key names from: hcloud ssh-key list
 ssh_keys = ["SSH Key One", "SSH Key Two"]
 
-[honeypot]
+[shared.tailscale]
+# Tailscale VPN (REQUIRED in v2.1)
+# Auth key is shared across all honeypots - generate at:
+# https://login.tailscale.com/admin/settings/keys
+authkey = ""  # REQUIRED - add your authkey here
+# Or fetch from 1Password: "op read op://Personal/Tailscale/honeypot_authkey"
+
+# Your Tailscale domain (tailnet name) - REQUIRED
+# Find at: https://login.tailscale.com/admin/dns
+# Example: "tail12345.ts.net"
+tailscale_domain = ""  # REQUIRED - add your Tailscale domain here
+
+# Use Tailscale SSH (optional, experimental)
+use_tailscale_ssh = false
+
+# Auto-cleanup old Tailscale devices (prevents name-1, name-2 suffixes)
+# Requires a Tailscale API key with device:delete scope
+# Generate at: https://login.tailscale.com/admin/settings/keys
+auto_cleanup_old_devices = false
+tailscale_api_key = ""  # Optional - only needed if auto_cleanup_old_devices = true
+# Or: "op read op://Personal/Tailscale/api_key"
+
+[shared.honeypot]
 # Enable automated daily reporting (set to false to skip reporting setup)
 enable_reporting = true
 
 # MaxMind GeoIP credentials (free account: https://www.maxmind.com/en/geolite2/signup)
-# Can use commands like: "op read op://Personal/MaxMind/account_id"
 maxmind_account_id = "YOUR_ACCOUNT_ID"
+# Or: "op read op://Personal/MaxMind/account_id"
 maxmind_license_key = "YOUR_LICENSE_KEY"
+# Or: "op read op://Personal/MaxMind/license_key"
 
-# TODO: implement use of this variable
-user_auth = "IPUserDB"
-
-[reporting]
+[shared.reporting]
 # Number of commands to show per session before "... and X more" (default: 20)
 max_commands_per_session = 20
 
 # VirusTotal API key (free: https://www.virustotal.com/)
 virustotal_api_key = "YOUR_VT_API_KEY"
-# Or fetch from 1Password: "op read op://Personal/VirusTotal/api_key"
+# Or: "op read op://Personal/VirusTotal/api_key"
 
 # Report recipients
 email_from = "honeypot@yourdomain.com"
 email_to = "admin@yourdomain.com"
 email_subject_prefix = "[Honeypot]"
 
-[email]
+[shared.email]
 # Scaleway Transactional Email settings
-# Docs: https://www.scaleway.com/en/docs/managed-services/transactional-email/
-
-# Your verified domain in Scaleway Transactional Email
-# This domain is used for:
-# - myorigin (default domain for outbound mail)
-# - mydestination (domains this server receives mail for)
-# - masquerade_domains (rewrite sender addresses to use this domain)
-# - Appended to myhostname for the full FQDN
-# Example: "example.com" or "mail.example.com"
 scaleway_domain = "yourdomain.com"
-
 smtp_host = "smtp.tem.scw.cloud"
 smtp_port = 587
 smtp_user = "YOUR_SMTP_USERNAME"
@@ -65,115 +87,125 @@ smtp_password = "YOUR_SMTP_PASSWORD"
 # Or: "op read op://Personal/Scaleway/smtp_password"
 smtp_tls = true
 
-[tailscale]
-# Tailscale VPN for secure management access
-# When enabled, management SSH (port 2222) is only accessible via Tailscale
-# This significantly improves security by removing public SSH exposure
-enabled = false
-
-# Tailscale auth key (required if enabled)
-# Generate at: https://login.tailscale.com/admin/settings/keys
-# Recommended: Use an ephemeral, reusable key with appropriate tags
-# authkey = "tskey-auth-..."
-# Or fetch from 1Password: "op read op://Personal/Tailscale/honeypot_authkey"
-
-# Tailscale hostname for this honeypot (used in tailscale up --hostname)
-# This is the name shown in your Tailscale admin console
-tailscale_name = "cowrie-honeypot"
-
-# Your Tailscale domain (tailnet name)
-# Find this at: https://login.tailscale.com/admin/dns
-# Example: "your-tailnet.ts.net" or "tail12345.ts.net"
-# Used to build the web dashboard URL: https://<tailscale_name>.<tailscale_domain>
-tailscale_domain = ""
-
-# Block public access to management SSH port 2222 (recommended)
-# When true, port 2222 is only accessible via Tailscale
-# When false, port 2222 remains publicly accessible (less secure)
-block_public_ssh = true
-
-# Use Tailscale SSH (optional, experimental)
-# When enabled, uses Tailscale's built-in SSH instead of traditional SSH
-# Provides additional features like session recording and ACLs
-# Note: This replaces traditional SSH access entirely
-use_tailscale_ssh = false
-
-[web_dashboard]
-# SSH Session Playback Web Service
-# Provides a web UI for viewing session details and replaying TTY recordings
-# Access is via SSH tunnel only (never exposed to public internet)
-# If you enable Tailscale with block_public_ssh, use Tailscale IP for the tunnel
-enabled = false
-
-# Note: The base URL for session links in email reports is automatically
-# built from tailscale_name and tailscale_domain when Tailscale is enabled.
-# Example: https://<tailscale_name>.<tailscale_domain>
-
-[canary_webhook]
-# Canary Token Webhook Receiver
-# Receives webhooks from Canary Tokens (https://canarytokens.org) when attackers
-# access honeytokens (PDF, Excel, MySQL dump files) placed in the honeypot.
-# Provides immediate alerts when sensitive-looking files are exfiltrated.
-#
-# IMPORTANT: Requires a public reverse proxy to receive webhooks from Canary Tokens.
-# The honeypot runs on Tailscale (private network), but Canary webhooks need a
-# public endpoint. Set up nginx on your existing server to proxy to Tailscale.
-#
-# See README.md "Canary Token Webhook Receiver" section for nginx configuration.
-
-# Enable webhook receiver (default: false)
-enabled = false
-
-[data_sharing]
+[shared.data_sharing]
 # AbuseIPDB - Report and query IP reputation data
-# Sign up at https://www.abuseipdb.com/ and get your API key from https://www.abuseipdb.com/account/api
-# Free tier: 1,000 requests/day for reporting and checking IPs
 abuseipdb_enabled = false
-abuseipdb_api_key = ""  # Your AbuseIPDB API key
-# Or: "op read op://Personal/AbuseIPDB/api_key"
-abuseipdb_tolerance_attempts = 10  # Report IPs after this many failed login attempts
-abuseipdb_tolerance_window = 120   # Time window in minutes for tracking attempts
-abuseipdb_rereport_after = 24       # Hours before re-reporting the same IP
+abuseipdb_api_key = ""
+abuseipdb_tolerance_attempts = 10
+abuseipdb_tolerance_window = 120
+abuseipdb_rereport_after = 24
 
-# DShield (SANS Internet Storm Center) - Contribute to global threat intelligence
-# Sign up at https://isc.sans.edu/ssh.html and get your credentials at https://isc.sans.edu/myaccount.html
+# DShield (SANS Internet Storm Center)
 dshield_enabled = false
-dshield_userid = ""  # Your DShield user ID
-dshield_auth_key = ""  # Your DShield auth key from myaccount page
-# Or: "op read op://Personal/DShield/auth_key"
-dshield_batch_size = 10  # Number of events to batch before sending
+dshield_userid = ""
+dshield_auth_key = ""
+dshield_batch_size = 10
 
-# GreyNoise - Query threat intelligence for attacking IPs
-# Get a free API key at https://www.greynoise.io/
-# Free tier: 5,000 queries/month
+# GreyNoise - Query threat intelligence
 greynoise_enabled = false
-greynoise_api_key = ""  # Optional: GreyNoise API key (Community API works without key)
-# Or: "op read op://Personal/GreyNoise/api_key"
-greynoise_tags = "all"  # Tags to scan for: "all" or comma-separated like "SHODAN,JBOSS_WORM"
-greynoise_debug = false  # Enable debug logging
+greynoise_api_key = ""
+greynoise_tags = "all"
+greynoise_debug = false
 
-[advanced]
+[shared.canary_webhook]
+# Canary Token Webhook Receiver
+enabled = false
+
+[shared.advanced]
 # Report generation interval (hours)
 report_hours = 24
 
-# Deployment paths (usually don't need to change these)
-[advanced.paths]
-# Base directory for Cowrie installation on server
-cowrie_base = "/opt/cowrie"
+# =============================================================================
+# HONEYPOT DEFINITIONS (Unique settings per honeypot)
+# =============================================================================
 
-# Docker volume paths
-docker_volumes_base = "/var/lib/docker/volumes"
-cowrie_var_volume = "/var/lib/docker/volumes/cowrie-var/_data"
+# Example 1: Single honeypot with local dashboard (simplest setup)
+# ------------------------------------------------------------------
+[[honeypots]]
+name = "cowrie-honeypot"        # Tailscale hostname (unique identifier)
+hostname = "dmz-web01"           # System hostname shown to attackers
+location = "hel1"                # Hetzner datacenter: hel1 (Helsinki), fsn1 (Falkenstein), nbg1 (Nuremberg), ash (Ashburn)
+api_enabled = true               # Enable API for potential future multi-host
+api_expose_via_tailscale = false # Don't expose API (local dashboard only)
+dashboard_enabled = true         # Enable web dashboard
+dashboard_mode = "local"         # Direct file access (same server)
 
-# GeoIP database directory
-geoip_dir = "/var/lib/GeoIP"
 
-# Reporting paths (automatically derived from above if not specified)
-log_path = "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json"
-download_path = "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
-tty_path = "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty"
-geoip_db_path = "/var/lib/GeoIP/GeoLite2-City.mmdb"
-geoip_asn_path = "/var/lib/GeoIP/GeoLite2-ASN.mmdb"
-yara_rules_path = "/opt/cowrie/yara-rules"
-cache_db_path = "/opt/cowrie/var/report-cache.db"
-yara_cache_db_path = "/opt/cowrie/var/yara-cache.db"
+# Example 2: Two honeypots with centralized dashboard
+# -----------------------------------------------------
+# Uncomment and customize these examples for multi-honeypot deployment:
+
+# [[honeypots]]
+# name = "cowrie-hp-1"            # Tailscale hostname
+# hostname = "dmz-web-01"          # System hostname shown to attackers
+# location = "hel1"                # Helsinki, Finland
+# api_enabled = true               # Enable API
+# api_expose_via_tailscale = true  # Expose API via Tailscale for dashboard access
+# dashboard_enabled = true         # Also run dashboard on this server
+# dashboard_mode = "multi"         # Aggregate data from multiple sources
+# dashboard_sources = ["cowrie-hp-1", "cowrie-hp-2"]  # References by name
+
+# [[honeypots]]
+# name = "cowrie-hp-2"
+# hostname = "dmz-db-01"
+# location = "fsn1"                # Falkenstein, Germany
+# api_enabled = true
+# api_expose_via_tailscale = true
+# dashboard_enabled = false        # No dashboard on this server
+
+
+# Example 3: Two honeypots + separate dashboard server
+# ------------------------------------------------------
+
+# [[honeypots]]
+# name = "cowrie-hp-1"
+# hostname = "dmz-web-01"
+# api_enabled = true
+# api_expose_via_tailscale = true
+# dashboard_enabled = false
+
+# [[honeypots]]
+# name = "cowrie-hp-2"
+# hostname = "dmz-db-01"
+# api_enabled = true
+# api_expose_via_tailscale = true
+# dashboard_enabled = false
+
+# [[honeypots]]
+# name = "cowrie-dashboard"
+# hostname = "dashboard"
+# api_enabled = false              # Dashboard doesn't need its own API
+# dashboard_enabled = true
+# dashboard_mode = "multi"
+# dashboard_sources = ["cowrie-hp-1", "cowrie-hp-2"]
+
+
+# Example 4: Mixed honeypot types (future extensibility)
+# --------------------------------------------------------
+
+# [[honeypots]]
+# name = "cowrie-ssh"
+# hostname = "dmz-ssh-01"
+# api_enabled = true
+# api_expose_via_tailscale = true
+# dashboard_enabled = false
+
+# [[honeypots]]
+# name = "web-honeypot"
+# hostname = "dmz-web-01"
+# api_enabled = true
+# api_expose_via_tailscale = true
+# dashboard_enabled = false
+
+# [[honeypots]]
+# name = "dashboard"
+# hostname = "dashboard"
+# api_enabled = false
+# dashboard_enabled = true
+# dashboard_mode = "multi"
+# dashboard_sources = [
+#     {name = "cowrie-ssh", type = "cowrie-ssh"},
+#     {name = "web-honeypot", type = "web-honeypot"}
+# ]
+
+

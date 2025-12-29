@@ -18,24 +18,203 @@ source "$SCRIPT_DIR/scripts/common.sh"
 # ============================================================
 
 echo_info "Checking required dependencies..."
-check_dependencies "hcloud" "jq" "nc" "tar" "ssh" "scp" "python3"
+check_dependencies "hcloud" "jq" "nc" "tar" "ssh" "scp" "python3" "curl"
 
 # ============================================================
-# CONFIGURATION
+# ARGUMENT PARSING (Multi-Honeypot Support)
 # ============================================================
 
-if [ $# -ne 1 ]; then
-    echo_error "Usage: $0 <output_directory>"
-    echo_error "Example: $0 ./output_20251204_135502"
+# Parse command line arguments
+# Supports two modes:
+#   1. Single: ./deploy_cowrie_honeypot.sh <output_DIR> --name <honeypot-name>
+#   2. All:    ./deploy_cowrie_honeypot.sh --all  (auto-finds latest outputs)
+
+OUTPUT_DIR=""
+HONEYPOT_NAME=""
+DEPLOY_ALL=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --name)
+            if [ -z "$2" ]; then
+                echo_error "--name requires a honeypot name argument"
+                exit 1
+            fi
+            HONEYPOT_NAME="$2"
+            shift 2
+            ;;
+        --all)
+            DEPLOY_ALL=true
+            shift
+            ;;
+        -*)
+            echo_error "Unknown option: $1"
+            exit 1
+            ;;
+        *)
+            # First non-option argument is OUTPUT_DIR (only for --name mode)
+            if [ -z "$OUTPUT_DIR" ]; then
+                OUTPUT_DIR="$1"
+                shift
+            else
+                echo_error "Unexpected argument: $1"
+                exit 1
+            fi
+            ;;
+    esac
+done
+
+# Validate arguments
+if [ "$DEPLOY_ALL" = false ] && [ -z "$OUTPUT_DIR" ]; then
+    echo_error "Usage:"
+    echo_error "  $0 <output_directory> --name HONEYPOT_NAME"
+    echo_error "  $0 --all"
+    echo_error ""
+    echo_error "Examples:"
+    echo_error "  # Deploy specific honeypot:"
+    echo_error "  $0 ./output_cowrie-hp-1_20251227_135502 --name cowrie-hp-1"
+    echo_error ""
+    echo_error "  # Deploy all honeypots (auto-finds latest outputs):"
+    echo_error "  $0 --all"
     echo ""
-    echo_error "Requires master-config.toml in project root"
+    echo_error "Requires master-config.toml in project root with [[honeypots]] array defined"
     exit 1
 fi
 
-OUTPUT_DIR="$1"
+if [ "$DEPLOY_ALL" = false ] && [ -z "$HONEYPOT_NAME" ]; then
+    echo_error "When deploying a specific honeypot, --name is required"
+    echo_error ""
+    echo_error "Usage: $0 <output_directory> --name HONEYPOT_NAME"
+    exit 1
+fi
+
+if [ "$DEPLOY_ALL" = true ] && [ -n "$OUTPUT_DIR" ]; then
+    echo_error "When using --all, do not specify an output directory"
+    echo_error "Latest output directories will be found automatically"
+    echo_error ""
+    echo_error "Usage: $0 --all"
+    exit 1
+fi
+
+# ============================================================
+# MULTI-HONEYPOT DEPLOYMENT (--all flag)
+# ============================================================
+
+MASTER_CONFIG="./master-config.toml"
+
+# Helper function to find latest output directory for a honeypot
+find_latest_output() {
+    local honeypot_name="$1"
+
+    # Find all matching directories, sorted by timestamp (newest first)
+    # Pattern: output_<honeypot-name>_YYYYMMDD_HHMMSS
+    local latest=$(find . -maxdepth 1 -type d -name "output_${honeypot_name}_*" | sort -r | head -n1)
+
+    if [ -z "$latest" ]; then
+        return 1
+    fi
+
+    echo "$latest"
+    return 0
+}
+
+# Handle --all flag: deploy all honeypots sequentially
+if [ "$DEPLOY_ALL" = true ]; then
+    if [ ! -f "$MASTER_CONFIG" ]; then
+        echo_error "master-config.toml not found - required for --all deployment"
+        exit 1
+    fi
+
+    echo_info "Deploying all honeypots from master-config.toml..."
+
+    # Check if honeypots array exists
+    HAS_ARRAY=$(has_honeypots_array "$MASTER_CONFIG")
+    if [ "$HAS_ARRAY" != "true" ]; then
+        echo_error "No [[honeypots]] array found in master-config.toml"
+        echo_error "Add honeypot definitions to use --all deployment"
+        exit 1
+    fi
+
+    # Get list of honeypot names
+    HONEYPOT_NAMES=()
+    get_honeypot_names "$MASTER_CONFIG" HONEYPOT_NAMES
+
+    if [ ${#HONEYPOT_NAMES[@]} -eq 0 ]; then
+        echo_error "No honeypots defined in master-config.toml"
+        exit 1
+    fi
+
+    echo_info "Found ${#HONEYPOT_NAMES[@]} honeypot(s): ${HONEYPOT_NAMES[*]}"
+    echo ""
+
+    # Find latest output directories for all honeypots
+    echo_info "Finding latest output directories..."
+    declare -A HONEYPOT_OUTPUTS
+    MISSING_OUTPUTS=()
+
+    for name in "${HONEYPOT_NAMES[@]}"; do
+        latest_output=$(find_latest_output "$name")
+        if [ $? -eq 0 ]; then
+            HONEYPOT_OUTPUTS["$name"]="$latest_output"
+            echo_info "  $name: $latest_output"
+        else
+            MISSING_OUTPUTS+=("$name")
+        fi
+    done
+
+    # Check if any outputs are missing
+    if [ ${#MISSING_OUTPUTS[@]} -gt 0 ]; then
+        echo ""
+        echo_error "Missing output directories for the following honeypots:"
+        for name in "${MISSING_OUTPUTS[@]}"; do
+            echo_error "  - $name (expected: output_${name}_*)"
+        done
+        echo ""
+        echo_error "Please run ./generate_cowrie_fs_from_hetzner.sh first to generate filesystems"
+        exit 1
+    fi
+
+    echo ""
+    echo_info "All output directories found. Starting deployment..."
+    echo ""
+
+    # Deploy each honeypot
+    for name in "${HONEYPOT_NAMES[@]}"; do
+        output_dir="${HONEYPOT_OUTPUTS[$name]}"
+
+        echo "========================================================================"
+        echo_info "Deploying honeypot: $name"
+        echo_info "Using output: $output_dir"
+        echo "========================================================================"
+
+        # Recursively call this script with --name and specific output dir
+        "$0" "$output_dir" --name "$name"
+        DEPLOY_STATUS=$?
+
+        if [ $DEPLOY_STATUS -ne 0 ]; then
+            echo_error "Failed to deploy honeypot: $name"
+            echo_error "Stopping deployment process"
+            exit $DEPLOY_STATUS
+        fi
+
+        echo ""
+        echo_info "Successfully deployed: $name"
+        echo ""
+    done
+
+    echo "========================================================================"
+    echo_info "All honeypots deployed successfully!"
+    echo "========================================================================"
+    exit 0
+fi
+
+# ============================================================
+# SINGLE HONEYPOT DEPLOYMENT
+# ============================================================
+
 IDENTITY_DIR="$OUTPUT_DIR/identity"
 FS_PICKLE="$OUTPUT_DIR/fs.pickle"
-MASTER_CONFIG="./master-config.toml"
 DEPLOY_LOG="$OUTPUT_DIR/deploy-$(date +%Y%m%d-%H%M%S).log"
 
 # Set up logging - all output goes to both console and log file
@@ -63,181 +242,362 @@ REAL_SSH_PORT="2222"        # Move real SSH to 2222
 # Check if master config exists and read settings
 ENABLE_REPORTING="false"
 ENABLE_WEB_DASHBOARD="false"
+
+# Tailscale configuration (REQUIRED in v2.1)
 TAILSCALE_AUTHKEY=""
-ENABLE_TAILSCALE="false"
-TAILSCALE_BLOCK_PUBLIC_SSH="true"
 TAILSCALE_USE_SSH="false"
 TAILSCALE_NAME="cowrie-honeypot"
 TAILSCALE_DOMAIN=""
 
-if [ -f "$MASTER_CONFIG" ]; then
-    echo_info "Found master-config.toml, reading deployment settings..."
+# ============================================================
+# CONFIGURATION READING (v2.1: Multi-Honeypot Support)
+# ============================================================
 
-    # Read deployment configuration using TOML parser
-    CONFIG_SERVER_TYPE=$(read_toml_value "$MASTER_CONFIG" "deployment.server_type")
-    [ -n "$CONFIG_SERVER_TYPE" ] && SERVER_TYPE="$CONFIG_SERVER_TYPE"
-
-    CONFIG_SERVER_IMAGE=$(read_toml_value "$MASTER_CONFIG" "deployment.server_image")
-    [ -n "$CONFIG_SERVER_IMAGE" ] && SERVER_IMAGE="$CONFIG_SERVER_IMAGE"
-
-    # Read SSH keys array
-    SSH_KEYS_TEMP=()
-    read_toml_array "$MASTER_CONFIG" "deployment.ssh_keys" SSH_KEYS_TEMP
-    if [ ${#SSH_KEYS_TEMP[@]} -ge 1 ]; then
-        SSH_KEY_NAME1="${SSH_KEYS_TEMP[0]}"
-    fi
-    if [ ${#SSH_KEYS_TEMP[@]} -ge 2 ]; then
-        SSH_KEY_NAME2="${SSH_KEYS_TEMP[1]}"
-    fi
-
-    echo_info "Using deployment config: $SERVER_TYPE, $SERVER_IMAGE"
-
-    # Check if reporting is enabled
-    CONFIG_ENABLE_REPORTING=$(read_toml_value "$MASTER_CONFIG" "honeypot.enable_reporting")
-    if [ "$CONFIG_ENABLE_REPORTING" = "true" ]; then
-        ENABLE_REPORTING="true"
-        echo_info "Reporting is enabled in master config"
-    fi
-
-    # Check if Tailscale is enabled
-    CONFIG_TAILSCALE_ENABLED=$(read_toml_value "$MASTER_CONFIG" "tailscale.enabled")
-    if [ "$CONFIG_TAILSCALE_ENABLED" = "true" ]; then
-        ENABLE_TAILSCALE="true"
-        echo_info "Tailscale is enabled in master config"
-
-        # Extract auth key
-        TAILSCALE_AUTHKEY=$(read_toml_value "$MASTER_CONFIG" "tailscale.authkey")
-        if echo "$TAILSCALE_AUTHKEY" | grep -q "^op read"; then
-            TAILSCALE_AUTHKEY=$(eval "$TAILSCALE_AUTHKEY")
-        fi
-
-        # Extract tailscale_name (hostname for Tailscale)
-        CONFIG_TAILSCALE_NAME=$(read_toml_value "$MASTER_CONFIG" "tailscale.tailscale_name")
-        [ -n "$CONFIG_TAILSCALE_NAME" ] && TAILSCALE_NAME="$CONFIG_TAILSCALE_NAME"
-
-        # Extract tailscale_domain (tailnet domain)
-        TAILSCALE_DOMAIN=$(read_toml_value "$MASTER_CONFIG" "tailscale.tailscale_domain")
-
-        # Extract block_public_ssh setting
-        CONFIG_BLOCK_PUBLIC_SSH=$(read_toml_value "$MASTER_CONFIG" "tailscale.block_public_ssh")
-        if [ "$CONFIG_BLOCK_PUBLIC_SSH" = "false" ]; then
-            TAILSCALE_BLOCK_PUBLIC_SSH="false"
-        fi
-
-        # Extract use_tailscale_ssh setting
-        CONFIG_USE_TAILSCALE_SSH=$(read_toml_value "$MASTER_CONFIG" "tailscale.use_tailscale_ssh")
-        if [ "$CONFIG_USE_TAILSCALE_SSH" = "true" ]; then
-            TAILSCALE_USE_SSH="true"
-        fi
-    fi
-
-    # Check if web dashboard is enabled
-    CONFIG_WEB_DASHBOARD=$(read_toml_value "$MASTER_CONFIG" "web_dashboard.enabled")
-    if [ "$CONFIG_WEB_DASHBOARD" = "true" ]; then
-        ENABLE_WEB_DASHBOARD="true"
-        echo_info "Web dashboard is enabled in master config"
-    fi
-
-    # Check if data sharing is enabled (AbuseIPDB, DShield, and GreyNoise)
-    ABUSEIPDB_ENABLED="false"
-    ABUSEIPDB_API_KEY=""
-    ABUSEIPDB_TOLERANCE_ATTEMPTS="10"
-    ABUSEIPDB_TOLERANCE_WINDOW="120"
-    ABUSEIPDB_REREPORT_AFTER="24"
-    DSHIELD_ENABLED="false"
-    DSHIELD_USERID=""
-    DSHIELD_AUTH_KEY=""
-    DSHIELD_BATCH_SIZE="100"
-    GREYNOISE_ENABLED="false"
-    GREYNOISE_API_KEY=""
-    GREYNOISE_TAGS="all"
-    GREYNOISE_DEBUG="false"
-
-    # AbuseIPDB configuration
-    CONFIG_ABUSEIPDB_ENABLED=$(read_toml_value "$MASTER_CONFIG" "data_sharing.abuseipdb_enabled")
-    if [ "$CONFIG_ABUSEIPDB_ENABLED" = "true" ]; then
-        ABUSEIPDB_ENABLED="true"
-        echo_info "AbuseIPDB reporting and threat intelligence lookup is enabled"
-
-        # Extract AbuseIPDB settings
-        ABUSEIPDB_API_KEY=$(read_toml_value "$MASTER_CONFIG" "data_sharing.abuseipdb_api_key")
-        CONFIG_ABUSEIPDB_TOLERANCE_ATTEMPTS=$(read_toml_value "$MASTER_CONFIG" "data_sharing.abuseipdb_tolerance_attempts")
-        CONFIG_ABUSEIPDB_TOLERANCE_WINDOW=$(read_toml_value "$MASTER_CONFIG" "data_sharing.abuseipdb_tolerance_window")
-        CONFIG_ABUSEIPDB_REREPORT_AFTER=$(read_toml_value "$MASTER_CONFIG" "data_sharing.abuseipdb_rereport_after")
-
-        # Execute command if it looks like "op read" command
-        if echo "$ABUSEIPDB_API_KEY" | grep -q "^op read"; then
-            ABUSEIPDB_API_KEY=$(eval "$ABUSEIPDB_API_KEY" 2>/dev/null || echo "")
-        fi
-
-        [ -n "$CONFIG_ABUSEIPDB_TOLERANCE_ATTEMPTS" ] && ABUSEIPDB_TOLERANCE_ATTEMPTS="$CONFIG_ABUSEIPDB_TOLERANCE_ATTEMPTS"
-        [ -n "$CONFIG_ABUSEIPDB_TOLERANCE_WINDOW" ] && ABUSEIPDB_TOLERANCE_WINDOW="$CONFIG_ABUSEIPDB_TOLERANCE_WINDOW"
-        [ -n "$CONFIG_ABUSEIPDB_REREPORT_AFTER" ] && ABUSEIPDB_REREPORT_AFTER="$CONFIG_ABUSEIPDB_REREPORT_AFTER"
-    fi
-
-    # DShield configuration
-    CONFIG_DSHIELD_ENABLED=$(read_toml_value "$MASTER_CONFIG" "data_sharing.dshield_enabled")
-    if [ "$CONFIG_DSHIELD_ENABLED" = "true" ]; then
-        DSHIELD_ENABLED="true"
-        echo_info "DShield data sharing is enabled"
-
-        # Extract DShield credentials
-        DSHIELD_USERID=$(read_toml_value "$MASTER_CONFIG" "data_sharing.dshield_userid")
-        DSHIELD_AUTH_KEY=$(read_toml_value "$MASTER_CONFIG" "data_sharing.dshield_auth_key")
-        CONFIG_DSHIELD_BATCH_SIZE=$(read_toml_value "$MASTER_CONFIG" "data_sharing.dshield_batch_size")
-
-        # Execute command if it looks like "op read" command
-        if echo "$DSHIELD_AUTH_KEY" | grep -q "^op read"; then
-            DSHIELD_AUTH_KEY=$(eval "$DSHIELD_AUTH_KEY" 2>/dev/null || echo "")
-        fi
-
-        [ -n "$CONFIG_DSHIELD_BATCH_SIZE" ] && DSHIELD_BATCH_SIZE="$CONFIG_DSHIELD_BATCH_SIZE"
-    fi
-
-    # GreyNoise configuration
-    CONFIG_GREYNOISE_ENABLED=$(read_toml_value "$MASTER_CONFIG" "data_sharing.greynoise_enabled")
-    if [ "$CONFIG_GREYNOISE_ENABLED" = "true" ]; then
-        GREYNOISE_ENABLED="true"
-        echo_info "GreyNoise threat intelligence lookup is enabled"
-
-        # Extract GreyNoise settings
-        GREYNOISE_API_KEY=$(read_toml_value "$MASTER_CONFIG" "data_sharing.greynoise_api_key")
-        CONFIG_GREYNOISE_TAGS=$(read_toml_value "$MASTER_CONFIG" "data_sharing.greynoise_tags")
-
-        # Execute command if it looks like "op read" command
-        if echo "$GREYNOISE_API_KEY" | grep -q "^op read"; then
-            GREYNOISE_API_KEY=$(eval "$GREYNOISE_API_KEY" 2>/dev/null || echo "")
-        fi
-
-        CONFIG_GREYNOISE_DEBUG=$(read_toml_value "$MASTER_CONFIG" "data_sharing.greynoise_debug")
-        if [ "$CONFIG_GREYNOISE_DEBUG" = "true" ]; then
-            GREYNOISE_DEBUG="true"
-        fi
-
-        [ -n "$CONFIG_GREYNOISE_TAGS" ] && GREYNOISE_TAGS="$CONFIG_GREYNOISE_TAGS"
-    fi
-else
-    echo_warn " Error: master-config.toml not found, using default settings"
-    exit
+if [ ! -f "$MASTER_CONFIG" ]; then
+    echo_error "master-config.toml not found - required for deployment"
+    exit 1
 fi
+
+echo_info "Reading configuration from master-config.toml..."
+
+# Check that [[honeypots]] array exists
+HAS_HONEYPOTS=$(has_honeypots_array "$MASTER_CONFIG")
+CONFIG_JSON=""
+
+if [ "$HAS_HONEYPOTS" != "true" ]; then
+    echo_error "No [[honeypots]] array found in master-config.toml"
+    echo_error "Please define at least one honeypot in the [[honeypots]] array"
+    echo_error "See example-config.toml for examples"
+    exit 1
+fi
+
+if [ -z "$HONEYPOT_NAME" ]; then
+    echo_error "[[honeypots]] array found but no --name specified"
+    echo_error "Use --name to specify which honeypot to deploy, or --all to deploy all"
+    exit 1
+fi
+
+# Get specific honeypot's config
+echo_info "Using [[honeypots]] array configuration for: $HONEYPOT_NAME"
+CONFIG_JSON=$(get_honeypot_config "$MASTER_CONFIG" "$HONEYPOT_NAME")
+
+if [ -z "$CONFIG_JSON" ]; then
+    echo_error "Failed to read configuration for honeypot: $HONEYPOT_NAME"
+    exit 1
+fi
+
+# Helper function to extract value from config JSON with fallback
+get_config() {
+    local key="$1"
+    local default="$2"
+    local value
+    value=$(get_json_value "$CONFIG_JSON" ".$key")
+    if [ -z "$value" ] || [ "$value" = "null" ]; then
+        echo "$default"
+    else
+        echo "$value"
+    fi
+}
+
+# Helper function to execute command if it starts with "op read" or similar
+execute_if_command() {
+    local value="$1"
+    if echo "$value" | grep -q "^op read"; then
+        eval "$value" 2>/dev/null || echo ""
+    else
+        echo "$value"
+    fi
+}
+
+# Extract deployment configuration
+SERVER_TYPE=$(get_config "server_type" "cpx11")
+SERVER_IMAGE=$(get_config "deployment_image" "debian-13")
+SERVER_LOCATION=$(get_config "location" "")
+HONEYPOT_HOSTNAME=$(get_config "hostname" "dmz-web01")
+
+# SSH Keys - read from JSON array
+SSH_KEYS_RAW=$(get_json_value "$CONFIG_JSON" ".ssh_keys")
+if [ -z "$SSH_KEYS_RAW" ] || [ "$SSH_KEYS_RAW" = "null" ]; then
+    echo_error "SSH keys not configured in master-config.toml"
+    echo_error "Please add ssh_keys array to [shared.deployment] section"
+    exit 1
+fi
+
+# Build array of SSH keys for hcloud command
+SSH_KEYS=()
+SSH_KEY_COUNT=$(echo "$SSH_KEYS_RAW" | jq 'length')
+for ((i=0; i<SSH_KEY_COUNT; i++)); do
+    KEY_NAME=$(echo "$SSH_KEYS_RAW" | jq -r ".[$i]")
+    SSH_KEYS+=("$KEY_NAME")
+done
+
+if [ ${#SSH_KEYS[@]} -lt 1 ]; then
+    echo_error "At least one SSH key is required in ssh_keys array"
+    exit 1
+fi
+
+echo_info "Deployment config: $SERVER_TYPE, $SERVER_IMAGE, hostname=$HONEYPOT_HOSTNAME"
+
+# Reporting configuration
+ENABLE_REPORTING=$(get_config "enable_reporting" "false")
+if [ "$ENABLE_REPORTING" = "true" ]; then
+    echo_info "Reporting is enabled"
+fi
+
+# Tailscale configuration (REQUIRED in v2.1)
+echo_info "Reading Tailscale configuration (required)..."
+
+TAILSCALE_NAME=$(get_config "name" "cowrie-honeypot")
+TAILSCALE_DOMAIN=$(get_config "tailscale_domain" "")
+TAILSCALE_AUTHKEY=$(get_config "authkey" "")
+TAILSCALE_USE_SSH=$(get_config "use_tailscale_ssh" "false")
+TAILSCALE_AUTO_CLEANUP=$(get_config "auto_cleanup_old_devices" "false")
+TAILSCALE_API_KEY=$(get_config "tailscale_api_key" "")
+
+# Execute command if needed for authkey and api key
+TAILSCALE_AUTHKEY=$(execute_if_command "$TAILSCALE_AUTHKEY")
+TAILSCALE_API_KEY=$(execute_if_command "$TAILSCALE_API_KEY")
+
+# Validate Tailscale configuration
+validate_tailscale_config "$TAILSCALE_AUTHKEY" "$TAILSCALE_DOMAIN"
+echo_info "Tailscale: $TAILSCALE_NAME.$TAILSCALE_DOMAIN"
+
+# Cleanup old devices if enabled
+if [ "$TAILSCALE_AUTO_CLEANUP" = "true" ]; then
+    if [ -z "$TAILSCALE_API_KEY" ]; then
+        echo_warn "auto_cleanup_old_devices is enabled but tailscale_api_key is not set"
+        echo_warn "Skipping cleanup - device may be created as ${TAILSCALE_NAME}-1"
+    else
+        echo_info "Auto-cleanup enabled - checking for existing devices..."
+        cleanup_tailscale_device "$TAILSCALE_NAME" "$TAILSCALE_DOMAIN" "$TAILSCALE_API_KEY"
+    fi
+fi
+
+# API configuration
+ENABLE_API=$(get_config "api_enabled" "false")
+API_EXPOSE_VIA_TAILSCALE=$(get_config "api_expose_via_tailscale" "false")
+API_TAILSCALE_HOSTNAME=$(get_config "tailscale_api_hostname" "$TAILSCALE_NAME")
+
+if [ "$ENABLE_API" = "true" ]; then
+    echo_info "Cowrie API is enabled"
+    if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ]; then
+        echo_info "API exposed via Tailscale as: $API_TAILSCALE_HOSTNAME.$TAILSCALE_DOMAIN"
+    fi
+fi
+
+# Dashboard configuration
+ENABLE_WEB_DASHBOARD=$(get_config "dashboard_enabled" "false")
+DASHBOARD_MODE=$(get_config "dashboard_mode" "local")
+DASHBOARD_API_URL=$(get_config "dashboard_api_url" "")
+DASHBOARD_SOURCES_JSON="[]"
+
+if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
+    echo_info "Web dashboard is enabled (mode: $DASHBOARD_MODE)"
+
+    # Smart dashboard source detection (NEW in v2.1)
+    if [ "$DASHBOARD_MODE" = "multi" ]; then
+        echo_info "Building multi-source dashboard configuration..."
+
+        # Get dashboard_sources array from config
+        DASHBOARD_SOURCES_RAW=$(get_json_value "$CONFIG_JSON" ".dashboard_sources")
+
+        if [ -n "$DASHBOARD_SOURCES_RAW" ] && [ "$DASHBOARD_SOURCES_RAW" != "null" ]; then
+            # Build sources JSON with smart local/remote detection
+            SOURCES_ARRAY="[]"
+            SOURCE_COUNT=$(echo "$DASHBOARD_SOURCES_RAW" | jq 'length')
+
+            for ((i=0; i<SOURCE_COUNT; i++)); do
+                SOURCE_NAME=$(echo "$DASHBOARD_SOURCES_RAW" | jq -r ".[$i]")
+
+                # Get location for this honeypot (lookup from master config)
+                SOURCE_HP_CONFIG=$(get_honeypot_config "$MASTER_CONFIG" "$SOURCE_NAME" 2>/dev/null || echo "{}")
+                SOURCE_LOCATION=$(echo "$SOURCE_HP_CONFIG" | jq -r '.location // empty' 2>/dev/null || echo "")
+
+                if [ "$SOURCE_NAME" = "$TAILSCALE_NAME" ]; then
+                    # This is the current honeypot - use local mode
+                    SOURCE_JSON=$(cat <<EOF
+{
+  "name": "$SOURCE_NAME",
+  "type": "cowrie-ssh",
+  "mode": "local",
+  "location": "$SOURCE_LOCATION",
+  "enabled": true
+}
+EOF
+)
+                else
+                    # Different honeypot - use remote mode with API
+                    API_URL="https://$SOURCE_NAME.$TAILSCALE_DOMAIN"
+                    SOURCE_JSON=$(cat <<EOF
+{
+  "name": "$SOURCE_NAME",
+  "type": "cowrie-ssh",
+  "api_base_url": "$API_URL",
+  "mode": "remote",
+  "location": "$SOURCE_LOCATION",
+  "enabled": true
+}
+EOF
+)
+                fi
+
+                # Append to sources array
+                SOURCES_ARRAY=$(echo "$SOURCES_ARRAY" | jq ". += [$SOURCE_JSON]")
+            done
+
+            DASHBOARD_SOURCES_JSON="$SOURCES_ARRAY"
+            echo_info "Configured $(echo "$SOURCES_ARRAY" | jq 'length') dashboard source(s)"
+            echo_info "Smart detection: local mode for self, remote mode for others"
+        else
+            echo_warn "Dashboard multi-source mode enabled but no sources configured"
+        fi
+    elif [ "$DASHBOARD_MODE" = "remote" ]; then
+        if [ -n "$DASHBOARD_API_URL" ]; then
+            echo_info "Dashboard API URL: $DASHBOARD_API_URL"
+        fi
+    fi
+fi
+
+# Data sharing configuration
+ABUSEIPDB_ENABLED=$(get_config "abuseipdb_enabled" "false")
+ABUSEIPDB_API_KEY=""
+ABUSEIPDB_TOLERANCE_ATTEMPTS=$(get_config "abuseipdb_tolerance_attempts" "10")
+ABUSEIPDB_TOLERANCE_WINDOW=$(get_config "abuseipdb_tolerance_window" "120")
+ABUSEIPDB_REREPORT_AFTER=$(get_config "abuseipdb_rereport_after" "24")
+
+if [ "$ABUSEIPDB_ENABLED" = "true" ]; then
+    ABUSEIPDB_API_KEY=$(get_config "abuseipdb_api_key" "")
+    ABUSEIPDB_API_KEY=$(execute_if_command "$ABUSEIPDB_API_KEY")
+    echo_info "AbuseIPDB reporting enabled"
+fi
+
+DSHIELD_ENABLED=$(get_config "dshield_enabled" "false")
+DSHIELD_USERID=""
+DSHIELD_AUTH_KEY=""
+DSHIELD_BATCH_SIZE=$(get_config "dshield_batch_size" "100")
+
+if [ "$DSHIELD_ENABLED" = "true" ]; then
+    DSHIELD_USERID=$(get_config "dshield_userid" "")
+    DSHIELD_AUTH_KEY=$(get_config "dshield_auth_key" "")
+    DSHIELD_AUTH_KEY=$(execute_if_command "$DSHIELD_AUTH_KEY")
+    echo_info "DShield data sharing enabled"
+fi
+
+GREYNOISE_ENABLED=$(get_config "greynoise_enabled" "false")
+GREYNOISE_API_KEY=""
+GREYNOISE_TAGS=$(get_config "greynoise_tags" "all")
+GREYNOISE_DEBUG=$(get_config "greynoise_debug" "false")
+
+if [ "$GREYNOISE_ENABLED" = "true" ]; then
+    GREYNOISE_API_KEY=$(get_config "greynoise_api_key" "")
+    GREYNOISE_API_KEY=$(execute_if_command "$GREYNOISE_API_KEY")
+    echo_info "GreyNoise threat intelligence enabled"
+fi
+
+# Canary webhook configuration
+CANARY_WEBHOOK_ENABLED=$(get_config "canary_webhook_enabled" "false")
+
+# Advanced configuration
+REPORT_HOURS=$(get_config "report_hours" "24")
+
+echo_info "Configuration loaded successfully"
 
 SERVER_NAME="cowrie-honeypot-$(date +%s)"
 
 echo_info "Deploying Cowrie honeypot from: $OUTPUT_DIR"
 
 # ============================================================
+# OS Compatibility Validation (NEW in v2.1)
+# ============================================================
+
+# Check for source_metadata.json and validate OS compatibility
+METADATA_FILE="$OUTPUT_DIR/source_metadata.json"
+if [ -f "$METADATA_FILE" ]; then
+    echo_info "Validating OS compatibility..."
+
+    # Parse source metadata using jq
+    SOURCE_IMAGE=$(jq -r '.generation.server_image' "$METADATA_FILE" 2>/dev/null || echo "unknown")
+    SOURCE_VERSION=$(jq -r '.generation.os_info.version_id' "$METADATA_FILE" 2>/dev/null || echo "unknown")
+
+    # Extract deployment version from image name (e.g., "debian-13" -> "13")
+    # Use sed for portability (macOS doesn't support grep -P)
+    DEPLOY_VERSION=$(echo "$SERVER_IMAGE" | sed -n 's/.*debian-\([0-9][0-9]*\).*/\1/p')
+    [ -z "$DEPLOY_VERSION" ] && DEPLOY_VERSION="0"
+
+    echo_info "Filesystem source: $SOURCE_IMAGE (Debian $SOURCE_VERSION)"
+    echo_info "Deployment target: $SERVER_IMAGE (Debian $DEPLOY_VERSION)"
+
+    # Calculate version difference (if both are numeric)
+    if [[ "$SOURCE_VERSION" =~ ^[0-9]+$ ]] && [[ "$DEPLOY_VERSION" =~ ^[0-9]+$ ]]; then
+        VERSION_DIFF=$((DEPLOY_VERSION - SOURCE_VERSION))
+
+        # Warn for large version gaps
+        if [ "$VERSION_DIFF" -gt 2 ]; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo_warn "  LARGE VERSION GAP DETECTED!"
+            echo_warn "  Source: Debian $SOURCE_VERSION → Target: Debian $DEPLOY_VERSION"
+            echo_warn "  Gap: $VERSION_DIFF versions"
+            echo ""
+            echo_warn "  Potential issues:"
+            echo_warn "  • File contents may reference outdated packages"
+            echo_warn "  • System files may show inconsistent versions"
+            echo_warn "  • Attackers might notice version mismatches"
+            echo ""
+            echo_warn "  Recommendation: Regenerate filesystem on Debian $DEPLOY_VERSION"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            read -p "Continue deployment anyway? [y/N] " -r
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo_info "Deployment cancelled by user"
+                exit 1
+            fi
+        elif [ "$VERSION_DIFF" -lt 0 ]; then
+            echo_warn "WARNING: Deploying OLDER OS than source filesystem!"
+            echo_warn "This is unusual and may cause compatibility issues."
+            echo ""
+            read -p "Continue? [y/N] " -r
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo_info "Deployment cancelled by user"
+                exit 1
+            fi
+        elif [ "$VERSION_DIFF" -gt 0 ]; then
+            echo_info "Note: Deploying newer OS ($DEPLOY_VERSION) than source ($SOURCE_VERSION) - this is OK"
+        else
+            echo_info "OS versions match - no compatibility concerns"
+        fi
+    fi
+else
+    echo_warn "No source_metadata.json found in output directory"
+    echo_info "This may be an older filesystem snapshot - proceeding without version validation"
+fi
+
+echo ""
+
+# ============================================================
 # STEP 1 — Create server
 # ============================================================
 
 echo_info "Creating Hetzner server: $SERVER_NAME"
+if [ -n "$SERVER_LOCATION" ]; then
+    echo_info "Location: $SERVER_LOCATION"
+fi
 
-SERVER_ID=$(hcloud server create \
-    --name "$SERVER_NAME" \
-    --type "$SERVER_TYPE" \
-    --image "$SERVER_IMAGE" \
-    --ssh-key "$SSH_KEY_NAME1" \
-    --ssh-key "$SSH_KEY_NAME2" \
-    --output json 2> /dev/null | jq -r '.server.id')
+# Build hcloud command with all SSH keys using array
+HCLOUD_CMD=(hcloud server create --name "$SERVER_NAME" --type "$SERVER_TYPE" --image "$SERVER_IMAGE")
+
+# Add location if specified
+if [ -n "$SERVER_LOCATION" ]; then
+    HCLOUD_CMD+=(--location "$SERVER_LOCATION")
+fi
+
+for key in "${SSH_KEYS[@]}"; do
+    HCLOUD_CMD+=(--ssh-key "$key")
+done
+HCLOUD_CMD+=(--output json)
+
+# Execute server creation
+SERVER_ID=$("${HCLOUD_CMD[@]}" 2>/dev/null | jq -r '.server.id')
 
 echo_info "Server created with ID: $SERVER_ID"
 
@@ -306,20 +666,13 @@ echo ""
 echo_info "SSH confirmed on port $REAL_SSH_PORT."
 
 # ============================================================
-# STEP 3.5 — Set up Tailscale (if enabled)
+# STEP 3.5 — Set up Tailscale (REQUIRED)
 # ============================================================
 
-if [ "$ENABLE_TAILSCALE" = "true" ]; then
-    if [ -z "$TAILSCALE_AUTHKEY" ]; then
-        echo_warn " Error: Tailscale is enabled but no auth key provided"
-        echo_warn " Add 'authkey' to the [tailscale] section in master-config.toml"
-        exit 1
-    fi
+echo_info "Setting up Tailscale for secure management access..."
 
-    echo_info "Setting up Tailscale for secure management access..."
-
-    # shellcheck disable=SC2087
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << TAILSCALEEOF
+# shellcheck disable=SC2087
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << TAILSCALEEOF
 set -e
 
 # Install Tailscale
@@ -335,19 +688,12 @@ TAILSCALE_IP=\$(tailscale ip -4)
 echo "[remote] Tailscale IP: \$TAILSCALE_IP"
 TAILSCALEEOF
 
-    # Get the Tailscale IP for display
-    TAILSCALE_IP=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale ip -4" 2>/dev/null)
+# Get the Tailscale IP for display
+TAILSCALE_IP=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale ip -4" 2>/dev/null)
 
-    echo_info "Tailscale configured successfully"
-    echo_info "Tailscale IP: $TAILSCALE_IP"
-
-    if [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
-        echo_info "IMPORTANT: Management SSH is now ONLY accessible via Tailscale"
-        echo_info "    Connect with: ssh root@$TAILSCALE_IP"
-    fi
-else
-    echo_info "Tailscale disabled, management SSH accessible via public IP"
-fi
+echo_info "Tailscale configured successfully"
+echo_info "Tailscale IP: $TAILSCALE_IP"
+echo_info "RECOMMENDED: Use Tailscale for management SSH: ssh root@$TAILSCALE_IP"
 
 # ============================================================
 # STEP 4 — Install Docker
@@ -1200,12 +1546,9 @@ fi
 if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
     echo_info "Setting up SSH Session Playback Web Dashboard..."
 
-    # Build WEB_BASE_URL from Tailscale settings if available
-    WEB_BASE_URL=""
-    if [ "$ENABLE_TAILSCALE" = "true" ] && [ -n "$TAILSCALE_NAME" ] && [ -n "$TAILSCALE_DOMAIN" ]; then
-        WEB_BASE_URL="https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
-        echo_info "Web dashboard base URL: $WEB_BASE_URL"
-    fi
+    # Build WEB_BASE_URL from Tailscale settings (always available in v2.1)
+    WEB_BASE_URL="https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
+    echo_info "Web dashboard base URL: $WEB_BASE_URL"
 
     # Upload web service files
     echo_info "Uploading web service files..."
@@ -1234,7 +1577,8 @@ fi
 mkdir -p /var/lib/GeoIP
 
 # Create web dashboard docker-compose file
-cat > /opt/cowrie/docker-compose.yml << DOCKEREOF
+# Use quoted heredoc to prevent variable expansion, then do manual substitution
+cat > /opt/cowrie/docker-compose.yml << 'DOCKEREOF'
 services:
   cowrie:
     build:
@@ -1287,11 +1631,14 @@ services:
       - GEOIP_ASN_PATH=/geoip/GeoLite2-ASN.mmdb
       - YARA_CACHE_DB_PATH=/yara-cache/yara-cache.db
       - COWRIE_METADATA_PATH=/cowrie-metadata/metadata.json
-      - BASE_URL=$WEB_BASE_URL
-      - VIRUSTOTAL_API_KEY=$VT_API_KEY
-      - SERVER_IP=$SERVER_IP
-      - HONEYPOT_HOSTNAME=$HOSTNAME
+      - BASE_URL=WEB_BASE_URL_PLACEHOLDER
+      - VIRUSTOTAL_API_KEY=VT_API_KEY_PLACEHOLDER
+      - SERVER_IP=SERVER_IP_PLACEHOLDER
+      - HONEYPOT_HOSTNAME=HONEYPOT_HOSTNAME_PLACEHOLDER
       - CANARY_WEBHOOK_DB_PATH=/canary-webhooks/canary-webhooks.db
+      - DASHBOARD_MODE=DASHBOARD_MODE_PLACEHOLDER
+      - DASHBOARD_API_URL=DASHBOARD_API_URL_PLACEHOLDER
+      - DASHBOARD_SOURCES=DASHBOARD_SOURCES_PLACEHOLDER
     depends_on:
       - cowrie
     networks:
@@ -1313,6 +1660,27 @@ networks:
   cowrie-internal:
     driver: bridge
 DOCKEREOF
+
+# Replace placeholders with actual values using sed on the remote server
+sed -i "s|WEB_BASE_URL_PLACEHOLDER|$WEB_BASE_URL|g" /opt/cowrie/docker-compose.yml
+sed -i "s|VT_API_KEY_PLACEHOLDER|$VT_API_KEY|g" /opt/cowrie/docker-compose.yml
+sed -i "s|SERVER_IP_PLACEHOLDER|$SERVER_IP|g" /opt/cowrie/docker-compose.yml
+sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$HONEYPOT_HOSTNAME|g" /opt/cowrie/docker-compose.yml
+sed -i "s|DASHBOARD_MODE_PLACEHOLDER|$DASHBOARD_MODE|g" /opt/cowrie/docker-compose.yml
+sed -i "s|DASHBOARD_API_URL_PLACEHOLDER|$DASHBOARD_API_URL|g" /opt/cowrie/docker-compose.yml
+
+# Write DASHBOARD_SOURCES_JSON to temp file to avoid quoting issues
+cat > /tmp/dashboard_sources.json << SOURCES_EOF
+$DASHBOARD_SOURCES_JSON
+SOURCES_EOF
+
+# Compact JSON using jq to remove all extra whitespace
+SOURCES_CONTENT=\$(jq -c '.' /tmp/dashboard_sources.json 2>/dev/null || cat /tmp/dashboard_sources.json | tr -d '\\n')
+rm -f /tmp/dashboard_sources.json
+
+# Replace DASHBOARD_SOURCES using awk
+awk -v sources="\$SOURCES_CONTENT" '{gsub(/DASHBOARD_SOURCES_PLACEHOLDER/, sources)}1' /opt/cowrie/docker-compose.yml > /opt/cowrie/docker-compose.yml.tmp
+mv /opt/cowrie/docker-compose.yml.tmp /opt/cowrie/docker-compose.yml
 
 # Build and start web service
 cd /opt/cowrie
@@ -1346,18 +1714,76 @@ fi
 WEBEOF
 
     echo_info "Web dashboard configured successfully"
-    if [ "$ENABLE_TAILSCALE" = "true" ] && [ -n "$TAILSCALE_DOMAIN" ]; then
-        # Use configured Tailscale name and domain
-        echo_info "Web dashboard available at: https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
-    elif [ "$ENABLE_TAILSCALE" = "true" ]; then
-        # Tailscale enabled but no domain configured - query from Tailscale
-        TAILSCALE_FQDN=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo '${TAILSCALE_NAME}'")
-        echo_info "Web dashboard available at: https://$TAILSCALE_FQDN"
-    else
-        echo_info "Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
-    fi
+    # Tailscale is always configured in v2.1, use configured name and domain
+    echo_info "Web dashboard available at: https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
 else
     echo_info "Web dashboard disabled, skipping setup"
+fi
+
+# ============================================================
+# STEP 13.5 — Set up Cowrie API (NEW in v2.1)
+# ============================================================
+
+if [ "$ENABLE_API" = "true" ]; then
+    echo_info "Setting up Cowrie API for multi-host dashboard deployment..."
+
+    # Upload API directory
+    echo_info "Uploading API service files..."
+    scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
+        api "root@$SERVER_IP:/opt/cowrie/" || {
+            echo_warn " Error: Failed to upload API service files"
+            exit 1
+        }
+
+    # Upload docker-compose.api.yml
+    scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+        docker-compose.api.yml "root@$SERVER_IP:/opt/cowrie/" || {
+            echo_warn " Error: Failed to upload docker-compose.api.yml"
+            exit 1
+        }
+
+    # Deploy API container
+    echo_info "Building and starting Cowrie API container..."
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << APIEOF
+set -e
+cd /opt/cowrie
+
+# Build and start API with the main compose file
+echo "[remote] Building Cowrie API container..."
+if ! docker compose -f docker-compose.yml -f docker-compose.api.yml build cowrie-api 2>&1; then
+  echo "[remote] WARNING: Build reported errors, but continuing..."
+fi
+
+echo "[remote] Starting Cowrie API service..."
+if ! docker compose -f docker-compose.yml -f docker-compose.api.yml up -d cowrie-api 2>&1; then
+  echo "[remote] ERROR: Failed to start API service"
+  docker compose ps
+  docker compose logs cowrie-api --tail=50
+  exit 1
+fi
+
+echo "[remote] Cowrie API deployed on internal network"
+
+# Expose via Tailscale if configured
+if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && command -v tailscale &> /dev/null; then
+    echo "[remote] Exposing API via Tailscale Serve..."
+    # Note: API runs on port 8000 internally
+    # Tailscale Serve needs to proxy localhost:8000
+    # We'll need to expose the port to localhost first
+    echo "[remote] Note: API exposed via Tailscale at https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
+    echo "[remote] You may need to configure Tailscale Serve manually for port 8000"
+fi
+APIEOF
+
+    echo_info "Cowrie API configured successfully"
+    if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ]; then
+        echo_info "API will be available at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
+        echo_warn "Note: Multi-host API access requires additional Tailscale Serve configuration"
+    else
+        echo_info "API accessible within Docker network at: http://cowrie-api:8000"
+    fi
+else
+    echo_info "Cowrie API disabled, skipping setup"
 fi
 
 # ============================================================
@@ -1392,53 +1818,21 @@ Server IP:       $SERVER_IP
 Server ID:       $SERVER_ID
 EOFINFO
 
-# Display appropriate SSH access info based on Tailscale configuration
-if [ "$ENABLE_TAILSCALE" = "true" ] && [ "$TAILSCALE_BLOCK_PUBLIC_SSH" = "true" ]; then
-    # Get Tailscale hostname for Tailscale SSH (use Tailscale IP since public SSH is blocked)
-    if [ "$TAILSCALE_USE_SSH" = "true" ]; then
-        TS_HOSTNAME=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -p "$REAL_SSH_PORT" "root@$TAILSCALE_IP" "tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//' || echo ''" 2>/dev/null) || TS_HOSTNAME=""
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "systemctl disable ssh 2>/dev/null"
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" "systemctl stop ssh 2>/dev/null"
-    fi
-
-    if [ "$TAILSCALE_USE_SSH" = "true" ] && [ -n "$TS_HOSTNAME" ]; then
-cat << TSINFO
-
-Tailscale IP:        $TAILSCALE_IP
-Tailscale Hostname:  $TS_HOSTNAME
-
-SSH Access (TAILSCALE SSH):
-  Management SSH:  ssh root@$TS_HOSTNAME
-  Honeypot SSH:    ssh root@$SERVER_IP (port 22 - public)
-TSINFO
-    else
-cat << TSINFO
+# Display SSH access information (Tailscale always configured in v2.1)
+cat << SSHINFO
 
 Tailscale IP:    $TAILSCALE_IP
-
-SSH Access (TAILSCALE ONLY):
-  Management SSH:  ssh root@$TAILSCALE_IP
-  Honeypot SSH:    ssh root@$SERVER_IP (port 22 - public)
-TSINFO
-    fi
-elif [ "$ENABLE_TAILSCALE" = "true" ]; then
-cat << TSPUBLICINFO
-
-Tailscale IP:    $TAILSCALE_IP
-
-SSH Access (available via both public IP and Tailscale):
-  Management SSH:  ssh -p $REAL_SSH_PORT root@$SERVER_IP
-                   ssh root@$TAILSCALE_IP (via Tailscale)
-  Honeypot SSH:    ssh root@$SERVER_IP (port 22)
-TSPUBLICINFO
-else
-cat << PUBLICINFO
 
 SSH Access:
-  Management SSH:  ssh -p $REAL_SSH_PORT root@$SERVER_IP
-  Honeypot SSH:    ssh root@$SERVER_IP (port 22)
-PUBLICINFO
-fi
+  Management SSH (Recommended - via Tailscale):
+    ssh root@$TAILSCALE_IP
+
+  Management SSH (Fallback - public):
+    ssh -p $REAL_SSH_PORT root@$SERVER_IP
+
+  Honeypot SSH (public - port 22):
+    ssh root@$SERVER_IP
+SSHINFO
 
 cat << EOFINFO2
 

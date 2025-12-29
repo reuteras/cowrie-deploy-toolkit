@@ -388,7 +388,27 @@ document.addEventListener('DOMContentLoaded', function() {
         subdomains: 'abcd'
     }).addTo(map);
 
-    // Add markers for attack origins
+    // Add honeypot location markers (green)
+    const honeypotLocations = {{ honeypot_locations | tojson }};
+    honeypotLocations.forEach(hp => {
+        if (hp.lat && hp.lon) {
+            const marker = L.marker([hp.lat, hp.lon], {
+                icon: L.divIcon({
+                    className: 'honeypot-marker',
+                    html: '<div style="background:#28a745;width:20px;height:20px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+                    iconSize: [20, 20],
+                    iconAnchor: [10, 10]
+                })
+            }).addTo(map);
+
+            marker.bindPopup(`
+                <strong style="color:#28a745;">🍯 Honeypot: ${hp.name}</strong><br>
+                ${hp.city ? hp.city + ', ' : ''}${hp.country || 'Unknown'}
+            `);
+        }
+    });
+
+    // Add markers for attack origins (red)
     const locations = {{ stats.ip_locations | tojson }};
     const markerCounts = {};
     const hours = {{ hours }};
@@ -400,7 +420,7 @@ document.addEventListener('DOMContentLoaded', function() {
         markerCounts[key].count++;
     });
 
-    // Add markers
+    // Add attack origin markers
     Object.values(markerCounts).forEach(loc => {
         const marker = L.circleMarker([loc.lat, loc.lon], {
             radius: Math.min(5 + Math.log(loc.count) * 3, 20),
