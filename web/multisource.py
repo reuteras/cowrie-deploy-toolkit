@@ -254,8 +254,9 @@ class MultiSourceDataSource:
         Returns:
             Dict of sessions keyed by session ID
         """
-        # Get all sessions with a large limit
-        result = self.get_sessions(hours=hours, limit=10000, offset=0, source_filter=source_filter)
+        # API has max limit of 1000 sessions per request
+        # For most use cases, this is sufficient for the time window
+        result = self.get_sessions(hours=hours, limit=1000, offset=0, source_filter=source_filter)
 
         # Convert list to dict keyed by session ID
         sessions_dict = {}
