@@ -276,7 +276,7 @@ update_web() {
 
     # Recreate container
     log_info "Recreating web container..."
-    docker compose up -d --no-deps --force-recreate cowrie-web
+    docker compose up -d --no-deps --force-recreate cowrie-web >/dev/null 2>&1
 
     # Get new image ID
     local new_image_id
@@ -440,8 +440,6 @@ update_version_file() {
 EOF
 
     log_success "VERSION.json updated"
-    log_info "Version information:"
-    cat "${VERSION_FILE}" | jq '.'
 
     log_success "Phase 4 complete: VERSION.json updated"
 }
@@ -466,28 +464,22 @@ main_update() {
     log_info "=== Starting Honeypot Update ==="
     log_info "Timestamp: $(date)"
     log_info "Hostname: $(hostname)"
-    echo ""
 
     # Create rollback snapshot
     local snapshot_dir
     snapshot_dir=$(create_snapshot)
-    echo ""
 
     # Phase 1: Update scripts and configuration
     update_scripts
-    echo ""
 
     # Phase 2: Update web dashboard
     update_web
-    echo ""
 
     # Phase 3: Update API
     update_api
-    echo ""
 
     # Phase 4: Update VERSION.json
     update_version_file
-    echo ""
 
     log_success "=== Update Completed Successfully ==="
     log_info "Rollback snapshot available at: ${snapshot_dir}"

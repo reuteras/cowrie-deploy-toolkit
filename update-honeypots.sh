@@ -335,7 +335,6 @@ get_version_info() {
 # Show status for all honeypots
 show_status() {
     log_info "Checking status of all honeypots..."
-    echo ""
 
     local honeypots
     readarray -t honeypots < <(list_honeypots)
@@ -366,8 +365,6 @@ show_status() {
 
         printf "%-20s %-25s %-12s %-10s %-20s\n" "${hp}" "${ts_host}" "${git_commit}" "${web_version}" "${last_updated}"
     done
-
-    echo ""
 }
 
 # Sync filesystem to honeypot
@@ -607,16 +604,10 @@ update_honeypot() {
         log_info "Using Tailscale SSH (skipping connectivity pre-check)"
     fi
 
-    # Show version before update
-    log_info "Version before update:"
-    get_version_info "${name}" | jq '.' 2>/dev/null || log_warning "VERSION.json not found"
-    echo ""
-
     # Auto-detection mode
     if [ "${UPDATE_AUTO}" = "true" ]; then
         auto_detect_updates "${name}" "${ts_host}" "${ssh_port}"
         local result=$?
-        echo ""
         return ${result}
     fi
 
@@ -630,7 +621,6 @@ update_honeypot() {
         else
             return 1
         fi
-        echo ""
     fi
 
     if [ "${UPDATE_CODE}" = "true" ]; then
@@ -640,18 +630,12 @@ update_honeypot() {
         else
             return 1
         fi
-        echo ""
     fi
 
     if [ "${updated}" = "false" ]; then
         log_warning "No update mode selected, nothing to do"
         return 0
     fi
-
-    # Show version after update
-    log_info "Version after update:"
-    get_version_info "${name}" | jq '.' 2>/dev/null || log_warning "VERSION.json not found"
-    echo ""
 
     log_success "Update completed successfully for ${name}"
     return 0
@@ -744,7 +728,6 @@ update_all_honeypots() {
             if ! update_honeypot "${hp}"; then
                 failed=$((failed + 1))
             fi
-            echo ""
         done
 
         if [ ${failed} -gt 0 ]; then
@@ -848,7 +831,6 @@ main() {
 
     log_info "Using config file: ${CONFIG_FILE}"
     log_info "Log file: ${LOG_FILE}"
-    echo ""
 
     # Execute operation
     case "${operation}" in
