@@ -56,17 +56,25 @@ class HoneypotSource:
 
         if self.enabled:
             try:
-                # Validate configuration based on mode
-                if mode == "remote" and not api_base_url:
-                    raise ValueError(f"API base URL required for remote mode (source: {name})")
+                # IMPORTANT: "local" mode now means "use local API" not "parse files directly"
+                # This ensures we always benefit from fast SQLite queries via the API
+                if mode == "local":
+                    # Local source uses the local API endpoint
+                    actual_api_url = "http://cowrie-api:8000"
+                    actual_mode = "remote"  # Always use API-based access
+                    print(f"[MultiSource] Initialized source '{name}' ({source_type}) using local API at {actual_api_url}")
+                elif mode == "remote":
+                    if not api_base_url:
+                        raise ValueError(f"API base URL required for remote mode (source: {name})")
+                    actual_api_url = api_base_url
+                    actual_mode = "remote"
+                    print(f"[MultiSource] Initialized source '{name}' ({source_type}) at {api_base_url}")
+                else:
+                    raise ValueError(f"Unknown mode '{mode}' for source '{name}'")
 
                 # Create DataSource instance for this honeypot
-                self.datasource = DataSource(mode=mode, api_base_url=api_base_url)
+                self.datasource = DataSource(mode=actual_mode, api_base_url=actual_api_url)
 
-                if mode == "local":
-                    print(f"[MultiSource] Initialized source '{name}' ({source_type}) in LOCAL mode")
-                else:
-                    print(f"[MultiSource] Initialized source '{name}' ({source_type}) at {api_base_url}")
             except Exception as e:
                 print(f"[MultiSource] Failed to initialize source '{name}': {e}")
                 self.enabled = False
