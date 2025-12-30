@@ -4,13 +4,16 @@ Statistics endpoints
 Provides aggregated statistics from Cowrie data
 """
 
+import logging
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Query
 from services.log_parser import parser
+from services.sqlite_parser import sqlite_parser
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/stats/overview")
@@ -28,6 +31,17 @@ async def get_stats_overview(days: int = Query(7, ge=1, le=365)):
         - Top countries, credentials, commands
         - Downloads count
     """
+    # Try SQLite first (FAST), fall back to JSON parsing (SLOW)
+    if sqlite_parser.available:
+        logger.info(f"Using SQLite parser for stats (days={days})")
+        try:
+            return sqlite_parser.get_stats_overview(days=days)
+        except Exception as e:
+            logger.error(f"SQLite parser failed: {e}, falling back to JSON parser")
+
+    # Fallback to JSON parsing (original implementation)
+    logger.warning("Using slow JSON parser - consider enabling SQLite output in Cowrie")
+
     # Get all sessions
     all_sessions = parser.get_sessions(limit=10000)  # Get a large number
 
