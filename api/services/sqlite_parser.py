@@ -11,8 +11,8 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
-# Database path (same as configured in Cowrie)
-DEFAULT_DB_PATH = "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/cowrie.db"
+# Database path (container mount path)
+DEFAULT_DB_PATH = "/cowrie-data/lib/cowrie/cowrie.db"
 
 
 class SQLiteStatsParser:
