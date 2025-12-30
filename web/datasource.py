@@ -39,10 +39,11 @@ class DataSource:
         if self.mode == "remote":
             self.session = requests.Session()
             # Configure connection pooling limits
+            # IMPORTANT: max_retries=0 to prevent death spiral when file descriptors are exhausted
             adapter = requests.adapters.HTTPAdapter(
-                pool_connections=10,
+                pool_connections=5,  # Reduced from 10
                 pool_maxsize=10,
-                max_retries=3,
+                max_retries=0,  # Disable retries - let caching and backoff handle failures
                 pool_block=False,
             )
             self.session.mount("http://", adapter)
