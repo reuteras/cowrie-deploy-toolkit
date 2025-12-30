@@ -9,7 +9,6 @@ import os
 import sqlite3
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
 
 import geoip2.database
 import geoip2.errors
@@ -52,7 +51,7 @@ class SQLiteStatsParser:
             except Exception as e:
                 print(f"[!] Failed to load GeoIP ASN database: {e}")
 
-    def _geoip_lookup(self, ip: str) -> Dict:
+    def _geoip_lookup(self, ip: str) -> dict:
         """Lookup GeoIP information for an IP address"""
         result = {
             "country": "-",
@@ -92,7 +91,7 @@ class SQLiteStatsParser:
 
         return result
 
-    def get_stats_overview(self, days: int = 7) -> Dict:
+    def get_stats_overview(self, days: int = 7) -> dict:
         """
         Get overview statistics using SQL queries
 

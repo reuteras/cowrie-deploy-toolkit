@@ -158,7 +158,7 @@ class CowrieLogParser:
             return {}
 
         # Calculate session metadata
-        for session_id, session in sessions.items():
+        for _session_id, session in sessions.items():
             session["commands_count"] = len(session["commands"])
             session["downloads_count"] = len(session["downloads"])
             session["has_tty"] = any(e.get("eventid") == "cowrie.log.open" for e in session["events"])

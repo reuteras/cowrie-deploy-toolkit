@@ -33,14 +33,14 @@ async def get_sessions(
     if start_time:
         try:
             start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid start_time format")
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail="Invalid start_time format") from err
 
     if end_time:
         try:
             end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid end_time format")
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail="Invalid end_time format") from err
 
     # Get sessions from parser
     sessions = parser.get_sessions(

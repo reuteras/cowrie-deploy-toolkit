@@ -177,12 +177,10 @@ get_tailscale_hostname() {
 
     config=$(get_honeypot_config "${name}") || return 1
 
-    # Extract tailscale_name and domain from config
+    # Extract tailscale_name
     local tailscale_name
-    local tailscale_domain
 
     tailscale_name=$(echo "${config}" | jq -r '.tailscale_name // empty')
-    tailscale_domain=$(echo "${config}" | jq -r '.tailscale_domain // empty')
 
     # If tailscale_name not set in config, default to honeypot name
     if [ -z "${tailscale_name}" ]; then

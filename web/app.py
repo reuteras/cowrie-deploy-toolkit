@@ -1148,7 +1148,7 @@ try:
             mode="remote",  # Always use remote mode (API-based)
             api_base_url=api_url,
         )
-        print(f"[+] API-based datasource ready")
+        print("[+] API-based datasource ready")
 
     else:
         print(f"[!] Unknown dashboard mode: {dashboard_mode}")
