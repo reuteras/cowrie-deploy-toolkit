@@ -316,15 +316,19 @@ update_api() {
     # Replace placeholders in docker-compose.api.yml with actual values from docker-compose.yml
     # Extract SERVER_IP and HONEYPOT_HOSTNAME from the main docker-compose.yml
     local server_ip honeypot_hostname
+    log_info "Configuring API container with current SERVER_IP..."
     server_ip=$(grep "SERVER_IP=" docker-compose.yml | head -1 | sed 's/.*SERVER_IP=//' | sed 's/ *#.*//')
+    log_info "Configuring API container with current HONEYPOT_HOSTNAME..."
     honeypot_hostname=$(grep "HONEYPOT_HOSTNAME=" docker-compose.yml | head -1 | sed 's/.*HONEYPOT_HOSTNAME=//' | sed 's/ *#.*//')
 
+    log_info "Using SERVER_IP: ${server_ip}"
     if [ -n "$server_ip" ] && [ -n "$honeypot_hostname" ]; then
         sed -i "s|SERVER_IP_PLACEHOLDER|$server_ip|g" docker-compose.api.yml
         sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$honeypot_hostname|g" docker-compose.api.yml
     fi
 
     # Get current image ID
+    log_info "Retrieving current API image ID..."
     local old_image_id
     old_image_id=$(docker compose -f docker-compose.yml -f docker-compose.api.yml images cowrie-api --format json 2>/dev/null | jq -r '.[0].ID // "unknown"')
 
@@ -339,7 +343,7 @@ update_api() {
 
     # Recreate container
     log_info "Recreating API container..."
-    docker compose -f docker-compose.yml -f docker-compose.api.yml up -d --no-deps --force-recreate cowrie-api
+    docker compose -f docker-compose.yml -f docker-compose.api.yml up -d --no-deps --force-recreate cowrie-api >/dev/null 2>&1
 
     # Get new image ID
     local new_image_id
