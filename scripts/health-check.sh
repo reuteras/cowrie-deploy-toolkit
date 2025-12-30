@@ -220,33 +220,47 @@ check_api() {
 
     log_success "API container is running"
 
-    # Check Docker healthcheck status
+    # Wait for Docker healthcheck to complete (with timeout)
     local health_status
-    health_status=$(docker inspect cowrie-api --format='{{.State.Health.Status}}' 2>/dev/null || echo "none")
+    local max_wait=30  # Maximum 30 seconds
+    local waited=0
 
-    if [ "${health_status}" = "healthy" ]; then
-        log_success "API health check: OK"
+    while [ ${waited} -lt ${max_wait} ]; do
+        health_status=$(docker inspect cowrie-api --format='{{.State.Health.Status}}' 2>/dev/null || echo "none")
 
-        # Get version info using Python (container doesn't have curl)
-        local health_response
-        health_response=$(docker exec cowrie-api python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:${API_PORT}/health').read().decode())" 2>/dev/null || echo "{}")
+        if [ "${health_status}" = "healthy" ]; then
+            log_success "API health check: OK"
 
-        local status
-        status=$(echo "${health_response}" | jq -r '.status // "unknown"')
+            # Get version info using Python (container doesn't have curl)
+            local health_response
+            health_response=$(docker exec cowrie-api python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:${API_PORT}/health').read().decode())" 2>/dev/null || echo "{}")
 
-        local version
-        version=$(echo "${health_response}" | jq -r '.version // "unknown"')
+            local status
+            status=$(echo "${health_response}" | jq -r '.status // "unknown"')
 
-        log_info "Status: ${status}, Version: ${version}"
+            local version
+            version=$(echo "${health_response}" | jq -r '.version // "unknown"')
 
-        return 0
-    elif [ "${health_status}" = "none" ]; then
-        log_warning "API container has no healthcheck configured"
-        return 0
-    else
-        log_error "API health check failed (status: ${health_status})"
-        return 1
-    fi
+            log_info "Status: ${status}, Version: ${version}"
+
+            return 0
+        elif [ "${health_status}" = "none" ]; then
+            log_warning "API container has no healthcheck configured"
+            return 0
+        elif [ "${health_status}" = "starting" ]; then
+            # Wait a bit and retry
+            sleep 2
+            waited=$((waited + 2))
+        else
+            # unhealthy or other status
+            log_error "API health check failed (status: ${health_status})"
+            return 1
+        fi
+    done
+
+    # Timeout reached
+    log_error "API health check timeout (still in 'starting' state after ${max_wait}s)"
+    return 1
 }
 
 # Check YARA scanner daemon
