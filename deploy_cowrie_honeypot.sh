@@ -1805,13 +1805,9 @@ if [ "$ENABLE_API" = "true" ]; then
 set -e
 cd /opt/cowrie
 
-# Expose API port to host if using Tailscale Serve
-if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ]; then
-    echo "[remote] Exposing API port 8000 to host for Tailscale Serve..."
-    # Uncomment the ports section in docker-compose.api.yml
-    sed -i 's/# ports:/ports:/' docker-compose.api.yml
-    sed -i 's/#   - "127.0.0.1:8000:8000"/  - "127.0.0.1:8000:8000"/' docker-compose.api.yml
-fi
+# API port is always exposed on localhost (127.0.0.1:8000)
+# This is safe and required for Tailscale Serve to proxy the API
+echo "[remote] API will be accessible on localhost:8000 for Tailscale Serve"
 
 # Build and start API with the main compose file
 echo "[remote] Building Cowrie API container (this may take a minute)..."

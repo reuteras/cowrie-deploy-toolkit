@@ -45,10 +45,10 @@ services:
       - /tmp:noexec,nosuid,size=100M
       - /app/.cache:noexec,nosuid,size=50M
 
-    # Internal network only by default
-    # For multi-host deployment, expose via Tailscale Serve
-    # ports:
-    #   - "127.0.0.1:8000:8000"  # Uncomment for local testing
+    # Expose on localhost for Tailscale Serve access
+    # Safe to keep enabled - only accessible from localhost (127.0.0.1)
+    ports:
+      - "127.0.0.1:8000:8000"
 
 networks:
   cowrie-internal:
