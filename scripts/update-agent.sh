@@ -235,6 +235,12 @@ update_scripts() {
 
 # Update web container
 update_web() {
+    # Check if web dashboard service is defined
+    if ! docker compose config --services 2>/dev/null | grep -q "^cowrie-web$"; then
+        log_info "Phase 2: Web dashboard not configured, skipping"
+        return 0
+    fi
+
     log_info "Phase 2: Updating web dashboard container..."
 
     cd "${COWRIE_DIR}"
@@ -266,7 +272,9 @@ update_web() {
         log_success "Web image updated: ${old_image_id:0:12} -> ${new_image_id:0:12}"
     fi
 
-    # Health check
+    # Health check (wait for Flask to fully start)
+    log_info "Waiting for web dashboard to start..."
+    sleep 3
     log_info "Running health check for web dashboard..."
     if bash "${COWRIE_DIR}/scripts/health-check.sh" --web; then
         log_success "Web dashboard health check passed"
@@ -317,7 +325,9 @@ update_api() {
         log_success "API image updated: ${old_image_id:0:12} -> ${new_image_id:0:12}"
     fi
 
-    # Health check
+    # Health check (wait for FastAPI to fully start)
+    log_info "Waiting for API to start..."
+    sleep 3
     log_info "Running health check for API..."
     if bash "${COWRIE_DIR}/scripts/health-check.sh" --api; then
         log_success "API health check passed"

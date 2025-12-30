@@ -204,7 +204,7 @@ check_web() {
 
 # Check API service
 check_api() {
-    log_info "Checking API service (port ${API_PORT})..."
+    log_info "Checking API service..."
 
     # Check if API is enabled
     if [ ! -f "${COWRIE_DIR}/docker-compose.api.yml" ]; then
@@ -212,21 +212,21 @@ check_api() {
         return 0
     fi
 
-    # Check if port is listening
-    if ! check_port localhost "${API_PORT}" 5; then
-        log_error "API service is not listening on port ${API_PORT}"
+    # Check if container is running
+    if ! docker ps --filter "name=cowrie-api" --filter "status=running" --format '{{.Names}}' | grep -q cowrie-api; then
+        log_error "API container is not running"
         return 1
     fi
 
-    log_success "API service is listening on port ${API_PORT}"
+    log_success "API container is running"
 
-    # Check health endpoint
-    if check_http "http://localhost:${API_PORT}/health" 5; then
+    # Check health endpoint from inside container (port not exposed to host)
+    if docker exec cowrie-api curl -sf "http://localhost:${API_PORT}/health" > /dev/null 2>&1; then
         log_success "API /health endpoint: OK"
 
-        # Get version info if available
+        # Get version info
         local health_response
-        health_response=$(timeout 5 curl -s "http://localhost:${API_PORT}/health" 2>/dev/null || echo "{}")
+        health_response=$(docker exec cowrie-api curl -s "http://localhost:${API_PORT}/health" 2>/dev/null || echo "{}")
 
         local status
         status=$(echo "${health_response}" | jq -r '.status // "unknown"')
