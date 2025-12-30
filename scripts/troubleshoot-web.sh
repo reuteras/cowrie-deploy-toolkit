@@ -93,6 +93,14 @@ echo "Re-configure Tailscale routing:"
 echo "  tailscale serve reset"
 echo "  tailscale serve --https=443 --bg localhost:5000"
 if [ -f docker-compose.api.yml ]; then
+    echo "  sleep 5  # Wait for web dashboard to be ready"
     echo "  tailscale serve --https=443 --set-path=/api --bg localhost:8000"
+fi
+echo ""
+echo "Update crontab for persistence:"
+echo "  crontab -l | grep -v 'tailscale serve' | crontab -"
+echo "  (crontab -l; echo '@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:5000 > /dev/null 2>&1') | crontab -"
+if [ -f docker-compose.api.yml ]; then
+    echo "  (crontab -l; echo '@reboot sleep 45 && /usr/bin/tailscale serve --https=443 --set-path=/api --bg localhost:8000 > /dev/null 2>&1') | crontab -"
 fi
 echo ""
