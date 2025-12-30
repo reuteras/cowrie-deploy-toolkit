@@ -1528,33 +1528,70 @@ def api_sessions():
 @app.route("/api/system-info")
 def api_system_info():
     """API endpoint for honeypot system information."""
-    info = {
-        "server_ip": CONFIG["server_ip"],
-        "honeypot_hostname": CONFIG["honeypot_hostname"],
-        "cowrie_version": "unknown",
-        "git_commit": None,
-        "build_date": None,
-        "uptime_seconds": None,
-    }
+    # Check if multi-source mode
+    if hasattr(session_parser, "sources"):
+        # Multi-source mode - return info for all honeypots
+        honeypots = []
 
-    # Try to read metadata from Cowrie container
-    metadata_path = CONFIG["metadata_path"]
-    if os.path.exists(metadata_path):
-        try:
-            with open(metadata_path) as f:
-                metadata = json.load(f)
-                info["cowrie_version"] = metadata.get("cowrie_version", "unknown")
-                info["git_commit"] = metadata.get("git_commit")
-                info["build_date"] = metadata.get("build_date")
+        for source_name, source in session_parser.sources.items():
+            info = {
+                "name": source_name,
+                "server_ip": None,
+                "honeypot_hostname": None,
+                "cowrie_version": "unknown",
+                "git_commit": None,
+                "build_date": None,
+                "uptime_seconds": None,
+            }
 
-                # Calculate uptime from build timestamp
-                build_ts = metadata.get("build_timestamp")
-                if build_ts:
-                    info["uptime_seconds"] = int(time.time() - build_ts)
-        except Exception as e:
-            app.logger.warning(f"Failed to read metadata: {e}")
+            # Fetch from source's API (local or remote)
+            try:
+                api_url = source.datasource.api_base_url
+                response = requests.get(
+                    f"{api_url}/api/v1/system-info",
+                    timeout=5,
+                )
+                if response.ok:
+                    remote_info = response.json()
+                    info["server_ip"] = remote_info.get("server_ip")
+                    info["honeypot_hostname"] = remote_info.get("honeypot_hostname")
+                    info["cowrie_version"] = remote_info.get("cowrie_version", "unknown")
+                    info["build_date"] = remote_info.get("build_date")
+            except Exception as e:
+                app.logger.warning(f"Failed to fetch system info from {source_name}: {e}")
 
-    return jsonify(info)
+            honeypots.append(info)
+
+        return jsonify({"honeypots": honeypots})
+    else:
+        # Single source mode - return single honeypot info
+        info = {
+            "server_ip": CONFIG["server_ip"],
+            "honeypot_hostname": CONFIG["honeypot_hostname"],
+            "cowrie_version": "unknown",
+            "git_commit": None,
+            "build_date": None,
+            "uptime_seconds": None,
+        }
+
+        # Try to read metadata from Cowrie container
+        metadata_path = CONFIG["metadata_path"]
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path) as f:
+                    metadata = json.load(f)
+                    info["cowrie_version"] = metadata.get("cowrie_version", "unknown")
+                    info["git_commit"] = metadata.get("git_commit")
+                    info["build_date"] = metadata.get("build_date")
+
+                    # Calculate uptime from build timestamp
+                    build_ts = metadata.get("build_timestamp")
+                    if build_ts:
+                        info["uptime_seconds"] = int(time.time() - build_ts)
+            except Exception as e:
+                app.logger.warning(f"Failed to read metadata: {e}")
+
+        return jsonify(info)
 
 
 @app.route("/api/canary-tokens")

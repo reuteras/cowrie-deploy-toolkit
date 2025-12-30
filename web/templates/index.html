@@ -53,26 +53,8 @@
     </div>
 
     <!-- System Information Box -->
-    <div class="system-info-box" id="system-info" style="margin: 20px 0; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white; display: none;">
-        <h3 style="margin: 0 0 10px 0; font-size: 18px;">Honeypot System Information <a href="{{ url_for('system_info') }}" style="font-size: 0.7em; font-weight: normal; float: right; color: white; opacity: 0.9;">View Details →</a></h3>
-        <div class="system-info-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-            <div>
-                <div style="opacity: 0.9; font-size: 12px;">Server IP</div>
-                <div style="font-weight: 600; font-size: 16px;" id="server-ip">Loading...</div>
-            </div>
-            <div>
-                <div style="opacity: 0.9; font-size: 12px;">Hostname</div>
-                <div style="font-weight: 600; font-size: 16px;" id="honeypot-hostname">Loading...</div>
-            </div>
-            <div>
-                <div style="opacity: 0.9; font-size: 12px;">Cowrie Version</div>
-                <div style="font-weight: 600; font-size: 16px;" id="cowrie-version">Loading...</div>
-            </div>
-            <div>
-                <div style="opacity: 0.9; font-size: 12px;">Container Built</div>
-                <div style="font-weight: 600; font-size: 16px;" id="build-date">Loading...</div>
-            </div>
-        </div>
+    <div id="system-info-container" style="margin: 20px 0; display: none;">
+        <!-- Content will be populated by JavaScript -->
     </div>
 
     <!-- Canary Tokens Box -->
@@ -464,26 +446,79 @@ document.addEventListener('DOMContentLoaded', function() {
     fetch('/api/system-info')
         .then(response => response.json())
         .then(data => {
-            // Show the info box
-            document.getElementById('system-info').style.display = 'block';
+            const container = document.getElementById('system-info-container');
 
-            // Populate fields
-            document.getElementById('server-ip').textContent = data.server_ip || 'N/A';
-            document.getElementById('honeypot-hostname').textContent = data.honeypot_hostname || 'N/A';
-            document.getElementById('cowrie-version').textContent = data.cowrie_version || 'Unknown';
-
-            // Format build date
-            if (data.build_date) {
-                const buildDate = new Date(data.build_date);
-                document.getElementById('build-date').textContent = buildDate.toLocaleString();
+            // Check if multi-honeypot response
+            if (data.honeypots && Array.isArray(data.honeypots)) {
+                // Multi-honeypot mode
+                let html = '';
+                data.honeypots.forEach(hp => {
+                    const buildDate = hp.build_date ? new Date(hp.build_date).toLocaleString() : 'Unknown';
+                    html += `
+                        <div style="margin-bottom: 15px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
+                            <h3 style="margin: 0 0 10px 0; font-size: 18px;">
+                                🍯 ${hp.name}
+                                <a href="{{ url_for('system_info') }}" style="font-size: 0.7em; font-weight: normal; float: right; color: white; opacity: 0.9;">View Details →</a>
+                            </h3>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                                <div>
+                                    <div style="opacity: 0.9; font-size: 12px;">Server IP</div>
+                                    <div style="font-weight: 600; font-size: 16px;">${hp.server_ip || 'N/A'}</div>
+                                </div>
+                                <div>
+                                    <div style="opacity: 0.9; font-size: 12px;">Hostname</div>
+                                    <div style="font-weight: 600; font-size: 16px;">${hp.honeypot_hostname || 'N/A'}</div>
+                                </div>
+                                <div>
+                                    <div style="opacity: 0.9; font-size: 12px;">Cowrie Version</div>
+                                    <div style="font-weight: 600; font-size: 16px;">${hp.cowrie_version || 'Unknown'}</div>
+                                </div>
+                                <div>
+                                    <div style="opacity: 0.9; font-size: 12px;">Container Built</div>
+                                    <div style="font-weight: 600; font-size: 16px;">${buildDate}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+                container.style.display = 'block';
             } else {
-                document.getElementById('build-date').textContent = 'Unknown';
+                // Single honeypot mode
+                const buildDate = data.build_date ? new Date(data.build_date).toLocaleString() : 'Unknown';
+                container.innerHTML = `
+                    <div style="padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
+                        <h3 style="margin: 0 0 10px 0; font-size: 18px;">
+                            Honeypot System Information
+                            <a href="{{ url_for('system_info') }}" style="font-size: 0.7em; font-weight: normal; float: right; color: white; opacity: 0.9;">View Details →</a>
+                        </h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div>
+                                <div style="opacity: 0.9; font-size: 12px;">Server IP</div>
+                                <div style="font-weight: 600; font-size: 16px;">${data.server_ip || 'N/A'}</div>
+                            </div>
+                            <div>
+                                <div style="opacity: 0.9; font-size: 12px;">Hostname</div>
+                                <div style="font-weight: 600; font-size: 16px;">${data.honeypot_hostname || 'N/A'}</div>
+                            </div>
+                            <div>
+                                <div style="opacity: 0.9; font-size: 12px;">Cowrie Version</div>
+                                <div style="font-weight: 600; font-size: 16px;">${data.cowrie_version || 'Unknown'}</div>
+                            </div>
+                            <div>
+                                <div style="opacity: 0.9; font-size: 12px;">Container Built</div>
+                                <div style="font-weight: 600; font-size: 16px;">${buildDate}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.style.display = 'block';
             }
         })
         .catch(error => {
             console.error('Failed to load system info:', error);
-            // Hide the box if fetch fails
-            document.getElementById('system-info').style.display = 'none';
+            // Hide the container if fetch fails
+            document.getElementById('system-info-container').style.display = 'none';
         });
 
     // Fetch and display Canary Token information
