@@ -4,12 +4,23 @@ Multi-Source Data Aggregation for Cowrie Dashboard
 
 Enables dashboard to aggregate data from multiple honeypots of different types.
 Supports parallel querying with graceful degradation on partial failures.
+Includes caching and rate limiting to prevent resource exhaustion.
 """
 
 import concurrent.futures
+import os
 from typing import Optional
 
+from cache import ExponentialBackoff, ResponseCache
 from datasource import DataSource
+
+# Configuration from environment variables
+CACHE_TTL_STATS = int(os.getenv("MULTISOURCE_CACHE_TTL_STATS", "30"))  # 30 seconds for stats
+CACHE_TTL_SESSIONS = int(os.getenv("MULTISOURCE_CACHE_TTL_SESSIONS", "15"))  # 15 seconds for sessions
+MAX_WORKERS = int(os.getenv("MULTISOURCE_MAX_WORKERS", "2"))  # Reduced from 5 to 2
+BACKOFF_BASE_DELAY = float(os.getenv("MULTISOURCE_BACKOFF_BASE_DELAY", "2.0"))  # 2 seconds
+BACKOFF_MAX_DELAY = float(os.getenv("MULTISOURCE_BACKOFF_MAX_DELAY", "60.0"))  # 60 seconds
+BACKOFF_MAX_FAILURES = int(os.getenv("MULTISOURCE_BACKOFF_MAX_FAILURES", "3"))  # 3 consecutive failures
 
 
 class HoneypotSource:
@@ -66,7 +77,7 @@ class HoneypotSource:
 
 
 class MultiSourceDataSource:
-    """Aggregate data from multiple honeypot sources."""
+    """Aggregate data from multiple honeypot sources with caching and rate limiting."""
 
     def __init__(self, sources: list[HoneypotSource]):
         """
@@ -78,9 +89,19 @@ class MultiSourceDataSource:
         self.sources = {s.name: s for s in sources if s.is_available()}
         self.active_source_count = len(self.sources)
 
+        # Initialize caching and backoff
+        self.stats_cache = ResponseCache(default_ttl=CACHE_TTL_STATS)
+        self.sessions_cache = ResponseCache(default_ttl=CACHE_TTL_SESSIONS)
+        self.backoff = ExponentialBackoff(
+            base_delay=BACKOFF_BASE_DELAY, max_delay=BACKOFF_MAX_DELAY, max_failures=BACKOFF_MAX_FAILURES
+        )
+
         print(f"[MultiSource] Initialized with {self.active_source_count} active sources:")
         for name, source in self.sources.items():
             print(f"[MultiSource]   - {name} ({source.type}): {source.api_base_url}")
+        print(
+            f"[MultiSource] Caching enabled: stats={CACHE_TTL_STATS}s, sessions={CACHE_TTL_SESSIONS}s, workers={MAX_WORKERS}"
+        )
 
     def _tag_data(self, data: dict, source_name: str, source_type: str) -> dict:
         """
@@ -115,7 +136,7 @@ class MultiSourceDataSource:
         source_filter: Optional[str] = None,
     ) -> dict:
         """
-        Get sessions from all sources (or filtered sources).
+        Get sessions from all sources (or filtered sources) with caching.
 
         Args:
             hours: Time range in hours
@@ -130,18 +151,39 @@ class MultiSourceDataSource:
         Returns:
             Aggregated sessions dict with source tags
         """
+        # Check cache first
+        cache_key = f"sessions_{hours}_{limit}_{offset}_{src_ip}_{username}_{source_filter or 'all'}"
+        cached = self.sessions_cache.get(cache_key)
+        if cached is not None:
+            print(f"[MultiSource] Cache hit for sessions (hours={hours}, limit={limit})")
+            return cached
+
         # Determine which sources to query
         sources_to_query = self.sources
         if source_filter and source_filter in self.sources:
             sources_to_query = {source_filter: self.sources[source_filter]}
 
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
+
+        if len(available_sources) < len(sources_to_query):
+            skipped = set(sources_to_query.keys()) - set(available_sources.keys())
+            print(f"[MultiSource] Skipping sources in backoff: {skipped}")
+
         all_sessions = []
         total_count = 0
         source_errors = {}
 
-        # Query sources in parallel
-        # Limit max workers to prevent thread exhaustion (max 5 concurrent queries)
-        max_workers = min(len(sources_to_query), 5)
+        if not available_sources:
+            print("[MultiSource] No sources available (all in backoff)")
+            result = {"total": 0, "sessions": [], "sources_queried": [], "source_errors": {}}
+            self.sessions_cache.set(cache_key, result, ttl=5)
+            return result
+
+        # Query sources in parallel with reduced concurrency
+        max_workers = min(len(available_sources), MAX_WORKERS)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_source = {
                 executor.submit(
@@ -154,13 +196,14 @@ class MultiSourceDataSource:
                     start_time=start_time,
                     end_time=end_time,
                 ): source
-                for source in sources_to_query.values()
+                for source in available_sources.values()
             }
 
             for future in concurrent.futures.as_completed(future_to_source):
                 source = future_to_source[future]
                 try:
                     result = future.result(timeout=30)
+                    self.backoff.record_success(source.name)  # Reset backoff on success
                     # Tag sessions with source info
                     tagged_sessions = self._tag_list(result.get("sessions", []), source.name, source.type)
                     all_sessions.extend(tagged_sessions)
@@ -168,6 +211,7 @@ class MultiSourceDataSource:
                 except Exception as e:
                     print(f"[MultiSource] Error fetching sessions from '{source.name}': {e}")
                     source_errors[source.name] = str(e)
+                    self.backoff.record_failure(source.name)  # Record failure for backoff
 
         # Sort combined sessions by start_time (most recent first)
         all_sessions.sort(key=lambda x: x.get("start_time") or "", reverse=True)
@@ -176,12 +220,17 @@ class MultiSourceDataSource:
         if len(all_sessions) > limit:
             all_sessions = all_sessions[:limit]
 
-        return {
+        result = {
             "total": total_count,
             "sessions": all_sessions,
             "sources_queried": list(sources_to_query.keys()),
             "source_errors": source_errors,
         }
+
+        # Cache the result
+        self.sessions_cache.set(cache_key, result)
+
+        return result
 
     def get_session(self, session_id: str, source_name: Optional[str] = None) -> Optional[dict]:
         """
@@ -215,7 +264,7 @@ class MultiSourceDataSource:
 
     def get_stats(self, hours: int = 24, source_filter: Optional[str] = None) -> dict:
         """
-        Get aggregated statistics from all sources.
+        Get aggregated statistics from all sources with caching.
 
         Args:
             hours: Time range in hours
@@ -224,10 +273,26 @@ class MultiSourceDataSource:
         Returns:
             Aggregated stats dict
         """
+        # Check cache first
+        cache_key = f"stats_{hours}_{source_filter or 'all'}"
+        cached = self.stats_cache.get(cache_key)
+        if cached is not None:
+            print(f"[MultiSource] Cache hit for stats (hours={hours}, filter={source_filter})")
+            return cached
+
         # Determine which sources to query
         sources_to_query = self.sources
         if source_filter and source_filter in self.sources:
             sources_to_query = {source_filter: self.sources[source_filter]}
+
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
+
+        if len(available_sources) < len(sources_to_query):
+            skipped = set(sources_to_query.keys()) - set(available_sources.keys())
+            print(f"[MultiSource] Skipping sources in backoff: {skipped}")
 
         # Initialize aggregated stats
         aggregated = {
@@ -254,19 +319,24 @@ class MultiSourceDataSource:
             "source_errors": {},
         }
 
-        # Query sources in parallel
-        # Limit max workers to prevent thread exhaustion (max 5 concurrent queries)
-        max_workers = min(len(sources_to_query), 5)
+        if not available_sources:
+            print("[MultiSource] No sources available (all in backoff)")
+            self.stats_cache.set(cache_key, aggregated, ttl=5)  # Short cache for empty results
+            return aggregated
+
+        # Query sources in parallel with reduced concurrency
+        max_workers = min(len(available_sources), MAX_WORKERS)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_source = {
                 executor.submit(source.datasource.get_stats, hours=hours): source
-                for source in sources_to_query.values()
+                for source in available_sources.values()
             }
 
             for future in concurrent.futures.as_completed(future_to_source):
                 source = future_to_source[future]
                 try:
                     stats = future.result(timeout=30)
+                    self.backoff.record_success(source.name)  # Reset backoff on success
 
                     # Store per-source stats
                     aggregated["source_stats"][source.name] = {
@@ -321,6 +391,7 @@ class MultiSourceDataSource:
                 except Exception as e:
                     print(f"[MultiSource] Error fetching stats from '{source.name}': {e}")
                     aggregated["source_errors"][source.name] = str(e)
+                    self.backoff.record_failure(source.name)  # Record failure for backoff
 
         # Convert sets to lists and sort
         aggregated["unique_ips"] = len(aggregated["unique_ips"])
@@ -338,6 +409,9 @@ class MultiSourceDataSource:
         aggregated["vt_stats"]["total_threat_families"] = len(aggregated["vt_stats"]["total_threat_families"])
 
         aggregated["sources_queried"] = list(sources_to_query.keys())
+
+        # Cache the result
+        self.stats_cache.set(cache_key, aggregated)
 
         return aggregated
 
