@@ -26,6 +26,7 @@ class DataSource:
         """
         self.mode = mode
         self.api_base_url = api_base_url
+        self.session = None
 
         if self.mode == "remote" and not self.api_base_url:
             raise ValueError("api_base_url is required for remote mode")
@@ -33,6 +34,19 @@ class DataSource:
         # Normalize API URL (remove trailing slash)
         if self.api_base_url:
             self.api_base_url = self.api_base_url.rstrip("/")
+
+        # Create persistent session for remote mode (connection pooling)
+        if self.mode == "remote":
+            self.session = requests.Session()
+            # Configure connection pooling limits
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=10,
+                pool_maxsize=10,
+                max_retries=3,
+                pool_block=False,
+            )
+            self.session.mount("http://", adapter)
+            self.session.mount("https://", adapter)
 
         print(
             f"[DataSource] Initialized in {self.mode} mode"
@@ -110,7 +124,7 @@ class DataSource:
             params["end_time"] = end_time
 
         try:
-            response = requests.get(
+            response = self.session.get(
                 f"{self.api_base_url}/api/v1/sessions",
                 params=params,
                 timeout=30,
@@ -145,7 +159,7 @@ class DataSource:
     def _get_session_remote(self, session_id: str) -> Optional[dict]:
         """Get session from remote API."""
         try:
-            response = requests.get(
+            response = self.session.get(
                 f"{self.api_base_url}/api/v1/sessions/{session_id}",
                 timeout=10,
             )
@@ -192,7 +206,7 @@ class DataSource:
     def _get_session_tty_remote(self, session_id: str) -> Optional[dict]:
         """Get TTY recording from remote API."""
         try:
-            response = requests.get(
+            response = self.session.get(
                 f"{self.api_base_url}/api/v1/sessions/{session_id}/tty",
                 timeout=30,
             )
@@ -228,7 +242,7 @@ class DataSource:
     def _get_stats_remote(self, hours: int) -> dict:
         """Get stats from remote API."""
         try:
-            response = requests.get(
+            response = self.session.get(
                 f"{self.api_base_url}/api/v1/stats/overview",
                 params={"hours": hours},
                 timeout=30,
@@ -345,7 +359,7 @@ class DataSource:
     def _get_downloads_remote(self, hours, limit, offset) -> dict:
         """Get downloads from remote API."""
         try:
-            response = requests.get(
+            response = self.session.get(
                 f"{self.api_base_url}/api/v1/downloads",
                 params={"hours": hours, "limit": limit, "offset": offset},
                 timeout=30,
@@ -391,7 +405,7 @@ class DataSource:
     def _get_download_file_remote(self, sha256: str) -> Optional[bytes]:
         """Get download file from remote API."""
         try:
-            response = requests.get(
+            response = self.session.get(
                 f"{self.api_base_url}/api/v1/downloads/{sha256}/file",
                 timeout=30,
             )
@@ -438,7 +452,7 @@ class DataSource:
     def _get_threat_intel_remote(self, ip_address: str) -> dict:
         """Get threat intel from remote API."""
         try:
-            response = requests.get(
+            response = self.session.get(
                 f"{self.api_base_url}/api/v1/threat/ip/{ip_address}",
                 timeout=10,
             )
@@ -463,7 +477,7 @@ class DataSource:
             return {"status": "healthy", "mode": "local"}
         else:
             try:
-                response = requests.get(
+                response = self.session.get(
                     f"{self.api_base_url}/api/v1/health",
                     timeout=5,
                 )
@@ -475,3 +489,22 @@ class DataSource:
                     "mode": "remote",
                     "error": str(e),
                 }
+
+    def close(self):
+        """Close HTTP session and clean up resources."""
+        if self.session:
+            self.session.close()
+            self.session = None
+
+    def __del__(self):
+        """Destructor to ensure session is closed."""
+        self.close()
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - close session."""
+        self.close()
+        return False
