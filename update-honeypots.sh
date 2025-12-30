@@ -239,7 +239,7 @@ ssh_exec() {
 
     # Tailscale SSH (port 22) - omit -p flag due to Tailscale bug
     if [ "${port}" = "22" ]; then
-        # shellcheck disable=SC2086
+        # shellcheck disable=SC2029,SC2086
         ssh ${SSH_OPTS} "root@${host}" "${cmd}"
     else
         # shellcheck disable=SC2086
