@@ -389,30 +389,76 @@ class MultiSourceDataSource:
                         aggregated["unique_ips"].add(ip_info["ip"])
 
                     # Merge unique downloads (handle both set and int formats)
-                    unique_dl = stats.get("unique_downloads", set())
+                    unique_dl = stats.get("unique_downloads", 0)
                     if isinstance(unique_dl, set):
                         aggregated["unique_downloads"].update(unique_dl)
                     elif isinstance(unique_dl, int):
-                        # If it's an int (count), we can't merge properly, so just track we saw downloads
-                        # This is a limitation when aggregating from sources that only provide counts
-                        pass  # We'll use total_downloads as the metric instead
+                        # Add to the set as a counter (can't get actual hashes from count)
+                        # This is a limitation - we track total count, not actual unique hashes
+                        for i in range(unique_dl):
+                            aggregated["unique_downloads"].add(f"{source.name}_{i}")
 
-                    # Merge top lists (countries, credentials, commands, etc.)
-                    # Handle both tuple format (item, count) and list format [item, count]
+                    # Merge top lists - handle both dict format from API and tuple format from local
                     for item in stats.get("top_countries", []):
-                        if isinstance(item, (tuple, list)) and len(item) >= 2:
+                        if isinstance(item, dict):
+                            # New API format: {"country": "USA", "count": 5}
+                            country = item.get("country", "-")
+                            count = item.get("count", 0)
+                            aggregated["top_countries"][country] = aggregated["top_countries"].get(country, 0) + count
+                        elif isinstance(item, (tuple, list)) and len(item) >= 2:
+                            # Old tuple format: ("USA", 5)
                             country, count = item[0], item[1]
                             aggregated["top_countries"][country] = aggregated["top_countries"].get(country, 0) + count
 
                     for item in stats.get("top_credentials", []):
-                        if isinstance(item, (tuple, list)) and len(item) >= 2:
+                        if isinstance(item, dict):
+                            # New API format: {"username": "root", "password": "admin", "count": 5}
+                            username = item.get("username", "")
+                            password = item.get("password", "")
+                            cred = f"{username}:{password}"
+                            count = item.get("count", 0)
+                            aggregated["top_credentials"][cred] = aggregated["top_credentials"].get(cred, 0) + count
+                        elif isinstance(item, (tuple, list)) and len(item) >= 2:
+                            # Old tuple format: ("root:admin", 5)
                             cred, count = item[0], item[1]
                             aggregated["top_credentials"][cred] = aggregated["top_credentials"].get(cred, 0) + count
 
                     for item in stats.get("top_commands", []):
-                        if isinstance(item, (tuple, list)) and len(item) >= 2:
+                        if isinstance(item, dict):
+                            # New API format: {"command": "ls", "count": 10}
+                            cmd = item.get("command", "")
+                            count = item.get("count", 0)
+                            aggregated["top_commands"][cmd] = aggregated["top_commands"].get(cmd, 0) + count
+                        elif isinstance(item, (tuple, list)) and len(item) >= 2:
+                            # Old tuple format: ("ls", 10)
                             cmd, count = item[0], item[1]
                             aggregated["top_commands"][cmd] = aggregated["top_commands"].get(cmd, 0) + count
+
+                    # Merge top SSH clients (new field from enriched API)
+                    for item in stats.get("top_clients", []):
+                        if isinstance(item, dict):
+                            client = item.get("client", "")
+                            count = item.get("count", 0)
+                            aggregated["top_clients"][client] = aggregated["top_clients"].get(client, 0) + count
+                        elif isinstance(item, (tuple, list)) and len(item) >= 2:
+                            client, count = item[0], item[1]
+                            aggregated["top_clients"][client] = aggregated["top_clients"].get(client, 0) + count
+
+                    # Merge top ASNs (new field from enriched API)
+                    for item in stats.get("top_asns", []):
+                        if isinstance(item, dict):
+                            asn = item.get("asn", "")
+                            count = item.get("count", 0)
+                            org = item.get("organization", "-")
+                            # Store ASN with its organization
+                            if asn not in aggregated["top_asns"]:
+                                aggregated["top_asns"][asn] = {"count": 0, "organization": org}
+                            aggregated["top_asns"][asn]["count"] += count
+                        elif isinstance(item, (tuple, list)) and len(item) >= 2:
+                            asn, count = item[0], item[1]
+                            if asn not in aggregated["top_asns"]:
+                                aggregated["top_asns"][asn] = {"count": 0, "organization": "-"}
+                            aggregated["top_asns"][asn]["count"] += count
 
                     # Merge IP locations for map
                     aggregated["ip_locations"].extend(stats.get("ip_locations", []))
@@ -435,6 +481,13 @@ class MultiSourceDataSource:
             :10
         ]
         aggregated["top_commands"] = sorted(aggregated["top_commands"].items(), key=lambda x: x[1], reverse=True)[:20]
+        aggregated["top_clients"] = sorted(aggregated["top_clients"].items(), key=lambda x: x[1], reverse=True)[:10]
+
+        # Format top_asns to include organization names
+        aggregated["top_asns"] = [
+            {"asn": asn, "count": data["count"], "organization": data["organization"]}
+            for asn, data in sorted(aggregated["top_asns"].items(), key=lambda x: x[1]["count"], reverse=True)[:10]
+        ]
 
         # Calculate average VT detection rate
         vt_total = aggregated["vt_stats"]["total_scanned"]
