@@ -90,7 +90,6 @@ create_snapshot() {
     cleanup_old_snapshots
 
     log_success "Snapshot created: ${snapshot_dir}"
-    echo "${snapshot_dir}"
 }
 
 # Cleanup old rollback snapshots
@@ -220,8 +219,8 @@ update_scripts() {
 
     # Pull latest changes
     log_info "Pulling latest changes from ${GIT_BRANCH}..."
-    git fetch origin "${GIT_BRANCH}"
-    git reset --hard "origin/${GIT_BRANCH}"
+    git fetch origin "${GIT_BRANCH}" >/dev/null 2>&1 || log_warning "Failed to fetch from remote, continuing with local state"
+    git reset --hard "origin/${GIT_BRANCH}" >/dev/null 2>&1 || log_warning "Failed to reset to origin/${GIT_BRANCH}, continuing with local state"
 
     # Restore API port configuration if it was enabled before update
     if [ "${api_ports_enabled}" = "true" ] && [ -f "${COWRIE_DIR}/docker-compose.api.yml" ]; then
@@ -335,7 +334,7 @@ update_api() {
         log_success "API image pulled successfully"
     else
         log_warning "Failed to pull API image, will rebuild locally"
-        docker compose -f docker-compose.yml -f docker-compose.api.yml build cowrie-api
+        docker compose -f docker-compose.yml -f docker-compose.api.yml build cowrie-api >/dev/null 2>&1
     fi
 
     # Recreate container
