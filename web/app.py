@@ -1214,7 +1214,8 @@ def health():
 def index():
     """Dashboard page."""
     hours = request.args.get("hours", 24, type=int)
-    stats = session_parser.get_stats(hours=hours)
+    source_filter = request.args.get("source", None)
+    stats = session_parser.get_stats(hours=hours, source_filter=source_filter)
 
     # Get honeypot locations for map markers
     honeypot_locations = []
@@ -1286,10 +1287,17 @@ def index():
     # Check if user is accessing via proxy (hide manage links if proxied)
     is_proxied = "X-Forwarded-For" in request.headers
 
+    # Get list of available sources for filter dropdown (multi-source mode only)
+    available_sources = []
+    if hasattr(session_parser, "sources"):
+        available_sources = list(session_parser.sources.keys())
+
     return render_template(
         "index.html",
         stats=stats,
         hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
         config=CONFIG,
         recent_webhooks=filtered_webhooks,
         is_proxied=is_proxied,

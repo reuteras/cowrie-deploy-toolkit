@@ -3,12 +3,27 @@
 {% block title %}Dashboard - Cowrie Honeypot{% endblock %}
 
 {% block content %}
+{# Build common filter parameters for links #}
+{% set filter_params = {'hours': hours} %}
+{% if source_filter %}
+    {% set _ = filter_params.update({'source': source_filter}) %}
+{% endif %}
+
 <div class="dashboard">
     <div class="page-header">
         <h1>Honeypot Dashboard</h1>
         <div class="time-filter">
+            {% if available_sources %}
+            <label>Source:</label>
+            <select id="source-filter" onchange="updateFilters()">
+                <option value="" {% if not source_filter %}selected{% endif %}>All Honeypots</option>
+                {% for source_name in available_sources %}
+                <option value="{{ source_name }}" {% if source_filter == source_name %}selected{% endif %}>{{ source_name }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
             <label>Time range:</label>
-            <select onchange="window.location.href='?hours=' + this.value">
+            <select id="time-filter" onchange="updateFilters()">
                 <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
                 <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
                 <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
@@ -19,19 +34,19 @@
 
     <!-- Stats Cards -->
     <div class="stats-grid">
-        <a href="{{ url_for('sessions', hours=hours) }}" class="stat-card stat-card-link">
+        <a href="{{ url_for('sessions', **filter_params) }}" class="stat-card stat-card-link">
             <div class="stat-value">{{ stats.total_sessions }}</div>
             <div class="stat-label">Total Sessions</div>
         </a>
-        <a href="{{ url_for('ip_list', hours=hours) }}" class="stat-card stat-card-link">
+        <a href="{{ url_for('ip_list', **filter_params) }}" class="stat-card stat-card-link">
             <div class="stat-value">{{ stats.unique_ips }}</div>
             <div class="stat-label">Unique IPs</div>
         </a>
-        <a href="{{ url_for('sessions', hours=hours, has_commands='1') }}" class="stat-card stat-card-link">
+        <a href="{{ url_for('sessions', has_commands='1', **filter_params) }}" class="stat-card stat-card-link">
             <div class="stat-value">{{ stats.sessions_with_commands }}</div>
             <div class="stat-label">Sessions with Commands</div>
         </a>
-        <a href="{{ url_for('downloads', hours=hours) }}" class="stat-card stat-card-link">
+        <a href="{{ url_for('downloads', **filter_params) }}" class="stat-card stat-card-link">
             <div class="stat-value">{{ stats.unique_downloads }} / {{ stats.total_downloads }}</div>
             <div class="stat-label">Unique / Total Downloads</div>
         </a>
@@ -105,7 +120,7 @@
 
         <!-- Top Countries -->
         <div class="dashboard-card">
-            <h2>Top Attacking Countries <a href="{{ url_for('countries', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
+            <h2>Top Attacking Countries <a href="{{ url_for('countries', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.top_countries %}
             <table class="data-table sortable">
                 <thead>
@@ -117,7 +132,7 @@
                 <tbody>
                     {% for country, count in stats.top_countries %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', country=country, hours=hours) }}">{{ country }}</a></td>
+                        <td><a href="{{ url_for('sessions', country=country, **filter_params) }}">{{ country }}</a></td>
                         <td>{{ count }}</td>
                     </tr>
                     {% endfor %}
@@ -130,7 +145,7 @@
 
         <!-- Top Credentials -->
         <div class="dashboard-card">
-            <h2>Top Credentials Attempted <a href="{{ url_for('credentials', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
+            <h2>Top Credentials Attempted <a href="{{ url_for('credentials', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.top_credentials %}
             <table class="data-table sortable">
                 <thead>
@@ -143,7 +158,7 @@
                 <tbody>
                     {% for cred, count in stats.top_credentials %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', credentials=cred, hours=hours) }}"><code>{{ cred }}</code></a></td>
+                        <td><a href="{{ url_for('sessions', credentials=cred, **filter_params) }}"><code>{{ cred }}</code></a></td>
                         <td>{{ count }}</td>
                         <td>
                             {% if cred in stats.successful_credentials %}
@@ -163,7 +178,7 @@
 
         <!-- Top SSH Clients -->
         <div class="dashboard-card">
-            <h2>Top SSH Clients <a href="{{ url_for('clients', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
+            <h2>Top SSH Clients <a href="{{ url_for('clients', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.top_clients %}
             <table class="data-table sortable">
                 <thead>
@@ -175,7 +190,7 @@
                 <tbody>
                     {% for client, count in stats.top_clients %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', client_version=client, hours=hours) }}"><code>{{ client }}</code></a></td>
+                        <td><a href="{{ url_for('sessions', client_version=client, **filter_params) }}"><code>{{ client }}</code></a></td>
                         <td>{{ count }}</td>
                     </tr>
                     {% endfor %}
@@ -188,7 +203,7 @@
 
         <!-- Top Commands -->
         <div class="dashboard-card full-width">
-            <h2>Top Commands Executed <a href="{{ url_for('commands', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
+            <h2>Top Commands Executed <a href="{{ url_for('commands', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.top_commands %}
             <table class="data-table sortable">
                 <thead>
@@ -200,7 +215,7 @@
                 <tbody>
                     {% for command, count in stats.top_commands %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', command=command, hours=hours) }}">{{ count }}</a></td>
+                        <td><a href="{{ url_for('sessions', command=command, **filter_params) }}">{{ count }}</a></td>
                         <td><code class="command-text">{{ command }}</code></td>
                     </tr>
                     {% endfor %}
@@ -213,7 +228,7 @@
 
         <!-- Threat Intelligence: GreyNoise -->
         <div class="dashboard-card">
-            <h2>🔍 GreyNoise Intelligence <a href="{{ url_for('ip_list', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
+            <h2>🔍 GreyNoise Intelligence <a href="{{ url_for('ip_list', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.greynoise_ips %}
             <table class="data-table">
                 <thead>
@@ -226,7 +241,7 @@
                 <tbody>
                     {% for gn in stats.greynoise_ips[:10] %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', ip=gn.ip, hours=hours) }}">{{ gn.ip }}</a></td>
+                        <td><a href="{{ url_for('sessions', ip=gn.ip, **filter_params) }}">{{ gn.ip }}</a></td>
                         <td>
                             {% if gn.classification == 'malicious' %}
                             <span class="badge badge-danger">Malicious</span>
@@ -251,7 +266,7 @@
 
         <!-- Threat Intelligence: VirusTotal -->
         <div class="dashboard-card">
-            <h2>🔍 VirusTotal Intelligence <a href="{{ url_for('downloads', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
+            <h2>🔍 VirusTotal Intelligence <a href="{{ url_for('downloads', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.top_malicious_downloads %}
             <table class="data-table">
                 <thead>
@@ -322,7 +337,7 @@
 
         <!-- Top Attacking ASNs -->
         <div class="dashboard-card">
-            <h2>🌐 Top Attacking ASNs <a href="{{ url_for('asns', hours=hours) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
+            <h2>🌐 Top Attacking ASNs <a href="{{ url_for('asns', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
             {% if stats.top_asns %}
             <table class="data-table">
                 <thead>
@@ -335,7 +350,7 @@
                 <tbody>
                     {% for asn_data in stats.top_asns %}
                     <tr>
-                        <td><a href="{{ url_for('ip_list', asn=asn_data.asn, hours=hours) }}"><code>{{ asn_data.asn }}</code></a></td>
+                        <td><a href="{{ url_for('ip_list', asn=asn_data.asn, **filter_params) }}"><code>{{ asn_data.asn }}</code></a></td>
                         <td>{{ asn_data.asn_org }}</td>
                         <td>{{ asn_data.count }}</td>
                     </tr>
@@ -412,6 +427,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const locations = {{ stats.ip_locations | tojson }};
     const markerCounts = {};
     const hours = {{ hours }};
+    const source = {{ source_filter | tojson }};
 
     // Count occurrences of each location
     locations.forEach(loc => {
@@ -431,9 +447,15 @@ document.addEventListener('DOMContentLoaded', function() {
             fillOpacity: 0.6
         }).addTo(map);
 
+        // Build URL with source filter if present
+        let sessionUrl = `/sessions?ip=${loc.ip}&hours=${hours}`;
+        if (source) {
+            sessionUrl += `&source=${encodeURIComponent(source)}`;
+        }
+
         marker.bindPopup(`
             <strong>${loc.city}, ${loc.country}</strong><br>
-            IP: <a href="/sessions?ip=${loc.ip}&hours=${hours}" target="_blank">${loc.ip}</a><br>
+            IP: <a href="${sessionUrl}" target="_blank">${loc.ip}</a><br>
             Sessions: ${loc.count}
         `);
     });
@@ -498,5 +520,19 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('canary-tokens').style.display = 'none';
         });
 });
+
+// Update filters and reload page
+function updateFilters() {
+    const source = document.getElementById('source-filter') ? document.getElementById('source-filter').value : '';
+    const hours = document.getElementById('time-filter').value;
+
+    // Build URL with both parameters
+    let url = '?hours=' + hours;
+    if (source) {
+        url += '&source=' + encodeURIComponent(source);
+    }
+
+    window.location.href = url;
+}
 </script>
 {% endblock %}
