@@ -264,7 +264,7 @@ class DataSource:
             api_data = response.json()
 
             # Normalize API response to match dashboard format
-            # The API returns a different structure, so we need to transform it
+            # The API now includes GeoIP enrichment and additional data
             totals = api_data.get("totals", {})
 
             # Convert top_ips to ip_list format (list of dicts with "ip" key)
@@ -280,17 +280,17 @@ class DataSource:
                 "unique_ips": totals.get("unique_ips", 0),
                 "sessions_with_commands": totals.get("sessions_with_commands", 0),
                 "total_downloads": totals.get("downloads", 0),
-                "unique_downloads": 0,  # Not available from SQLite-only stats
+                "unique_downloads": 0,  # Not tracked separately in SQLite
                 "ip_list": ip_list,
-                "ip_locations": [],  # GeoIP enrichment not done by API yet
-                "top_countries": [],  # Not available from SQLite-only stats
+                "ip_locations": api_data.get("ip_locations", []),  # Now enriched by API
+                "top_countries": api_data.get("top_countries", []),  # Now enriched by API
                 "top_credentials": api_data.get("top_credentials", []),
                 "successful_credentials": [],  # Not tracked in SQLite stats
                 "top_commands": api_data.get("top_commands", []),
-                "top_clients": [],  # Not available from SQLite-only stats
-                "top_asns": [],  # Not available from SQLite-only stats
-                "greynoise_ips": [],  # GreyNoise enrichment not done by API yet
-                "hourly_activity": [],  # Not available from SQLite-only stats
+                "top_clients": api_data.get("top_clients", []),  # Now enriched by API
+                "top_asns": api_data.get("top_asns", []),  # Now enriched by API
+                "greynoise_ips": [],  # GreyNoise enrichment not available
+                "hourly_activity": [],  # Not calculated in SQLite stats
                 "vt_stats": {
                     "total_scanned": 0,
                     "total_malicious": 0,
