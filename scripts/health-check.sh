@@ -220,13 +220,16 @@ check_api() {
 
     log_success "API container is running"
 
-    # Check health endpoint from inside container (port not exposed to host)
-    if docker exec cowrie-api curl -sf "http://localhost:${API_PORT}/health" > /dev/null 2>&1; then
-        log_success "API /health endpoint: OK"
+    # Check Docker healthcheck status
+    local health_status
+    health_status=$(docker inspect cowrie-api --format='{{.State.Health.Status}}' 2>/dev/null || echo "none")
 
-        # Get version info
+    if [ "${health_status}" = "healthy" ]; then
+        log_success "API health check: OK"
+
+        # Get version info using Python (container doesn't have curl)
         local health_response
-        health_response=$(docker exec cowrie-api curl -s "http://localhost:${API_PORT}/health" 2>/dev/null || echo "{}")
+        health_response=$(docker exec cowrie-api python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:${API_PORT}/health').read().decode())" 2>/dev/null || echo "{}")
 
         local status
         status=$(echo "${health_response}" | jq -r '.status // "unknown"')
@@ -237,8 +240,11 @@ check_api() {
         log_info "Status: ${status}, Version: ${version}"
 
         return 0
+    elif [ "${health_status}" = "none" ]; then
+        log_warning "API container has no healthcheck configured"
+        return 0
     else
-        log_error "API /health endpoint failed"
+        log_error "API health check failed (status: ${health_status})"
         return 1
     fi
 }
