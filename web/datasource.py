@@ -280,7 +280,7 @@ class DataSource:
                 "unique_ips": totals.get("unique_ips", 0),
                 "sessions_with_commands": totals.get("sessions_with_commands", 0),
                 "total_downloads": totals.get("downloads", 0),
-                "unique_downloads": 0,  # Not tracked separately in SQLite
+                "unique_downloads": totals.get("unique_downloads", 0),
                 "ip_list": ip_list,
                 "ip_locations": api_data.get("ip_locations", []),  # Now enriched by API
                 "top_countries": api_data.get("top_countries", []),  # Now enriched by API

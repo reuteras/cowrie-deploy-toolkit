@@ -137,16 +137,27 @@ class SQLiteStatsParser:
             )
             totals["sessions_with_commands"] = cursor.fetchone()["sessions_with_commands"]
 
-            # Total downloads
+            # Total downloads (only successful ones with shasum)
             cursor.execute(
                 """
                 SELECT COUNT(*) as downloads
                 FROM downloads
-                WHERE timestamp >= ?
+                WHERE timestamp >= ? AND shasum IS NOT NULL
                 """,
                 (cutoff_str,),
             )
             totals["downloads"] = cursor.fetchone()["downloads"]
+
+            # Unique downloads (distinct shasum values)
+            cursor.execute(
+                """
+                SELECT COUNT(DISTINCT shasum) as unique_downloads
+                FROM downloads
+                WHERE timestamp >= ? AND shasum IS NOT NULL
+                """,
+                (cutoff_str,),
+            )
+            totals["unique_downloads"] = cursor.fetchone()["unique_downloads"]
 
             # Top IPs
             cursor.execute(
