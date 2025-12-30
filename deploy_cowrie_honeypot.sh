@@ -1832,6 +1832,10 @@ echo "[remote] Cowrie API deployed on internal network"
 if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && command -v tailscale &> /dev/null; then
     echo "[remote] Configuring Tailscale Serve for API..."
 
+    # Wait for web dashboard Tailscale serve to fully configure (if it was just set up)
+    echo "[remote] Waiting for web dashboard Tailscale configuration to complete..."
+    sleep 5
+
     # Check if web dashboard is already using port 443
     if tailscale serve status 2>/dev/null | grep -q ":443"; then
         echo "[remote] WARNING: Port 443 already in use by another service (likely web dashboard)"
