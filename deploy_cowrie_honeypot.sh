@@ -1805,6 +1805,10 @@ if [ "$ENABLE_API" = "true" ]; then
 set -e
 cd /opt/cowrie
 
+# Replace placeholders in docker-compose.api.yml with actual values
+sed -i "s|SERVER_IP_PLACEHOLDER|$SERVER_IP|g" /opt/cowrie/docker-compose.api.yml
+sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$HONEYPOT_HOSTNAME|g" /opt/cowrie/docker-compose.api.yml
+
 # API port is always exposed on localhost (127.0.0.1:8000)
 # This is safe and required for Tailscale Serve to proxy the API
 echo "[remote] API will be accessible on localhost:8000 for Tailscale Serve"

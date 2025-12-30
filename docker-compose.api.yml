@@ -21,8 +21,8 @@ services:
       - COWRIE_METADATA_PATH=/cowrie-metadata/metadata.json
 
       # System information
-      - SERVER_IP=${SERVER_IP:-}
-      - HONEYPOT_HOSTNAME=${HONEYPOT_HOSTNAME:-}
+      - SERVER_IP=SERVER_IP_PLACEHOLDER
+      - HONEYPOT_HOSTNAME=HONEYPOT_HOSTNAME_PLACEHOLDER
 
       # GeoIP databases
       - GEOIP_CITY_DB=/geoip/GeoLite2-City.mmdb

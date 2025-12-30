@@ -314,6 +314,17 @@ update_api() {
 
     cd "${COWRIE_DIR}"
 
+    # Replace placeholders in docker-compose.api.yml with actual values from docker-compose.yml
+    # Extract SERVER_IP and HONEYPOT_HOSTNAME from the main docker-compose.yml
+    local server_ip honeypot_hostname
+    server_ip=$(grep "SERVER_IP=" docker-compose.yml | head -1 | sed 's/.*SERVER_IP=//' | sed 's/ *#.*//')
+    honeypot_hostname=$(grep "HONEYPOT_HOSTNAME=" docker-compose.yml | head -1 | sed 's/.*HONEYPOT_HOSTNAME=//' | sed 's/ *#.*//')
+
+    if [ -n "$server_ip" ] && [ -n "$honeypot_hostname" ]; then
+        sed -i "s|SERVER_IP_PLACEHOLDER|$server_ip|g" docker-compose.api.yml
+        sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$honeypot_hostname|g" docker-compose.api.yml
+    fi
+
     # Get current image ID
     local old_image_id
     old_image_id=$(docker compose -f docker-compose.yml -f docker-compose.api.yml images cowrie-api --format json 2>/dev/null | jq -r '.[0].ID // "unknown"')
