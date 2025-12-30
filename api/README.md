@@ -19,16 +19,16 @@ FastAPI service for accessing Cowrie honeypot data remotely. Enables multi-host 
 │                    Single-Host Deployment                   │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  ┌──────────────┐                                          │
-│  │   Dashboard  │──────reads directly────────┐             │
+│  ┌──────────────┐                                           │
+│  │   Dashboard  │──────reads directly────────┐              │
 │  │  (Flask App) │                             │             │
 │  └──────────────┘                             ▼             │
 │                                        ┌─────────────┐      │
 │                                        │ Cowrie Data │      │
 │                                        │  (volumes)  │      │
 │                                        └─────────────┘      │
-│                                                ▲             │
-│                                                │             │
+│                                                ▲            │
+│                                                │            │
 │                                        ┌───────┴──────┐     │
 │                                        │    Cowrie    │     │
 │                                        │  (honeypot)  │     │
@@ -40,11 +40,11 @@ FastAPI service for accessing Cowrie honeypot data remotely. Enables multi-host 
 │                    Multi-Host Deployment                    │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  Server 1 (Dashboard Host)          Server 2 (Honeypot)    │
-│  ┌──────────────┐                   ┌──────────────┐       │
-│  │   Dashboard  │───API calls───────│  Cowrie API  │       │
-│  │  (Flask App) │  (via Tailscale)  │   (FastAPI)  │       │
-│  └──────────────┘                   └──────┬───────┘       │
+│  Server 1 (Dashboard Host)          Server 2 (Honeypot)     │
+│  ┌──────────────┐                   ┌──────────────┐        │
+│  │   Dashboard  │───API calls───────│  Cowrie API  │        │
+│  │  (Flask App) │  (via Tailscale)  │   (FastAPI)  │        │
+│  └──────────────┘                   └──────┬───────┘        │
 │                                             │               │
 │                                             │               │
 │                                     ┌───────▼───────┐       │
