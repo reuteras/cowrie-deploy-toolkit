@@ -266,13 +266,22 @@ class DataSource:
             # Normalize API response to match dashboard format
             # The API returns a different structure, so we need to transform it
             totals = api_data.get("totals", {})
+
+            # Convert top_ips to ip_list format (list of dicts with "ip" key)
+            ip_list = []
+            for ip_data in api_data.get("top_ips", []):
+                ip_list.append({
+                    "ip": ip_data.get("ip", ""),
+                    "count": ip_data.get("count", 0),
+                })
+
             return {
                 "total_sessions": totals.get("total_sessions", 0),
                 "unique_ips": totals.get("unique_ips", 0),
                 "sessions_with_commands": totals.get("sessions_with_commands", 0),
                 "total_downloads": totals.get("downloads", 0),
                 "unique_downloads": 0,  # Not available from SQLite-only stats
-                "ip_list": [ip["ip"] for ip in api_data.get("top_ips", [])],
+                "ip_list": ip_list,
                 "ip_locations": [],  # GeoIP enrichment not done by API yet
                 "top_countries": [],  # Not available from SQLite-only stats
                 "top_credentials": api_data.get("top_credentials", []),
