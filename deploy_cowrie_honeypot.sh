@@ -1700,6 +1700,7 @@ volumes:
 
 networks:
   cowrie-internal:
+    name: cowrie-internal
     driver: bridge
 DOCKEREOF
 

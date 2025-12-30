@@ -1138,7 +1138,7 @@ try:
         # IMPORTANT: "local" mode now means "use local API" not "parse files directly"
         # This ensures we always benefit from fast SQLite queries
         if dashboard_mode == "local":
-            api_url = "http://localhost:8000"
+            api_url = "http://cowrie-api:8000"
             print(f"[+] DataSource initialized in local mode (using local API at {api_url})")
         else:
             api_url = CONFIG["dashboard_api_url"]
