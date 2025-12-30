@@ -140,7 +140,9 @@ class MultiSourceDataSource:
         source_errors = {}
 
         # Query sources in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources_to_query)) as executor:
+        # Limit max workers to prevent thread exhaustion (max 5 concurrent queries)
+        max_workers = min(len(sources_to_query), 5)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_source = {
                 executor.submit(
                     source.datasource.get_sessions,
@@ -253,7 +255,9 @@ class MultiSourceDataSource:
         }
 
         # Query sources in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources_to_query)) as executor:
+        # Limit max workers to prevent thread exhaustion (max 5 concurrent queries)
+        max_workers = min(len(sources_to_query), 5)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_source = {
                 executor.submit(source.datasource.get_stats, hours=hours): source
                 for source in sources_to_query.values()
@@ -290,14 +294,21 @@ class MultiSourceDataSource:
                         pass  # We'll use total_downloads as the metric instead
 
                     # Merge top lists (countries, credentials, commands, etc.)
-                    for country, count in stats.get("top_countries", []):
-                        aggregated["top_countries"][country] = aggregated["top_countries"].get(country, 0) + count
+                    # Handle both tuple format (item, count) and list format [item, count]
+                    for item in stats.get("top_countries", []):
+                        if isinstance(item, (tuple, list)) and len(item) >= 2:
+                            country, count = item[0], item[1]
+                            aggregated["top_countries"][country] = aggregated["top_countries"].get(country, 0) + count
 
-                    for cred, count in stats.get("top_credentials", []):
-                        aggregated["top_credentials"][cred] = aggregated["top_credentials"].get(cred, 0) + count
+                    for item in stats.get("top_credentials", []):
+                        if isinstance(item, (tuple, list)) and len(item) >= 2:
+                            cred, count = item[0], item[1]
+                            aggregated["top_credentials"][cred] = aggregated["top_credentials"].get(cred, 0) + count
 
-                    for cmd, count in stats.get("top_commands", []):
-                        aggregated["top_commands"][cmd] = aggregated["top_commands"].get(cmd, 0) + count
+                    for item in stats.get("top_commands", []):
+                        if isinstance(item, (tuple, list)) and len(item) >= 2:
+                            cmd, count = item[0], item[1]
+                            aggregated["top_commands"][cmd] = aggregated["top_commands"].get(cmd, 0) + count
 
                     # Merge IP locations for map
                     aggregated["ip_locations"].extend(stats.get("ip_locations", []))
@@ -358,7 +369,9 @@ class MultiSourceDataSource:
         }
 
         # Check health of each source in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.sources)) as executor:
+        # Limit max workers to prevent thread exhaustion (max 5 concurrent queries)
+        max_workers = min(len(self.sources), 5)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_source = {
                 executor.submit(source.datasource.get_health): source for source in self.sources.values()
             }
