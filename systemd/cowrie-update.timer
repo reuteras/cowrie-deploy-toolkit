@@ -1,0 +1,14 @@
+[Unit]
+Description=Cowrie Honeypot Daily Update Timer
+Requires=cowrie-update.service
+
+[Timer]
+# Run daily at 3:00 AM local time
+OnCalendar=daily
+# Add randomized delay of 0-30 minutes to avoid all honeypots updating simultaneously
+RandomizedDelaySec=30min
+# Ensure timer runs if system was down during scheduled time
+Persistent=true
+
+[Install]
+WantedBy=timers.target

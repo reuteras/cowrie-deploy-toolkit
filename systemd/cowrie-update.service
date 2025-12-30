@@ -1,0 +1,19 @@
+[Unit]
+Description=Cowrie Honeypot Update Service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cowrie
+ExecStart=/bin/bash /opt/cowrie/scripts/update-agent.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cowrie-update
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

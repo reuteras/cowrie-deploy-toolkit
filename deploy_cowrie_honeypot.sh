@@ -1520,6 +1520,68 @@ else
 fi
 
 # ============================================================
+# STEP 12.5 — Set up automatic update timer
+# ============================================================
+
+echo_info "Setting up automatic update timer..."
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'UPDATETIMEREOF'
+set -e
+
+# Install systemd service
+cat > /etc/systemd/system/cowrie-update.service << 'SERVICE'
+[Unit]
+Description=Cowrie Honeypot Update Service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cowrie
+ExecStart=/bin/bash /opt/cowrie/scripts/update-agent.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cowrie-update
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+# Install systemd timer
+cat > /etc/systemd/system/cowrie-update.timer << 'TIMER'
+[Unit]
+Description=Cowrie Honeypot Daily Update Timer
+Requires=cowrie-update.service
+
+[Timer]
+# Run daily at 3:00 AM local time
+OnCalendar=daily
+# Add randomized delay of 0-30 minutes to avoid all honeypots updating simultaneously
+RandomizedDelaySec=30min
+# Ensure timer runs if system was down during scheduled time
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+# Reload systemd and enable timer
+systemctl daemon-reload
+systemctl enable cowrie-update.timer
+systemctl start cowrie-update.timer
+
+echo "[*] Automatic update timer installed and enabled"
+echo "[*] Updates will run daily at 03:00 (+random 0-30min)"
+systemctl status cowrie-update.timer --no-pager
+
+UPDATETIMEREOF
+
+echo_info "Automatic update timer configured successfully"
+
+# ============================================================
 # STEP 13 — Set up web dashboard (if enabled)
 # ============================================================
 
