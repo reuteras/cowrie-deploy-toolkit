@@ -1650,6 +1650,38 @@ def api_canary_tokens():
 @app.route("/system-info")
 def system_info():
     """Extended system information page with SSH config and canary tokens."""
+    # Check if multi-source mode
+    if hasattr(session_parser, "sources"):
+        # Multi-source mode - show basic info for all honeypots
+        honeypots = []
+
+        for source_name, source in session_parser.sources.items():
+            info = {
+                "name": source_name,
+                "server_ip": None,
+                "honeypot_hostname": None,
+                "cowrie_version": "unknown",
+                "build_date": None,
+            }
+
+            # Fetch from source's API
+            try:
+                api_url = source.datasource.api_base_url
+                response = requests.get(
+                    f"{api_url}/api/v1/system-info",
+                    timeout=5,
+                )
+                if response.ok:
+                    remote_info = response.json()
+                    info.update(remote_info)
+            except Exception as e:
+                app.logger.warning(f"Failed to fetch system info from {source_name}: {e}")
+
+            honeypots.append(info)
+
+        return render_template("system_info.html", honeypots=honeypots, multi_source=True, config=CONFIG)
+
+    # Single source mode - show detailed info
     identity_path = CONFIG.get("identity_path", "/cowrie-data/identity")
 
     # Read system information
@@ -1784,7 +1816,7 @@ def system_info():
                 }
             )
 
-    return render_template("system_info.html", system=system_data, canary_tokens=canary_tokens, config=CONFIG)
+    return render_template("system_info.html", system=system_data, canary_tokens=canary_tokens, multi_source=False, config=CONFIG)
 
 
 @app.route("/downloads")
