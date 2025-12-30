@@ -261,7 +261,34 @@ class DataSource:
                 timeout=30,
             )
             response.raise_for_status()
-            return response.json()
+            api_data = response.json()
+
+            # Normalize API response to match dashboard format
+            # The API returns a different structure, so we need to transform it
+            totals = api_data.get("totals", {})
+            return {
+                "total_sessions": totals.get("total_sessions", 0),
+                "unique_ips": totals.get("unique_ips", 0),
+                "sessions_with_commands": totals.get("sessions_with_commands", 0),
+                "total_downloads": totals.get("downloads", 0),
+                "unique_downloads": 0,  # Not available from SQLite-only stats
+                "ip_list": [ip["ip"] for ip in api_data.get("top_ips", [])],
+                "ip_locations": [],  # GeoIP enrichment not done by API yet
+                "top_countries": [],  # Not available from SQLite-only stats
+                "top_credentials": api_data.get("top_credentials", []),
+                "successful_credentials": [],  # Not tracked in SQLite stats
+                "top_commands": api_data.get("top_commands", []),
+                "top_clients": [],  # Not available from SQLite-only stats
+                "top_asns": [],  # Not available from SQLite-only stats
+                "greynoise_ips": [],  # GreyNoise enrichment not done by API yet
+                "hourly_activity": [],  # Not available from SQLite-only stats
+                "vt_stats": {
+                    "total_scanned": 0,
+                    "total_malicious": 0,
+                    "avg_detection_rate": 0.0,
+                    "total_threat_families": 0,
+                },
+            }
         except requests.RequestException as e:
             print(f"[!] Error fetching stats from API: {e}")
             return {
