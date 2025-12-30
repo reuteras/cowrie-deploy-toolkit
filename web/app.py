@@ -1132,14 +1132,23 @@ try:
             print("[!] Dashboard will operate in local mode only")
 
     elif dashboard_mode in ["remote", "local"]:
-        # Single-source mode (remote API or local files)
+        # Single-source mode via API (local or remote)
         from datasource import DataSource
 
+        # IMPORTANT: "local" mode now means "use local API" not "parse files directly"
+        # This ensures we always benefit from fast SQLite queries
+        if dashboard_mode == "local":
+            api_url = "http://localhost:8000"
+            print(f"[+] DataSource initialized in local mode (using local API at {api_url})")
+        else:
+            api_url = CONFIG["dashboard_api_url"]
+            print(f"[+] DataSource initialized in remote mode (API: {api_url})")
+
         datasource = DataSource(
-            mode=dashboard_mode,
-            api_base_url=CONFIG["dashboard_api_url"] if CONFIG["dashboard_api_url"] else None,
+            mode="remote",  # Always use remote mode (API-based)
+            api_base_url=api_url,
         )
-        print(f"[+] DataSource initialized in {dashboard_mode} mode")
+        print(f"[+] API-based datasource ready")
 
     else:
         print(f"[!] Unknown dashboard mode: {dashboard_mode}")
