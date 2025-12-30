@@ -240,6 +240,31 @@ class MultiSourceDataSource:
 
         return result
 
+    def parse_all(self, hours: int = 168, source_filter: Optional[str] = None) -> dict:
+        """
+        Get all sessions as a dict keyed by session ID (compatibility method).
+
+        This method maintains compatibility with routes that expect the old
+        SessionParser.parse_all() format (dict keyed by session ID).
+
+        Args:
+            hours: Time range in hours
+            source_filter: Filter by specific source name (None = all sources)
+
+        Returns:
+            Dict of sessions keyed by session ID
+        """
+        # Get all sessions with a large limit
+        result = self.get_sessions(hours=hours, limit=10000, offset=0, source_filter=source_filter)
+
+        # Convert list to dict keyed by session ID
+        sessions_dict = {}
+        for session in result.get("sessions", []):
+            if "id" in session:
+                sessions_dict[session["id"]] = session
+
+        return sessions_dict
+
     def get_session(self, session_id: str, source_name: Optional[str] = None) -> Optional[dict]:
         """
         Get a specific session by ID.
