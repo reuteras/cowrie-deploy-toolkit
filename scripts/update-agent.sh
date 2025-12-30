@@ -317,7 +317,7 @@ update_api() {
     # Extract SERVER_IP and HONEYPOT_HOSTNAME from the main docker-compose.yml
     local server_ip honeypot_hostname
     log_info "Configuring API container with current SERVER_IP..."
-    server_ip=$(grep "SERVER_IP=" docker-compose.yml | head -1 | sed 's/.*SERVER_IP=//' | sed 's/ *#.*//')
+    server_ip=$(grep "out_addr = " etc/cowrie.cfg | head -1 | sed 's/.*out_addr = //' | sed 's/ *#.*//')
     log_info "Configuring API container with current HONEYPOT_HOSTNAME..."
     honeypot_hostname=$(grep "HONEYPOT_HOSTNAME=" docker-compose.yml | head -1 | sed 's/.*HONEYPOT_HOSTNAME=//' | sed 's/ *#.*//')
 
