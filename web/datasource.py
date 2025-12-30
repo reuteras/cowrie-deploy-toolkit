@@ -111,8 +111,16 @@ class DataSource:
 
     def _get_sessions_remote(self, hours, limit, offset, src_ip, username, start_time, end_time) -> dict:
         """Get sessions from remote API."""
+        from datetime import datetime, timedelta, timezone
+
+        # Convert hours to start_time/end_time if not already provided
+        if not start_time and not end_time:
+            end_dt = datetime.now(timezone.utc)
+            start_dt = end_dt - timedelta(hours=hours)
+            start_time = start_dt.isoformat()
+            end_time = end_dt.isoformat()
+
         params = {
-            "hours": hours,
             "limit": limit,
             "offset": offset,
         }
@@ -243,10 +251,13 @@ class DataSource:
 
     def _get_stats_remote(self, hours: int) -> dict:
         """Get stats from remote API."""
+        # API uses days parameter, convert hours to days
+        days = max(1, hours // 24)  # At least 1 day
+
         try:
             response = self.session.get(
                 f"{self.api_base_url}/api/v1/stats/overview",
-                params={"hours": hours},
+                params={"days": days},
                 timeout=30,
             )
             response.raise_for_status()
