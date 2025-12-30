@@ -209,10 +209,26 @@ update_scripts() {
     local old_commit
     old_commit=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 
+    # Save API port configuration before git reset (if API is exposed via Tailscale)
+    local api_ports_enabled=false
+    if [ -f "${COWRIE_DIR}/docker-compose.api.yml" ]; then
+        if grep -q "^ports:" "${COWRIE_DIR}/docker-compose.api.yml"; then
+            api_ports_enabled=true
+            log_info "Detected API ports exposed (Tailscale Serve mode) - will preserve after update"
+        fi
+    fi
+
     # Pull latest changes
     log_info "Pulling latest changes from ${GIT_BRANCH}..."
     git fetch origin "${GIT_BRANCH}"
     git reset --hard "origin/${GIT_BRANCH}"
+
+    # Restore API port configuration if it was enabled before update
+    if [ "${api_ports_enabled}" = "true" ] && [ -f "${COWRIE_DIR}/docker-compose.api.yml" ]; then
+        log_info "Restoring API port exposure for Tailscale Serve..."
+        sed -i 's/# ports:/ports:/' "${COWRIE_DIR}/docker-compose.api.yml"
+        sed -i 's/#   - "127.0.0.1:8000:8000"/  - "127.0.0.1:8000:8000"/' "${COWRIE_DIR}/docker-compose.api.yml"
+    fi
 
     # Get new commit
     local new_commit
