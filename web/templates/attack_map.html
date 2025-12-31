@@ -326,20 +326,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const honeypotLocations = {{ honeypot_locations | tojson }};
     const attacks = {{ attacks | tojson }};
 
-    // Debug: Log honeypot locations to verify structure
-    console.log('[AttackMap] honeypotLocations:', JSON.stringify(honeypotLocations, null, 2));
-    console.log('[AttackMap] Number of attacks:', attacks.length);
-    if (attacks.length > 0) {
-        console.log('[AttackMap] First 5 attack _source values:', attacks.slice(0, 5).map(a => a._source));
-        console.log('[AttackMap] Last 5 attack _source values:', attacks.slice(-5).map(a => a._source));
-        // Count distribution
-        const sourceDist = {};
-        attacks.forEach(a => {
-            sourceDist[a._source] = (sourceDist[a._source] || 0) + 1;
-        });
-        console.log('[AttackMap] Attack distribution by source:', sourceDist);
-    }
-
     // Check if we have at least one honeypot location
     if (Object.keys(honeypotLocations).length === 0 && !honeypotLocation) {
         document.getElementById('attack-map').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary);">Honeypot location not available. Please configure SERVER_IP in deployment.</div>';
@@ -441,7 +427,6 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('high-volume-count').textContent = highVolumeAttackers;
 
     // Prepare migration data with attack count information
-    let migrationIndex = 0;
     const migrationData = attacks.map(attack => {
         const attackCount = ipAttackCounts[attack.ip];
 
@@ -469,12 +454,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Get target honeypot location
         const targetSource = attack._source || 'local';
         const targetHoneypot = honeypotLocations[targetSource];
-
-        // Debug: Log first few attacks to verify source tagging
-        if (migrationIndex < 5) {
-            console.log(`[Migration] Attack ${migrationIndex}: attack._source='${attack._source}', targetSource='${targetSource}', targetHoneypot=${JSON.stringify(targetHoneypot)}`);
-        }
-        migrationIndex++;
 
         return {
             lat: attack.lat,
@@ -826,11 +805,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Get target honeypot name
         const targetHoneypot = attack._targetHoneypot || honeypotLocations[attack._source];
         const targetName = targetHoneypot ? targetHoneypot.name : (attack._source || 'local');
-
-        // Debug: Log what we're using for target name
-        if (attackFeedCount < 5) {
-            console.log(`[Feed] Attack ${attackFeedCount}: _source=${attack._source}, targetHoneypot=${JSON.stringify(targetHoneypot)}, targetName=${targetName}`);
-        }
 
         entry.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">

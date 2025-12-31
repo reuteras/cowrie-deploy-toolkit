@@ -1311,27 +1311,8 @@ def attack_map_page():
     hours = request.args.get("hours", 24, type=int)
     source_filter = request.args.get("source", "")
 
-    # Debug logging
-    print(f"[AttackMap] hours={hours}, source_filter='{source_filter}'")
-    print(f"[AttackMap] session_parser type: {type(session_parser).__name__}")
-    if hasattr(session_parser, "sources"):
-        print(f"[AttackMap] Available sources: {list(session_parser.sources.keys())}")
-
     # Get sessions with source filter
     sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
-    print(f"[AttackMap] Retrieved {len(sessions)} sessions")
-
-    # Debug: Show source distribution
-    source_counts = {}
-    for session in sessions.values():
-        src = session.get("_source", "unknown")
-        source_counts[src] = source_counts.get(src, 0) + 1
-    print(f"[AttackMap] Sessions by source: {source_counts}")
-
-    # Debug: Check first few sessions to verify _source
-    sample_sessions = list(sessions.values())[:3]
-    for i, session in enumerate(sample_sessions):
-        print(f"[AttackMap] Sample session {i}: _source={session.get('_source')}, src_ip={session.get('src_ip')}")
 
     # Get available sources for multi-honeypot mode
     available_sources = []
@@ -1412,10 +1393,6 @@ def attack_map_page():
             "_source": session.get("_source", "local"),  # Track which honeypot
         }
         attacks.append(attack)
-
-    print(f"[AttackMap] Sessions without geo data: {sessions_without_geo}")
-    print(f"[AttackMap] Sessions without coordinates: {sessions_without_coords}")
-    print(f"[AttackMap] Created {len(attacks)} attack visualizations")
 
     # Sort by timestamp
     attacks.sort(key=lambda x: x["timestamp"])
