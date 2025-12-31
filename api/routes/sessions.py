@@ -9,6 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from services.log_parser import parser
+from services.sqlite_parser import sqlite_parser
 
 router = APIRouter()
 
@@ -42,10 +43,22 @@ async def get_sessions(
         except ValueError as err:
             raise HTTPException(status_code=400, detail="Invalid end_time format") from err
 
-    # Get sessions from parser
-    sessions = parser.get_sessions(
-        limit=limit, offset=offset, src_ip=src_ip, username=username, start_time=start_dt, end_time=end_dt
-    )
+    # Try SQLite first, fall back to log parsing
+    sessions = []
+    if sqlite_parser.available:
+        try:
+            sessions = sqlite_parser.get_sessions(
+                limit=limit, offset=offset, src_ip=src_ip, username=username, start_time=start_dt, end_time=end_dt
+            )
+        except Exception as e:
+            print(f"[!] SQLite query failed, falling back to log parsing: {e}")
+            sessions = parser.get_sessions(
+                limit=limit, offset=offset, src_ip=src_ip, username=username, start_time=start_dt, end_time=end_dt
+            )
+    else:
+        sessions = parser.get_sessions(
+            limit=limit, offset=offset, src_ip=src_ip, username=username, start_time=start_dt, end_time=end_dt
+        )
 
     return {"total": len(sessions), "limit": limit, "offset": offset, "sessions": sessions}
 
@@ -61,7 +74,16 @@ async def get_session(session_id: str):
         - Files downloaded
         - Full event log
     """
-    session = parser.get_session(session_id)
+    # Try SQLite first, fall back to log parsing
+    session = None
+    if sqlite_parser.available:
+        try:
+            session = sqlite_parser.get_session(session_id)
+        except Exception as e:
+            print(f"[!] SQLite query failed, falling back to log parsing: {e}")
+            session = parser.get_session(session_id)
+    else:
+        session = parser.get_session(session_id)
 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")

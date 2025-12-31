@@ -293,6 +293,323 @@ class SQLiteStatsParser:
         finally:
             conn.close()
 
+    def get_sessions(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        src_ip: str = None,
+        username: str = None,
+        start_time: datetime = None,
+        end_time: datetime = None,
+    ) -> list[dict]:
+        """
+        Get sessions from SQLite database with TTY logs, commands, and auth data
+
+        Args:
+            limit: Maximum number of sessions to return
+            offset: Number of sessions to skip
+            src_ip: Filter by source IP
+            username: Filter by username
+            start_time: Filter by start time
+            end_time: Filter by end time
+
+        Returns:
+            List of session dictionaries
+        """
+        if not self.available:
+            raise FileNotFoundError(f"SQLite database not found at {self.db_path}")
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            # Build WHERE clause
+            where_clauses = []
+            params = []
+
+            if src_ip:
+                where_clauses.append("s.ip = ?")
+                params.append(src_ip)
+
+            if username:
+                where_clauses.append("EXISTS (SELECT 1 FROM auth a WHERE a.session = s.id AND a.username = ?)")
+                params.append(username)
+
+            if start_time:
+                where_clauses.append("s.starttime >= ?")
+                params.append(start_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+            if end_time:
+                where_clauses.append("s.starttime <= ?")
+                params.append(end_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+            where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+            # Query sessions with basic info
+            query = f"""
+                SELECT
+                    s.id as session_id,
+                    s.ip as src_ip,
+                    s.starttime as start_time,
+                    s.endtime as end_time,
+                    c.version as client_version
+                FROM sessions s
+                LEFT JOIN clients c ON s.client = c.id
+                WHERE {where_sql}
+                ORDER BY s.starttime DESC
+                LIMIT ? OFFSET ?
+            """
+            params.extend([limit, offset])
+
+            cursor.execute(query, params)
+            sessions_rows = cursor.fetchall()
+
+            sessions = []
+            for row in sessions_rows:
+                session_id = row["session_id"]
+
+                # Build session dict
+                session = {
+                    "session_id": session_id,
+                    "id": session_id,  # Add for compatibility
+                    "src_ip": row["src_ip"],
+                    "start_time": row["start_time"],
+                    "end_time": row["end_time"],
+                    "client_version": row["client_version"],
+                    "commands": [],
+                    "downloads": [],
+                    "events": [],  # Empty for now, can add if needed
+                }
+
+                # Get TTY log
+                cursor.execute(
+                    "SELECT ttylog FROM ttylog WHERE session = ? LIMIT 1",
+                    (session_id,)
+                )
+                tty_row = cursor.fetchone()
+                if tty_row:
+                    session["tty_log"] = tty_row["ttylog"]
+                    session["has_tty"] = True
+                else:
+                    session["tty_log"] = None
+                    session["has_tty"] = False
+
+                # Get authentication data
+                cursor.execute(
+                    """
+                    SELECT username, password, success
+                    FROM auth
+                    WHERE session = ?
+                    ORDER BY timestamp
+                    LIMIT 1
+                    """,
+                    (session_id,)
+                )
+                auth_row = cursor.fetchone()
+                if auth_row:
+                    session["username"] = auth_row["username"]
+                    session["password"] = auth_row["password"]
+                    session["login_success"] = bool(auth_row["success"])
+                    session["authentication_success"] = bool(auth_row["success"])
+                else:
+                    session["username"] = None
+                    session["password"] = None
+                    session["login_success"] = False
+                    session["authentication_success"] = False
+
+                # Get commands
+                cursor.execute(
+                    """
+                    SELECT timestamp, input, success
+                    FROM input
+                    WHERE session = ?
+                    ORDER BY timestamp
+                    """,
+                    (session_id,)
+                )
+                for cmd_row in cursor.fetchall():
+                    session["commands"].append({
+                        "timestamp": cmd_row["timestamp"],
+                        "input": cmd_row["input"],
+                        "command": cmd_row["input"],  # Add for compatibility
+                        "success": bool(cmd_row["success"]),
+                    })
+
+                # Get downloads
+                cursor.execute(
+                    """
+                    SELECT timestamp, url, outfile, shasum
+                    FROM downloads
+                    WHERE session = ?
+                    ORDER BY timestamp
+                    """,
+                    (session_id,)
+                )
+                for dl_row in cursor.fetchall():
+                    session["downloads"].append({
+                        "timestamp": dl_row["timestamp"],
+                        "url": dl_row["url"],
+                        "outfile": dl_row["outfile"],
+                        "shasum": dl_row["shasum"],
+                    })
+
+                # Calculate duration
+                if session["start_time"] and session["end_time"]:
+                    try:
+                        start = datetime.fromisoformat(session["start_time"].replace("Z", "+00:00"))
+                        end = datetime.fromisoformat(session["end_time"].replace("Z", "+00:00"))
+                        session["duration"] = int((end - start).total_seconds())
+                    except (ValueError, AttributeError):
+                        session["duration"] = 0
+                else:
+                    session["duration"] = 0
+
+                # Add counts
+                session["commands_count"] = len(session["commands"])
+                session["downloads_count"] = len(session["downloads"])
+
+                sessions.append(session)
+
+            return sessions
+
+        finally:
+            conn.close()
+
+    def get_session(self, session_id: str) -> dict:
+        """Get a single session by ID"""
+        sessions = self.get_sessions(limit=1, offset=0)
+        # Filter to the specific session by querying with modified WHERE clause
+        if not self.available:
+            return None
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            # Query the specific session
+            cursor.execute(
+                """
+                SELECT
+                    s.id as session_id,
+                    s.ip as src_ip,
+                    s.starttime as start_time,
+                    s.endtime as end_time,
+                    c.version as client_version
+                FROM sessions s
+                LEFT JOIN clients c ON s.client = c.id
+                WHERE s.id = ?
+                """,
+                (session_id,)
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return None
+
+            # Build session dict (reuse logic from get_sessions)
+            session = {
+                "session_id": row["session_id"],
+                "id": row["session_id"],
+                "src_ip": row["src_ip"],
+                "start_time": row["start_time"],
+                "end_time": row["end_time"],
+                "client_version": row["client_version"],
+                "commands": [],
+                "downloads": [],
+                "events": [],
+            }
+
+            # Get TTY log
+            cursor.execute("SELECT ttylog FROM ttylog WHERE session = ? LIMIT 1", (session_id,))
+            tty_row = cursor.fetchone()
+            if tty_row:
+                session["tty_log"] = tty_row["ttylog"]
+                session["has_tty"] = True
+            else:
+                session["tty_log"] = None
+                session["has_tty"] = False
+
+            # Get authentication data
+            cursor.execute(
+                """
+                SELECT username, password, success
+                FROM auth
+                WHERE session = ?
+                ORDER BY timestamp
+                LIMIT 1
+                """,
+                (session_id,)
+            )
+            auth_row = cursor.fetchone()
+            if auth_row:
+                session["username"] = auth_row["username"]
+                session["password"] = auth_row["password"]
+                session["login_success"] = bool(auth_row["success"])
+                session["authentication_success"] = bool(auth_row["success"])
+            else:
+                session["username"] = None
+                session["password"] = None
+                session["login_success"] = False
+                session["authentication_success"] = False
+
+            # Get commands
+            cursor.execute(
+                """
+                SELECT timestamp, input, success
+                FROM input
+                WHERE session = ?
+                ORDER BY timestamp
+                """,
+                (session_id,)
+            )
+            for cmd_row in cursor.fetchall():
+                session["commands"].append({
+                    "timestamp": cmd_row["timestamp"],
+                    "input": cmd_row["input"],
+                    "command": cmd_row["input"],
+                    "success": bool(cmd_row["success"]),
+                })
+
+            # Get downloads
+            cursor.execute(
+                """
+                SELECT timestamp, url, outfile, shasum
+                FROM downloads
+                WHERE session = ?
+                ORDER BY timestamp
+                """,
+                (session_id,)
+            )
+            for dl_row in cursor.fetchall():
+                session["downloads"].append({
+                    "timestamp": dl_row["timestamp"],
+                    "url": dl_row["url"],
+                    "outfile": dl_row["outfile"],
+                    "shasum": dl_row["shasum"],
+                })
+
+            # Calculate duration
+            if session["start_time"] and session["end_time"]:
+                try:
+                    start = datetime.fromisoformat(session["start_time"].replace("Z", "+00:00"))
+                    end = datetime.fromisoformat(session["end_time"].replace("Z", "+00:00"))
+                    session["duration"] = int((end - start).total_seconds())
+                except (ValueError, AttributeError):
+                    session["duration"] = 0
+            else:
+                session["duration"] = 0
+
+            # Add counts
+            session["commands_count"] = len(session["commands"])
+            session["downloads_count"] = len(session["downloads"])
+
+            return session
+
+        finally:
+            conn.close()
+
 
 # Global instance
 sqlite_parser = SQLiteStatsParser()
