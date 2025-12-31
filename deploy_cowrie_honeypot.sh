@@ -1888,6 +1888,57 @@ else
 fi
 
 # ============================================================
+# STEP 13.6 — Set up Cowrie Event Indexer Daemon
+# ============================================================
+
+echo_info "Setting up Cowrie Event Indexer Daemon..."
+
+# Upload event indexer script and service file
+scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+    scripts/event-indexer.py "root@$SERVER_IP:/opt/cowrie/scripts/" || {
+        echo_warn " Error: Failed to upload event-indexer.py"
+        exit 1
+    }
+
+scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+    scripts/cowrie-event-indexer.service "root@$SERVER_IP:/tmp/" || {
+        echo_warn " Error: Failed to upload cowrie-event-indexer.service"
+        exit 1
+    }
+
+# Upload events schema SQL file
+scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+    api/sql/events_schema.sql "root@$SERVER_IP:/opt/cowrie/api/sql/" || {
+        echo_warn " Error: Failed to upload events_schema.sql"
+        exit 1
+    }
+
+# Install and start event indexer daemon
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'INDEXEREOF'
+set -e
+
+# Make script executable
+chmod +x /opt/cowrie/scripts/event-indexer.py
+
+# Install systemd service
+mv /tmp/cowrie-event-indexer.service /etc/systemd/system/cowrie-event-indexer.service
+
+# Reload systemd and enable service
+systemctl daemon-reload
+systemctl enable cowrie-event-indexer.service
+
+# Start the service
+systemctl start cowrie-event-indexer.service
+
+echo "[remote] Event indexer daemon installed and started"
+echo "[remote] Indexing events from Cowrie JSON logs into SQLite database"
+systemctl status cowrie-event-indexer.service --no-pager
+
+INDEXEREOF
+
+echo_info "Cowrie Event Indexer Daemon configured successfully"
+
+# ============================================================
 # STEP 14 — Set up automatic Docker image updates
 # ============================================================
 

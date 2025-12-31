@@ -55,9 +55,64 @@ class SQLiteStatsParser:
             except Exception as e:
                 print(f"[!] Failed to load GeoIP ASN database: {e}")
 
+    def _get_session_events_from_db(self, session_id: str) -> list:
+        """
+        Get all events for a session from the events database table.
+
+        Args:
+            session_id: Session ID to search for
+
+        Returns:
+            List of event dicts for this session, or empty list if events table doesn't exist
+        """
+        if not self.available:
+            return []
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Check if events table exists
+            cursor.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='events'
+                """
+            )
+            if not cursor.fetchone():
+                conn.close()
+                return []
+
+            # Query events for this session
+            cursor.execute(
+                """
+                SELECT data FROM events
+                WHERE session = ?
+                ORDER BY timestamp
+                """,
+                (session_id,)
+            )
+
+            events = []
+            for row in cursor.fetchall():
+                try:
+                    event = json.loads(row["data"])
+                    events.append(event)
+                except json.JSONDecodeError:
+                    continue
+
+            conn.close()
+            return events
+
+        except Exception as e:
+            print(f"[!] Error querying events from database: {e}")
+            return []
+
     def _get_session_events_from_log(self, session_id: str) -> list:
         """
         Get all events for a session from the JSON log file.
+        This is a fallback if the events database table doesn't exist.
 
         Args:
             session_id: Session ID to search for
@@ -84,6 +139,25 @@ class SQLiteStatsParser:
 
         # Sort by timestamp
         events.sort(key=lambda x: x.get("timestamp", ""))
+        return events
+
+    def _get_session_events(self, session_id: str) -> list:
+        """
+        Get all events for a session, trying database first then falling back to log file.
+
+        Args:
+            session_id: Session ID to search for
+
+        Returns:
+            List of event dicts for this session
+        """
+        # Try database first (fast)
+        events = self._get_session_events_from_db(session_id)
+
+        # Fall back to log file if no events found in database
+        if not events:
+            events = self._get_session_events_from_log(session_id)
+
         return events
 
     def _geoip_lookup(self, ip: str) -> dict:
@@ -414,7 +488,7 @@ class SQLiteStatsParser:
                     "client_version": row["client_version"],
                     "commands": [],
                     "downloads": [],
-                    "events": self._get_session_events_from_log(session_id),
+                    "events": self._get_session_events(session_id),
                 }
 
                 # Get TTY log
@@ -553,7 +627,7 @@ class SQLiteStatsParser:
                 "client_version": row["client_version"],
                 "commands": [],
                 "downloads": [],
-                "events": self._get_session_events_from_log(row["session_id"]),
+                "events": self._get_session_events(row["session_id"]),
             }
 
             # Get TTY log
