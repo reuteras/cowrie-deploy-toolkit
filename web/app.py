@@ -1448,13 +1448,13 @@ def sessions():
     if client_version_filter:
         sorted_sessions = [s for s in sorted_sessions if s.get("client_version") == client_version_filter]
     if command_filter:
-        sorted_sessions = [s for s in sorted_sessions if any(cmd["command"] == command_filter for cmd in s["commands"])]
+        sorted_sessions = [s for s in sorted_sessions if any(cmd["command"] == command_filter for cmd in s.get("commands", []))]
     if has_commands == "1":
-        sorted_sessions = [s for s in sorted_sessions if s["commands"]]
+        sorted_sessions = [s for s in sorted_sessions if s.get("commands")]
     if has_tty == "1":
-        sorted_sessions = [s for s in sorted_sessions if s["tty_log"]]
+        sorted_sessions = [s for s in sorted_sessions if s.get("tty_log")]
     if successful_login == "1":
-        sorted_sessions = [s for s in sorted_sessions if s.get("login_success")]
+        sorted_sessions = [s for s in sorted_sessions if s.get("login_success") is True]
 
     # Paginate
     total = len(sorted_sessions)

@@ -122,10 +122,12 @@ class CowrieLogParser:
                             sessions[session_id]["username"] = event.get("username")
                             sessions[session_id]["password"] = event.get("password")
                             sessions[session_id]["authentication_success"] = True
+                            sessions[session_id]["login_success"] = True  # Add for dashboard compatibility
 
                         elif event.get("eventid") == "cowrie.login.failed":
                             if "authentication_success" not in sessions[session_id]:
                                 sessions[session_id]["authentication_success"] = False
+                                sessions[session_id]["login_success"] = False  # Add for dashboard compatibility
 
                         # Handle commands
                         elif event.get("eventid") == "cowrie.command.input":
