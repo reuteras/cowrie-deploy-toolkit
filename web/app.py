@@ -967,7 +967,9 @@ class TTYLogParser:
                                 duration += sleeptime
 
                         elif op == self.OP_CLOSE:
-                            break
+                            # Don't break - continue parsing to capture all commands
+                            # OP_CLOSE can occur after each command, not just at session end
+                            pass
 
         except OSError as e:
             print(f"[!] I/O error reading TTY log '{file_path}': {e}")
