@@ -21,9 +21,7 @@ import signal
 import sqlite3
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 # Paths (container mount paths)
 DEFAULT_DB_PATH = "/cowrie-data/lib/cowrie/cowrie.db"
