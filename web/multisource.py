@@ -268,12 +268,25 @@ class MultiSourceDataSource:
         # For most use cases, this is sufficient for the time window
         result = self.get_sessions(hours=hours, limit=1000, offset=0, source_filter=source_filter)
 
+        print(f"[MultiSource] parse_all: got {len(result.get('sessions', []))} sessions from get_sessions")
+
         # Convert list to dict keyed by session ID
         sessions_dict = {}
+        skipped = 0
         for session in result.get("sessions", []):
+            # Debug: Check what fields are in the first session
+            if len(sessions_dict) == 0 and session:
+                print(f"[MultiSource] Sample session keys: {list(session.keys())[:10]}")
+
             if "id" in session:
                 sessions_dict[session["id"]] = session
+            else:
+                skipped += 1
 
+        if skipped > 0:
+            print(f"[MultiSource] WARNING: Skipped {skipped} sessions without 'id' field")
+
+        print(f"[MultiSource] parse_all: returning {len(sessions_dict)} sessions")
         return sessions_dict
 
     def get_all_commands(self, hours: int = 168, source_filter: Optional[str] = None) -> list:

@@ -2473,6 +2473,12 @@ def attack_stream():
         import select
         import subprocess
 
+        # Disable SSE in multi-source mode (no local Cowrie instance)
+        if hasattr(session_parser, "sources"):
+            print("[!] SSE stream disabled in multi-source mode")
+            yield f"data: {json.dumps({'event': 'info', 'message': 'Live mode not available in multi-honeypot deployment'})}\n\n"
+            return
+
         log_path = CONFIG["log_path"]
 
         # Check if log file exists
