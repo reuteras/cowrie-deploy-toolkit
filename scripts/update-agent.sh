@@ -249,12 +249,28 @@ update_scripts() {
     if [ -f "${COWRIE_DIR}/scripts/cowrie-event-indexer.service" ]; then
         if ! systemctl is-enabled --quiet cowrie-event-indexer.service 2>/dev/null; then
             log_info "Installing event indexer service..."
-            cp "${COWRIE_DIR}/scripts/cowrie-event-indexer.service" /etc/systemd/system/
-            chmod +x "${COWRIE_DIR}/scripts/event-indexer.py"
-            systemctl daemon-reload
-            systemctl enable cowrie-event-indexer.service
-            systemctl start cowrie-event-indexer.service
-            log_success "Event indexer service installed and started"
+
+            # Detect uv path
+            local uv_path
+            uv_path=$(command -v uv 2>/dev/null || echo "")
+
+            if [ -z "${uv_path}" ]; then
+                log_error "uv not found in PATH. Event indexer requires uv to be installed."
+                log_error "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh"
+            else
+                log_info "Detected uv at: ${uv_path}"
+
+                # Copy service file and replace UV_PATH_PLACEHOLDER with actual path
+                sed "s|UV_PATH_PLACEHOLDER|${uv_path}|g" \
+                    "${COWRIE_DIR}/scripts/cowrie-event-indexer.service" \
+                    > /etc/systemd/system/cowrie-event-indexer.service
+
+                chmod +x "${COWRIE_DIR}/scripts/event-indexer.py"
+                systemctl daemon-reload
+                systemctl enable cowrie-event-indexer.service
+                systemctl start cowrie-event-indexer.service
+                log_success "Event indexer service installed and started"
+            fi
         elif systemctl is-active --quiet cowrie-event-indexer.service 2>/dev/null; then
             log_info "Restarting event indexer service..."
             systemctl restart cowrie-event-indexer.service

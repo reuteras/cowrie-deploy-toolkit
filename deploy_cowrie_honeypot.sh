@@ -1920,8 +1920,24 @@ set -e
 # Make script executable
 chmod +x /opt/cowrie/scripts/event-indexer.py
 
-# Install systemd service
-mv /tmp/cowrie-event-indexer.service /etc/systemd/system/cowrie-event-indexer.service
+# Detect uv path
+UV_PATH=$(command -v uv 2>/dev/null || echo "")
+
+if [ -z "${UV_PATH}" ]; then
+    echo "[remote] ERROR: uv not found in PATH"
+    echo "[remote] Event indexer requires uv to be installed"
+    exit 1
+fi
+
+echo "[remote] Detected uv at: ${UV_PATH}"
+
+# Replace UV_PATH_PLACEHOLDER with actual path and install service
+sed "s|UV_PATH_PLACEHOLDER|${UV_PATH}|g" \
+    /tmp/cowrie-event-indexer.service \
+    > /etc/systemd/system/cowrie-event-indexer.service
+
+# Clean up temp file
+rm /tmp/cowrie-event-indexer.service
 
 # Reload systemd and enable service
 systemctl daemon-reload

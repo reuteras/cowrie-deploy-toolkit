@@ -8,10 +8,10 @@ Requires=docker.service
 Type=simple
 User=root
 WorkingDirectory=/opt/cowrie
-Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 # Run the event indexer with container paths
-ExecStart=/usr/local/bin/uv run /opt/cowrie/scripts/event-indexer.py \
+ExecStart=UV_PATH_PLACEHOLDER run /opt/cowrie/scripts/event-indexer.py \
     --db /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/cowrie.db \
     --log /var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json \
     --log-dir /var/lib/docker/volumes/cowrie-var/_data/log/cowrie
