@@ -493,13 +493,17 @@ class SQLiteStatsParser:
 
                 # Get ALL TTY logs for this session
                 cursor.execute(
-                    "SELECT ttylog, size FROM ttylog WHERE session = ? ORDER BY id",
+                    "SELECT id, ttylog, size FROM ttylog WHERE session = ? ORDER BY id",
                     (session_id,)
                 )
                 tty_rows = cursor.fetchall()
                 if tty_rows:
-                    # Set tty_logs (plural) as list of all TTY log files
-                    session["tty_logs"] = [row["ttylog"] for row in tty_rows if row["size"] > 0]
+                    # Set tty_logs (plural) as list of dicts with ttylog and timestamp
+                    # merge_tty_logs() expects: [{"ttylog": "...", "timestamp": "..."}, ...]
+                    session["tty_logs"] = [
+                        {"ttylog": row["ttylog"], "timestamp": str(row["id"])}
+                        for row in tty_rows if row["size"] > 0
+                    ]
                     # Also set tty_log (singular) for backwards compatibility
                     session["tty_log"] = tty_rows[0]["ttylog"] if tty_rows else None
                     session["has_tty"] = len(session["tty_logs"]) > 0
@@ -635,11 +639,15 @@ class SQLiteStatsParser:
             }
 
             # Get ALL TTY logs for this session
-            cursor.execute("SELECT ttylog, size FROM ttylog WHERE session = ? ORDER BY id", (session_id,))
+            cursor.execute("SELECT id, ttylog, size FROM ttylog WHERE session = ? ORDER BY id", (session_id,))
             tty_rows = cursor.fetchall()
             if tty_rows:
-                # Set tty_logs (plural) as list of all TTY log files
-                session["tty_logs"] = [row["ttylog"] for row in tty_rows if row["size"] > 0]
+                # Set tty_logs (plural) as list of dicts with ttylog and timestamp
+                # merge_tty_logs() expects: [{"ttylog": "...", "timestamp": "..."}, ...]
+                session["tty_logs"] = [
+                    {"ttylog": row["ttylog"], "timestamp": str(row["id"])}
+                    for row in tty_rows if row["size"] > 0
+                ]
                 # Also set tty_log (singular) for backwards compatibility
                 session["tty_log"] = tty_rows[0]["ttylog"] if tty_rows else None
                 session["has_tty"] = len(session["tty_logs"]) > 0
