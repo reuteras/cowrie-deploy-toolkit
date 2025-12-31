@@ -893,6 +893,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // ===== LIVE MODE FUNCTIONS =====
 
     function connectEventSource() {
+        // Check if we're in multi-source mode
+        const availableSources = {{ available_sources | tojson }};
+        if (availableSources && availableSources.length > 0) {
+            console.log('[SSE] Live mode not available in multi-honeypot deployment');
+            document.getElementById('mode-indicator').innerHTML =
+                '<span style="color: #ffc107;">ℹ️ Live Mode: Not available in multi-honeypot mode</span>';
+            return;
+        }
+
         // Close existing connection if any
         if (eventSource) {
             eventSource.close();
