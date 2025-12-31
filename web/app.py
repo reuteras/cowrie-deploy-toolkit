@@ -1210,6 +1210,16 @@ def health():
     )
 
 
+@app.route("/favicon.ico")
+def favicon():
+    """Serve favicon to prevent 404 errors in browser console."""
+    # Return SVG favicon with honey pot emoji
+    svg = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+        <text y=".9em" font-size="90">🍯</text>
+    </svg>'''
+    return Response(svg, mimetype='image/svg+xml')
+
+
 @app.route("/")
 def index():
     """Dashboard page."""
