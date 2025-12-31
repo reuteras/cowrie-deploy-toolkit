@@ -779,6 +779,7 @@ EOF
 
 # Create deployment config file with honeypot metadata
 echo_info "Creating deployment config file..."
+# shellcheck disable=SC2087
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << DEPLOYEOF
 cat > /opt/cowrie/deployment.conf << 'CONFEOF'
 # Cowrie Honeypot Deployment Configuration
