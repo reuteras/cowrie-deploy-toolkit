@@ -1377,24 +1377,40 @@ def attack_map_page():
 
     # Collect attack data with timestamps for animation
     attacks = []
+    sessions_without_geo = 0
+    sessions_without_coords = 0
+
     for session in sessions.values():
-        if session.get("src_ip") and session.get("geo"):
-            geo = session["geo"]
-            if "latitude" in geo and "longitude" in geo:
-                attack = {
-                    "session_id": session["id"],
-                    "ip": session["src_ip"],
-                    "lat": geo["latitude"],
-                    "lon": geo["longitude"],
-                    "city": geo.get("city", "-"),
-                    "country": geo.get("country", "-"),
-                    "timestamp": session.get("start_time", ""),
-                    "username": session.get("username", ""),
-                    "password": session.get("password", ""),
-                    "login_success": session.get("login_success", False),
-                    "_source": session.get("_source", "local"),  # Track which honeypot
-                }
-                attacks.append(attack)
+        if not session.get("src_ip"):
+            continue
+
+        if not session.get("geo"):
+            sessions_without_geo += 1
+            continue
+
+        geo = session["geo"]
+        if "latitude" not in geo or "longitude" not in geo:
+            sessions_without_coords += 1
+            continue
+
+        attack = {
+            "session_id": session["id"],
+            "ip": session["src_ip"],
+            "lat": geo["latitude"],
+            "lon": geo["longitude"],
+            "city": geo.get("city", "-"),
+            "country": geo.get("country", "-"),
+            "timestamp": session.get("start_time", ""),
+            "username": session.get("username", ""),
+            "password": session.get("password", ""),
+            "login_success": session.get("login_success", False),
+            "_source": session.get("_source", "local"),  # Track which honeypot
+        }
+        attacks.append(attack)
+
+    print(f"[AttackMap] Sessions without geo data: {sessions_without_geo}")
+    print(f"[AttackMap] Sessions without coordinates: {sessions_without_coords}")
+    print(f"[AttackMap] Created {len(attacks)} attack visualizations")
 
     # Sort by timestamp
     attacks.sort(key=lambda x: x["timestamp"])
