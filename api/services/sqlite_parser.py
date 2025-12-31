@@ -10,7 +10,6 @@ import os
 import sqlite3
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import geoip2.database
 import geoip2.errors
