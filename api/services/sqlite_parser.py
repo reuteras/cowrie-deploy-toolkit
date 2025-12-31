@@ -5,22 +5,25 @@ Queries Cowrie's SQLite database directly for fast statistics generation.
 Falls back to JSON parsing if SQLite is unavailable.
 """
 
+import json
 import os
 import sqlite3
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import geoip2.database
 import geoip2.errors
 
 # Database path (container mount path)
 DEFAULT_DB_PATH = "/cowrie-data/lib/cowrie/cowrie.db"
+DEFAULT_LOG_PATH = "/cowrie-data/log/cowrie/cowrie.json"
 
 
 class SQLiteStatsParser:
     """Fast statistics parser using SQLite database"""
 
-    def __init__(self, db_path: str = None, geoip_city_db: str = None, geoip_asn_db: str = None):
+    def __init__(self, db_path: str = None, geoip_city_db: str = None, geoip_asn_db: str = None, log_path: str = None):
         """
         Initialize SQLite parser
 
@@ -28,9 +31,11 @@ class SQLiteStatsParser:
             db_path: Path to cowrie.db (defaults to standard location)
             geoip_city_db: Path to GeoLite2-City.mmdb
             geoip_asn_db: Path to GeoLite2-ASN.mmdb
+            log_path: Path to cowrie.json log file (for events)
         """
         self.db_path = db_path or os.getenv("COWRIE_DB_PATH", DEFAULT_DB_PATH)
         self.available = os.path.exists(self.db_path)
+        self.log_path = log_path or os.getenv("COWRIE_LOG_PATH", DEFAULT_LOG_PATH)
 
         # Initialize GeoIP readers
         self.geoip_city_db = geoip_city_db or os.getenv("GEOIP_CITY_DB", "/geoip/GeoLite2-City.mmdb")
@@ -50,6 +55,37 @@ class SQLiteStatsParser:
                 self.asn_reader = geoip2.database.Reader(self.geoip_asn_db)
             except Exception as e:
                 print(f"[!] Failed to load GeoIP ASN database: {e}")
+
+    def _get_session_events_from_log(self, session_id: str) -> list:
+        """
+        Get all events for a session from the JSON log file.
+
+        Args:
+            session_id: Session ID to search for
+
+        Returns:
+            List of event dicts for this session
+        """
+        events = []
+        if not os.path.exists(self.log_path):
+            return events
+
+        try:
+            with open(self.log_path) as f:
+                for line in f:
+                    try:
+                        event = json.loads(line.strip())
+                        if event.get("session") == session_id:
+                            events.append(event)
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            print(f"[!] Error reading JSON log: {e}")
+            return events
+
+        # Sort by timestamp
+        events.sort(key=lambda x: x.get("timestamp", ""))
+        return events
 
     def _geoip_lookup(self, ip: str) -> dict:
         """Lookup GeoIP information for an IP address"""
@@ -379,7 +415,7 @@ class SQLiteStatsParser:
                     "client_version": row["client_version"],
                     "commands": [],
                     "downloads": [],
-                    "events": [],  # Empty for now, can add if needed
+                    "events": self._get_session_events_from_log(session_id),
                 }
 
                 # Get TTY log
@@ -518,7 +554,7 @@ class SQLiteStatsParser:
                 "client_version": row["client_version"],
                 "commands": [],
                 "downloads": [],
-                "events": [],
+                "events": self._get_session_events_from_log(row["session_id"]),
             }
 
             # Get TTY log
