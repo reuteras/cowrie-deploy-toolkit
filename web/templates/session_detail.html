@@ -131,14 +131,72 @@
     <div class="detail-card full-width">
         <h2>Commands Executed ({{ session.commands | length }})</h2>
         {% if session.commands %}
-        <div class="command-list">
+        <div class="terminal-output">
             {% for cmd in session.commands %}
-            <div class="command-entry">
-                <span class="command-time">{{ cmd.timestamp | format_timestamp }}</span>
-                <code class="command-text">{{ cmd.command }}</code>
+            <div class="terminal-command">
+                <div class="command-header">
+                    <span class="command-time">{{ cmd.timestamp | format_timestamp }}</span>
+                </div>
+                <div class="terminal-line">
+                    <span class="prompt">root@{{ session.src_ip.replace('.', '-') }}:~# </span>
+                    <span class="command-input">{{ cmd.command or cmd.input }}</span>
+                </div>
+                {% if events %}
+                    {% for event in events %}
+                        {% if event.eventid == 'cowrie.command.success' and event.input == (cmd.command or cmd.input) %}
+                            {% if event.output %}
+                            <div class="command-output">
+                                <pre>{{ event.output }}</pre>
+                            </div>
+                            {% endif %}
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
             </div>
             {% endfor %}
         </div>
+        <style>
+            .terminal-output {
+                background: #1e1e1e;
+                color: #d4d4d4;
+                padding: 20px;
+                border-radius: 4px;
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+                overflow-x: auto;
+            }
+            .terminal-command {
+                margin-bottom: 15px;
+            }
+            .command-header {
+                color: #6a9955;
+                font-size: 12px;
+                margin-bottom: 5px;
+            }
+            .terminal-line {
+                display: flex;
+                flex-wrap: wrap;
+            }
+            .prompt {
+                color: #4ec9b0;
+                font-weight: bold;
+                white-space: nowrap;
+            }
+            .command-input {
+                color: #dcdcaa;
+                margin-left: 5px;
+            }
+            .command-output {
+                margin-top: 5px;
+                margin-left: 20px;
+            }
+            .command-output pre {
+                margin: 0;
+                color: #d4d4d4;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+        </style>
         {% else %}
         <p class="no-data">No commands recorded for this session</p>
         {% endif %}
