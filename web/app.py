@@ -1311,8 +1311,22 @@ def attack_map_page():
     hours = request.args.get("hours", 24, type=int)
     source_filter = request.args.get("source", "")
 
+    # Debug logging
+    print(f"[AttackMap] hours={hours}, source_filter='{source_filter}'")
+    print(f"[AttackMap] session_parser type: {type(session_parser).__name__}")
+    if hasattr(session_parser, "sources"):
+        print(f"[AttackMap] Available sources: {list(session_parser.sources.keys())}")
+
     # Get sessions with source filter
     sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
+    print(f"[AttackMap] Retrieved {len(sessions)} sessions")
+
+    # Debug: Show source distribution
+    source_counts = {}
+    for session in sessions.values():
+        src = session.get("_source", "unknown")
+        source_counts[src] = source_counts.get(src, 0) + 1
+    print(f"[AttackMap] Sessions by source: {source_counts}")
 
     # Get available sources for multi-honeypot mode
     available_sources = []

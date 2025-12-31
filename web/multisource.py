@@ -163,18 +163,24 @@ class MultiSourceDataSource:
         cache_key = f"sessions_{hours}_{limit}_{offset}_{src_ip}_{username}_{source_filter or 'all'}"
         cached = self.sessions_cache.get(cache_key)
         if cached is not None:
-            print(f"[MultiSource] Cache hit for sessions (hours={hours}, limit={limit})")
+            print(f"[MultiSource] Cache hit for sessions (hours={hours}, limit={limit}, filter={source_filter})")
             return cached
+
+        print(f"[MultiSource] get_sessions called: hours={hours}, limit={limit}, source_filter='{source_filter}'")
 
         # Determine which sources to query
         sources_to_query = self.sources
         if source_filter and source_filter in self.sources:
+            print(f"[MultiSource] Filtering to single source: {source_filter}")
             sources_to_query = {source_filter: self.sources[source_filter]}
+        else:
+            print(f"[MultiSource] Querying all sources: {list(self.sources.keys())}")
 
         # Filter out sources in backoff
         available_sources = {
             name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
         }
+        print(f"[MultiSource] Available sources after backoff filter: {list(available_sources.keys())}")
 
         if len(available_sources) < len(sources_to_query):
             skipped = set(sources_to_query.keys()) - set(available_sources.keys())
@@ -214,10 +220,14 @@ class MultiSourceDataSource:
                     self.backoff.record_success(source.name)  # Reset backoff on success
                     # Tag sessions with source info
                     tagged_sessions = self._tag_list(result.get("sessions", []), source.name, source.type)
+                    session_count = len(tagged_sessions)
+                    print(f"[MultiSource] Fetched {session_count} sessions from '{source.name}'")
                     all_sessions.extend(tagged_sessions)
                     total_count += result.get("total", 0)
                 except Exception as e:
                     print(f"[MultiSource] Error fetching sessions from '{source.name}': {e}")
+                    import traceback
+                    traceback.print_exc()
                     source_errors[source.name] = str(e)
                     self.backoff.record_failure(source.name)  # Record failure for backoff
 
