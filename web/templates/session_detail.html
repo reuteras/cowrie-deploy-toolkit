@@ -130,6 +130,20 @@
     <!-- Commands -->
     <div class="detail-card full-width">
         <h2>Commands Executed ({{ session.commands | length }})</h2>
+        <!-- Debug: Show what events we have -->
+        {% if events %}
+        <details style="margin-bottom: 10px; font-size: 0.9em;">
+            <summary style="cursor: pointer; color: var(--text-secondary);">Debug: Event types available ({{ events | length }} total)</summary>
+            <pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 200px;">
+{%- for event in events[:10] -%}
+Event {{ loop.index }}: {{ event.eventid }}
+  Fields: {{ event.keys() | list }}
+  {% if event.eventid == 'cowrie.command.input' %}Input: {{ event.input }}{% endif %}
+  {% if 'output' in event %}Output: {{ event.output[:100] }}...{% endif %}
+{% endfor -%}
+            </pre>
+        </details>
+        {% endif %}
         {% if session.commands %}
         <div class="terminal-output">
             {% for cmd in session.commands %}
