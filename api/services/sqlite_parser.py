@@ -478,7 +478,7 @@ class SQLiteStatsParser:
 
     def get_session(self, session_id: str) -> dict:
         """Get a single session by ID"""
-        sessions = self.get_sessions(limit=1, offset=0)
+        self.get_sessions(limit=1, offset=0)
         # Filter to the specific session by querying with modified WHERE clause
         if not self.available:
             return None
