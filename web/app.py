@@ -1328,6 +1328,11 @@ def attack_map_page():
         source_counts[src] = source_counts.get(src, 0) + 1
     print(f"[AttackMap] Sessions by source: {source_counts}")
 
+    # Debug: Check first few sessions to verify _source
+    sample_sessions = list(sessions.values())[:3]
+    for i, session in enumerate(sample_sessions):
+        print(f"[AttackMap] Sample session {i}: _source={session.get('_source')}, src_ip={session.get('src_ip')}")
+
     # Get available sources for multi-honeypot mode
     available_sources = []
     honeypot_locations = {}  # Map of source -> location
