@@ -142,6 +142,7 @@ class MultiSourceDataSource:
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
         source_filter: Optional[str] = None,
+        skip_global_limit: bool = False,
     ) -> dict:
         """
         Get sessions from all sources (or filtered sources) with caching.
@@ -234,9 +235,12 @@ class MultiSourceDataSource:
         # Sort combined sessions by start_time (most recent first)
         all_sessions.sort(key=lambda x: x.get("start_time") or "", reverse=True)
 
-        # Apply global limit
-        if len(all_sessions) > limit:
+        # Apply global limit (skip if requested, e.g., for parse_all)
+        if not skip_global_limit and len(all_sessions) > limit:
+            print(f"[MultiSource] Truncating {len(all_sessions)} sessions to global limit of {limit}")
             all_sessions = all_sessions[:limit]
+        elif skip_global_limit:
+            print(f"[MultiSource] Skipping global limit, returning all {len(all_sessions)} sessions")
 
         result = {
             "total": total_count,
@@ -264,12 +268,14 @@ class MultiSourceDataSource:
         Returns:
             Dict of sessions keyed by session ID
         """
-        # Use higher limit for parse_all since it's meant to get "all" sessions
-        # In multi-source mode, this means: limit per source * number of sources
-        num_sources = len(self.sources) if not source_filter else 1
-        total_limit = 2000 * num_sources  # Allow 2000 sessions per source
+        # Use 1000 per source (API max limit)
+        # For multi-source, we'll get up to 1000 from each source
+        # and NOT apply the global limit truncation
+        per_source_limit = 1000
 
-        result = self.get_sessions(hours=hours, limit=total_limit, offset=0, source_filter=source_filter)
+        result = self.get_sessions(
+            hours=hours, limit=per_source_limit, offset=0, source_filter=source_filter, skip_global_limit=True
+        )
 
         print(f"[MultiSource] parse_all: got {len(result.get('sessions', []))} sessions from get_sessions")
 
