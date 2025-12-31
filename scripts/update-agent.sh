@@ -322,7 +322,9 @@ update_api() {
     if [ -f "deployment.conf" ]; then
         # shellcheck disable=SC1091
         source deployment.conf
+        # shellcheck disable=SC2153
         server_ip="${SERVER_IP}"
+        # shellcheck disable=SC2153
         honeypot_hostname="${HONEYPOT_HOSTNAME}"
     else
         # Fallback to old method for backwards compatibility
