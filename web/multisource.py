@@ -278,13 +278,18 @@ class MultiSourceDataSource:
             if len(sessions_dict) == 0 and session:
                 print(f"[MultiSource] Sample session keys: {list(session.keys())[:10]}")
 
-            if "id" in session:
-                sessions_dict[session["id"]] = session
+            # Handle both 'id' and 'session_id' field names
+            session_id = session.get("id") or session.get("session_id")
+            if session_id:
+                # Normalize: ensure 'id' field exists for compatibility
+                if "id" not in session and "session_id" in session:
+                    session["id"] = session["session_id"]
+                sessions_dict[session_id] = session
             else:
                 skipped += 1
 
         if skipped > 0:
-            print(f"[MultiSource] WARNING: Skipped {skipped} sessions without 'id' field")
+            print(f"[MultiSource] WARNING: Skipped {skipped} sessions without 'id' or 'session_id' field")
 
         print(f"[MultiSource] parse_all: returning {len(sessions_dict)} sessions")
         return sessions_dict
