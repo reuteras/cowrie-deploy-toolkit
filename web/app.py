@@ -944,9 +944,11 @@ class TTYLogParser:
                                 pass
 
                         elif op == self.OP_WRITE:
-                            # Only include TYPE_OUTPUT (2) which contains prompts, echoed commands, and output
+                            # Include TYPE_OUTPUT (2) and TYPE_INTERACT (3)
+                            # TYPE_OUTPUT: prompts and command output
+                            # TYPE_INTERACT: interactive terminal data (echoed commands)
                             # TYPE_INPUT (1) is just raw keystrokes and should be excluded
-                            if direction == self.TYPE_OUTPUT:
+                            if direction in (self.TYPE_OUTPUT, self.TYPE_INTERACT):
                                 # Calculate timestamp
                                 curtime = float(sec) + float(usec) / 1000000.0
                                 if prevtime != 0:
