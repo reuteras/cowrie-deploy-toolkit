@@ -305,7 +305,7 @@ class MultiSourceDataSource:
         from app import global_geoip
 
         enriched_count = 0
-        for session_id, session in sessions_dict.items():
+        for _session_id, session in sessions_dict.items():
             if not session.get("geo") and session.get("src_ip"):
                 geo_data = global_geoip.lookup(session["src_ip"])
                 if geo_data:
@@ -635,6 +635,45 @@ class MultiSourceDataSource:
                     }
 
         return health_status
+
+    def get_session_events(self, session_id: str) -> list:
+        """
+        Get all events for a specific session.
+
+        For multi-source mode, events are included in the session data
+        returned by get_session().
+
+        Args:
+            session_id: The session ID to get events for
+
+        Returns:
+            List of event dicts sorted by timestamp
+        """
+        session = self.get_session(session_id)
+        if not session:
+            return []
+
+        events = session.get("events", [])
+        # Sort by timestamp
+        events.sort(key=lambda x: x.get("timestamp", ""))
+        return events
+
+    def get_threat_intel_for_ip(self, ip_address: str) -> dict:
+        """
+        Get threat intelligence data for a specific IP address.
+
+        For multi-source mode, this would require querying all sources
+        for threat intel events. For now, return empty result.
+
+        Args:
+            ip_address: The IP address to look up
+
+        Returns:
+            Threat intel dict (currently empty for multi-source)
+        """
+        # TODO: Query sources for threat intel events
+        # For now, return empty to avoid errors
+        return {"greynoise": None}
 
 
 def create_multisource_from_config(config_sources: list) -> Optional[MultiSourceDataSource]:
