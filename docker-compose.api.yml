@@ -11,8 +11,10 @@ services:
     volumes:
       # Read-only access to Cowrie data
       - cowrie-var:/cowrie-data:ro
+      - cowrie-etc:/cowrie-etc:ro
       - /opt/cowrie/var:/opt-cowrie-data:ro
       - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
+      - /opt/cowrie/identity:/identity:ro
       - /var/lib/GeoIP:/geoip:ro
     environment:
       # Cowrie data paths
@@ -20,6 +22,7 @@ services:
       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
       - COWRIE_DOWNLOADS_PATH=/cowrie-data/lib/cowrie/downloads
       - COWRIE_METADATA_PATH=/cowrie-metadata/metadata.json
+      - IDENTITY_PATH=/identity
 
       # System information
       - SERVER_IP=SERVER_IP_PLACEHOLDER
@@ -63,3 +66,5 @@ networks:
 volumes:
   cowrie-var:
     name: cowrie-var
+  cowrie-etc:
+    name: cowrie-etc

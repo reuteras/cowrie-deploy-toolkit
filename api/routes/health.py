@@ -53,7 +53,7 @@ async def get_info():
 @router.get("/api/v1/system-info")
 async def get_system_info():
     """
-    Get honeypot system information (metadata, version, etc.)
+    Get honeypot system information (metadata, version, identity, SSH config, etc.)
     """
     info = {
         "server_ip": os.getenv("SERVER_IP", ""),
@@ -62,6 +62,17 @@ async def get_system_info():
         "git_commit": None,
         "build_date": None,
         "uptime_seconds": None,
+        "kernel": None,
+        "arch": None,
+        "os_release": None,
+        "debian_version": None,
+        "ssh_banner": None,
+        "ssh_ciphers": [],
+        "ssh_macs": [],
+        "ssh_kex": [],
+        "ssh_keys": [],
+        "userdb_entries": [],
+        "userdb_path": None,
     }
 
     # Try to read metadata from Cowrie container
@@ -80,5 +91,75 @@ async def get_system_info():
                     info["uptime_seconds"] = int(time.time() - build_ts)
         except Exception as e:
             print(f"[!] Failed to read metadata: {e}")
+
+    # Read identity data
+    identity_path = os.getenv("IDENTITY_PATH", "/identity")
+
+    def read_identity_file(filename):
+        """Read single-line identity file"""
+        path = Path(identity_path) / filename
+        if path.exists():
+            try:
+                return path.read_text().strip()
+            except Exception as e:
+                print(f"[!] Failed to read {filename}: {e}")
+        return None
+
+    def read_identity_lines(filename):
+        """Read multi-line identity file"""
+        path = Path(identity_path) / filename
+        if path.exists():
+            try:
+                return [line.strip() for line in path.read_text().splitlines() if line.strip()]
+            except Exception as e:
+                print(f"[!] Failed to read {filename}: {e}")
+        return []
+
+    # Read basic identity
+    info["kernel"] = read_identity_file("kernel.txt")
+    info["ssh_banner"] = read_identity_file("ssh-banner.txt")
+    info["debian_version"] = read_identity_file("debian_version")
+
+    # Read OS release
+    os_release_content = read_identity_file("os-release")
+    if os_release_content:
+        for line in os_release_content.split("\n"):
+            if line.startswith("PRETTY_NAME="):
+                info["os_release"] = line.split("=", 1)[1].strip('"')
+                break
+
+    # Extract architecture from kernel
+    if info["kernel"]:
+        parts = info["kernel"].split()
+        if len(parts) >= 3:
+            info["arch"] = parts[-1]
+
+    # Read SSH configuration
+    info["ssh_ciphers"] = read_identity_lines("ssh-ciphers.txt")
+    info["ssh_macs"] = read_identity_lines("ssh-mac.txt")
+    info["ssh_kex"] = read_identity_lines("ssh-kex.txt")
+    info["ssh_keys"] = read_identity_lines("ssh-key.txt")
+
+    # Read userdb.txt (authentication database)
+    userdb_locations = [
+        "/cowrie-etc/userdb.txt",
+        "/cowrie-data/etc/userdb.txt",
+        Path(identity_path) / "userdb.txt",
+    ]
+
+    for userdb_path in userdb_locations:
+        userdb_path_obj = Path(userdb_path) if not isinstance(userdb_path, Path) else userdb_path
+        if userdb_path_obj.exists():
+            try:
+                userdb_lines = [
+                    line.strip()
+                    for line in userdb_path_obj.read_text().splitlines()
+                    if line.strip() and not line.startswith("#")
+                ]
+                info["userdb_entries"] = userdb_lines
+                info["userdb_path"] = str(userdb_path_obj)
+                break
+            except Exception as e:
+                print(f"[!] Failed to read {userdb_path}: {e}")
 
     return info

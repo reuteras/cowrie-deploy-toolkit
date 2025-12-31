@@ -16,28 +16,158 @@
 </div>
 
 {% for hp in honeypots %}
-<div class="dashboard-card" style="margin-bottom: 20px;">
-    <h2>🍯 {{ hp.name }}</h2>
-    <table class="data-table">
-        <tbody>
-            <tr>
-                <td style="font-weight: 600; width: 200px;">Server IP</td>
-                <td><code>{{ hp.server_ip or "N/A" }}</code></td>
-            </tr>
-            <tr>
-                <td style="font-weight: 600;">Hostname</td>
-                <td><code>{{ hp.honeypot_hostname or "N/A" }}</code></td>
-            </tr>
-            <tr>
-                <td style="font-weight: 600;">Cowrie Version</td>
-                <td><code>{{ hp.cowrie_version }}</code></td>
-            </tr>
-            <tr>
-                <td style="font-weight: 600;">Container Built</td>
-                <td><code>{{ hp.build_date or "Unknown" }}</code></td>
-            </tr>
-        </tbody>
-    </table>
+<div style="margin-bottom: 40px; padding: 20px; border: 2px solid var(--border-color); border-radius: 8px;">
+    <h2 style="margin-top: 0; color: var(--primary-color);">🍯 {{ hp.name }}</h2>
+
+    <!-- Basic Information -->
+    <div class="dashboard-card" style="margin-bottom: 20px;">
+        <h3>Basic Information</h3>
+        <table class="data-table">
+            <tbody>
+                <tr>
+                    <td style="font-weight: 600; width: 200px;">Server IP</td>
+                    <td><code>{{ hp.server_ip or "N/A" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Hostname</td>
+                    <td><code>{{ hp.honeypot_hostname or "N/A" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Cowrie Version</td>
+                    <td><code>{{ hp.cowrie_version or "Unknown" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Container Built</td>
+                    <td><code>{{ hp.build_date or "Unknown" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Operating System</td>
+                    <td><code>{{ hp.os_release or "Unknown" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Debian Version</td>
+                    <td><code>{{ hp.debian_version or "Unknown" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Kernel</td>
+                    <td><code style="font-size: 0.85em;">{{ hp.kernel or "Unknown" }}</code></td>
+                </tr>
+                <tr>
+                    <td style="font-weight: 600;">Architecture</td>
+                    <td><code>{{ hp.arch or "Unknown" }}</code></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- SSH Configuration -->
+    <div class="dashboard-card" style="margin-bottom: 20px;">
+        <h3>SSH Server Configuration</h3>
+
+        <h4 style="margin-top: 20px; margin-bottom: 10px; font-size: 1em; color: var(--text-secondary);">SSH Banner</h4>
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; font-family: 'Courier New', monospace; font-size: 0.9em;">
+            {{ hp.ssh_banner or "Not captured" }}
+        </div>
+
+        <h4 style="margin-top: 20px; margin-bottom: 10px; font-size: 1em; color: var(--text-secondary);">Supported Ciphers ({{ hp.ssh_ciphers|length }})</h4>
+        {% if hp.ssh_ciphers %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; max-height: 300px; overflow-y: auto;">
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                {% for cipher in hp.ssh_ciphers %}
+                <span style="padding: 4px 8px; background: var(--bg-tertiary); border-radius: 3px; font-size: 0.85em; font-family: 'Courier New', monospace;">{{ cipher }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; color: var(--text-secondary); font-size: 0.9em;">
+            No cipher data captured
+        </div>
+        {% endif %}
+
+        <h4 style="margin-top: 20px; margin-bottom: 10px; font-size: 1em; color: var(--text-secondary);">MAC Algorithms ({{ hp.ssh_macs|length }})</h4>
+        {% if hp.ssh_macs %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                {% for mac in hp.ssh_macs %}
+                <span style="padding: 4px 8px; background: var(--bg-tertiary); border-radius: 3px; font-size: 0.85em; font-family: 'Courier New', monospace;">{{ mac }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; color: var(--text-secondary); font-size: 0.9em;">
+            No MAC data captured
+        </div>
+        {% endif %}
+
+        <h4 style="margin-top: 20px; margin-bottom: 10px; font-size: 1em; color: var(--text-secondary);">Key Exchange Algorithms ({{ hp.ssh_kex|length }})</h4>
+        {% if hp.ssh_kex %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; max-height: 300px; overflow-y: auto;">
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                {% for kex in hp.ssh_kex %}
+                <span style="padding: 4px 8px; background: var(--bg-tertiary); border-radius: 3px; font-size: 0.85em; font-family: 'Courier New', monospace;">{{ kex }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; color: var(--text-secondary); font-size: 0.9em;">
+            No KEX data captured
+        </div>
+        {% endif %}
+
+        <h4 style="margin-top: 20px; margin-bottom: 10px; font-size: 1em; color: var(--text-secondary);">Host Key Types ({{ hp.ssh_keys|length }})</h4>
+        {% if hp.ssh_keys %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                {% for key in hp.ssh_keys %}
+                <span style="padding: 4px 8px; background: var(--bg-tertiary); border-radius: 3px; font-size: 0.85em; font-family: 'Courier New', monospace;">{{ key }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div style="padding: 10px; background: var(--bg-secondary); border-radius: 4px; color: var(--text-secondary); font-size: 0.9em;">
+            No key type data captured
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- User Database (userdb.txt) -->
+    {% if hp.userdb_entries %}
+    <div class="dashboard-card">
+        <h3>👥 Authentication Database (userdb.txt)</h3>
+        <p style="color: var(--text-secondary); margin-bottom: 15px;">
+            Configured username/password combinations accepted by the honeypot.
+            {% if hp.userdb_path %}
+            <br><code style="font-size: 0.85em;">{{ hp.userdb_path }}</code>
+            {% endif %}
+        </p>
+        <div style="background: var(--bg-secondary); border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto;">
+            <table class="data-table" style="font-size: 0.9em;">
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">#</th>
+                        <th>Username</th>
+                        <th>Password</th>
+                        <th>UID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in hp.userdb_entries %}
+                    {% set parts = entry.split(':') %}
+                    <tr>
+                        <td style="color: var(--text-secondary);">{{ loop.index }}</td>
+                        <td><code style="color: #4CAF50; font-weight: 600;">{{ parts[0] if parts|length > 0 else '' }}</code></td>
+                        <td><code style="color: #FF9800;">{{ parts[2] if parts|length > 2 else '' }}</code></td>
+                        <td><code style="color: var(--text-secondary);">{{ parts[1] if parts|length > 1 else '' }}</code></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p style="margin-top: 10px; font-size: 0.85em; color: var(--text-secondary);">
+            Total entries: <strong>{{ hp.userdb_entries|length }}</strong>
+        </p>
+    </div>
+    {% endif %}
 </div>
 {% endfor %}
 
