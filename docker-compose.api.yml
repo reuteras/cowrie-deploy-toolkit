@@ -12,6 +12,7 @@ services:
       # Read-only access to Cowrie data
       - cowrie-var:/cowrie-data:ro
       - /opt/cowrie/var:/opt-cowrie-data:ro
+      - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
       - /var/lib/GeoIP:/geoip:ro
     environment:
       # Cowrie data paths
