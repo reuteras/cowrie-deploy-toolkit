@@ -130,6 +130,15 @@
     <!-- Commands -->
     <div class="detail-card full-width">
         <h2>Commands Executed ({{ session.commands | length }})</h2>
+        {% if session.tty_log %}
+        <p style="background: #e7f3ff; padding: 10px; border-left: 4px solid #2196F3; margin-bottom: 15px; font-size: 0.9em;">
+            <strong>💡 Note:</strong> Command output is captured in the TTY recording. Use the player below to see the full session with output.
+        </p>
+        {% else %}
+        <p style="background: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; margin-bottom: 15px; font-size: 0.9em;">
+            <strong>ℹ️ Note:</strong> This session has no TTY recording. Command output is not available.
+        </p>
+        {% endif %}
         <!-- Debug: Show what events we have -->
         {% if events %}
         <details style="margin-bottom: 10px; font-size: 0.9em;">
@@ -155,35 +164,6 @@ Event {{ loop.index }}: {{ event.eventid }}
                     <span class="prompt">root@{{ session.src_ip.replace('.', '-') }}:~# </span>
                     <span class="command-input">{{ cmd.command or cmd.input }}</span>
                 </div>
-                {% if events %}
-                    {% set output_found = [] %}
-                    {% for event in events %}
-                        {# Check for command success with output #}
-                        {% if event.eventid == 'cowrie.command.success' and event.input == (cmd.command or cmd.input) %}
-                            {% if event.output %}
-                            <div class="command-output">
-                                <pre>{{ event.output }}</pre>
-                            </div>
-                            {% set _ = output_found.append(1) %}
-                            {% endif %}
-                        {# Also check for cowrie.log.open (TTY output) #}
-                        {% elif event.eventid == 'cowrie.log.open' %}
-                            {# TTY logs contain the output but it's in a separate file #}
-                        {# Check for direct output in command.input event #}
-                        {% elif event.eventid == 'cowrie.command.input' and event.input == (cmd.command or cmd.input) %}
-                            {% if event.message %}
-                            <div class="command-output">
-                                <pre>{{ event.message }}</pre>
-                            </div>
-                            {% set _ = output_found.append(1) %}
-                            {% endif %}
-                        {% endif %}
-                    {% endfor %}
-                    {# Debug: Show if no output was found #}
-                    {% if output_found|length == 0 %}
-                    <!-- No output event found for this command -->
-                    {% endif %}
-                {% endif %}
             </div>
             {% endfor %}
         </div>
