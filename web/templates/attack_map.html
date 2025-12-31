@@ -802,9 +802,17 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // Get target honeypot name
+        const targetHoneypot = attack._targetHoneypot || honeypotLocations[attack._source];
+        const targetName = targetHoneypot ? targetHoneypot.name : (attack._source || 'local');
+
         entry.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                <strong style="color: var(--accent-color);"><a href="/session/${attack.sessionId}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a></strong>
+                <strong style="color: var(--accent-color);">
+                    <a href="/session/${attack.sessionId}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a>
+                    <span style="color: var(--text-secondary); font-weight: normal;"> → </span>
+                    <span style="color: #28a745;">🍯 ${targetName}</span>
+                </strong>
                 ${statusBadge}
             </div>
             <div style="color: var(--text-secondary); font-size: 0.9em;">
@@ -1560,6 +1568,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const typingIndicator = session.commandCount > 0 ? ' ⌨️' : '';
         const expandIcon = session.isExpanded ? '▼' : '▶';
 
+        // Get target honeypot name (for live mode, use first available honeypot)
+        const firstHoneypot = Object.values(honeypotLocations)[0];
+        const targetName = firstHoneypot ? firstHoneypot.name : 'local';
+
         // Build command display
         let commandDisplay = '';
         if (session.commandCount > 0 && !session.isExpanded) {
@@ -1580,6 +1592,8 @@ document.addEventListener('DOMContentLoaded', function() {
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                 <strong style="color: var(--accent-color);">
                     ${expandIcon} <a href="/session/${attack.sessionId}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a>${typingIndicator}
+                    <span style="color: var(--text-secondary); font-weight: normal;"> → </span>
+                    <span style="color: #28a745;">🍯 ${targetName}</span>
                 </strong>
                 ${statusBadge}
             </div>
