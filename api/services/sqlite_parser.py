@@ -491,17 +491,21 @@ class SQLiteStatsParser:
                     "events": self._get_session_events(session_id),
                 }
 
-                # Get TTY log
+                # Get ALL TTY logs for this session
                 cursor.execute(
-                    "SELECT ttylog FROM ttylog WHERE session = ? LIMIT 1",
+                    "SELECT ttylog, size FROM ttylog WHERE session = ? ORDER BY id",
                     (session_id,)
                 )
-                tty_row = cursor.fetchone()
-                if tty_row:
-                    session["tty_log"] = tty_row["ttylog"]
-                    session["has_tty"] = True
+                tty_rows = cursor.fetchall()
+                if tty_rows:
+                    # Set tty_logs (plural) as list of all TTY log files
+                    session["tty_logs"] = [row["ttylog"] for row in tty_rows if row["size"] > 0]
+                    # Also set tty_log (singular) for backwards compatibility
+                    session["tty_log"] = tty_rows[0]["ttylog"] if tty_rows else None
+                    session["has_tty"] = len(session["tty_logs"]) > 0
                 else:
                     session["tty_log"] = None
+                    session["tty_logs"] = []
                     session["has_tty"] = False
 
                 # Get authentication data
@@ -630,14 +634,18 @@ class SQLiteStatsParser:
                 "events": self._get_session_events(row["session_id"]),
             }
 
-            # Get TTY log
-            cursor.execute("SELECT ttylog FROM ttylog WHERE session = ? LIMIT 1", (session_id,))
-            tty_row = cursor.fetchone()
-            if tty_row:
-                session["tty_log"] = tty_row["ttylog"]
-                session["has_tty"] = True
+            # Get ALL TTY logs for this session
+            cursor.execute("SELECT ttylog, size FROM ttylog WHERE session = ? ORDER BY id", (session_id,))
+            tty_rows = cursor.fetchall()
+            if tty_rows:
+                # Set tty_logs (plural) as list of all TTY log files
+                session["tty_logs"] = [row["ttylog"] for row in tty_rows if row["size"] > 0]
+                # Also set tty_log (singular) for backwards compatibility
+                session["tty_log"] = tty_rows[0]["ttylog"] if tty_rows else None
+                session["has_tty"] = len(session["tty_logs"]) > 0
             else:
                 session["tty_log"] = None
+                session["tty_logs"] = []
                 session["has_tty"] = False
 
             # Get authentication data
