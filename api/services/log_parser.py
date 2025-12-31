@@ -131,10 +131,12 @@ class CowrieLogParser:
 
                         # Handle commands
                         elif event.get("eventid") == "cowrie.command.input":
+                            cmd_input = event.get("input")
                             sessions[session_id]["commands"].append(
                                 {
                                     "timestamp": event.get("timestamp"),
-                                    "input": event.get("input"),
+                                    "input": cmd_input,
+                                    "command": cmd_input,  # Add for dashboard compatibility
                                 }
                             )
 
@@ -163,7 +165,15 @@ class CowrieLogParser:
         for _session_id, session in sessions.items():
             session["commands_count"] = len(session["commands"])
             session["downloads_count"] = len(session["downloads"])
-            session["has_tty"] = any(e.get("eventid") == "cowrie.log.open" for e in session["events"])
+
+            # Check for TTY recordings and extract filename
+            tty_events = [e for e in session["events"] if e.get("eventid") == "cowrie.log.open"]
+            session["has_tty"] = len(tty_events) > 0
+            if tty_events:
+                # Get the TTY log filename from the first tty event
+                session["tty_log"] = tty_events[0].get("ttylog")
+            else:
+                session["tty_log"] = None
 
             # Calculate duration
             if session.get("start_time") and session.get("end_time"):
