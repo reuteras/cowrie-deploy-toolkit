@@ -8,6 +8,14 @@
         <h1>Commands Executed</h1>
         <div class="filters">
             <form method="get" class="filter-form">
+                {% if available_sources %}
+                <select name="source" onchange="this.form.submit()">
+                    <option value="" {% if not source_filter %}selected{% endif %}>All Honeypots</option>
+                    {% for source_name in available_sources %}
+                    <option value="{{ source_name }}" {% if source_filter == source_name %}selected{% endif %}>{{ source_name }}</option>
+                    {% endfor %}
+                </select>
+                {% endif %}
                 <select name="hours" onchange="this.form.submit()">
                     <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
                     <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>

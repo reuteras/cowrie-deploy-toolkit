@@ -266,6 +266,36 @@ class MultiSourceDataSource:
 
         return sessions_dict
 
+    def get_all_commands(self, hours: int = 168, source_filter: Optional[str] = None) -> list:
+        """
+        Get a flat list of all commands from all sessions.
+
+        Args:
+            hours: Time range in hours
+            source_filter: Filter by specific source (None = all sources)
+
+        Returns:
+            List of command dicts with timestamp, command, src_ip, session_id, and _source
+        """
+        sessions = self.parse_all(hours=hours, source_filter=source_filter)
+        all_commands = []
+
+        for session in sessions.values():
+            if session.get("commands"):
+                for cmd in session["commands"]:
+                    all_commands.append(
+                        {
+                            "timestamp": cmd.get("timestamp"),
+                            "command": cmd.get("command"),
+                            "src_ip": session.get("src_ip"),
+                            "session_id": session.get("id"),
+                            "_source": session.get("_source", "local"),
+                        }
+                    )
+
+        # Sort by timestamp, most recent first
+        return sorted(all_commands, key=lambda x: x.get("timestamp", ""), reverse=True)
+
     def get_session(self, session_id: str, source_name: Optional[str] = None) -> Optional[dict]:
         """
         Get a specific session by ID.

@@ -1403,8 +1403,14 @@ def sessions():
     hours = request.args.get("hours", 168, type=int)
     page = request.args.get("page", 1, type=int)
     per_page = 50
+    source_filter = request.args.get("source", "")
 
-    all_sessions = session_parser.parse_all(hours=hours)
+    # Get available sources for multi-honeypot mode
+    available_sources = []
+    if hasattr(session_parser, "sources"):
+        available_sources = list(session_parser.sources.keys())
+
+    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
 
     # Sort by start time (most recent first)
     sorted_sessions = sorted(all_sessions.values(), key=lambda x: x["start_time"] or "", reverse=True)
@@ -1451,6 +1457,8 @@ def sessions():
         per_page=per_page,
         total=total,
         hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
         ip_filter=ip_filter,
         country_filter=country_filter,
         credentials_filter=credentials_filter,
@@ -1868,7 +1876,14 @@ def system_info():
 def downloads():
     """Downloaded files listing page."""
     hours = request.args.get("hours", 168, type=int)
-    all_sessions = session_parser.parse_all(hours=hours)
+    source_filter = request.args.get("source", "")
+
+    # Get available sources for multi-honeypot mode
+    available_sources = []
+    if hasattr(session_parser, "sources"):
+        available_sources = list(session_parser.sources.keys())
+
+    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
 
     # Collect all downloads
     all_downloads = []
@@ -1920,7 +1935,14 @@ def downloads():
 
     downloads_list = sorted(unique_downloads.values(), key=lambda x: x["timestamp"], reverse=True)
 
-    return render_template("downloads.html", downloads=downloads_list, hours=hours, config=CONFIG)
+    return render_template(
+        "downloads.html",
+        downloads=downloads_list,
+        hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
+        config=CONFIG,
+    )
 
 
 @app.route("/download/<shasum>.zip")
@@ -2090,7 +2112,14 @@ def commands():
     """Commands listing page."""
     hours = request.args.get("hours", 168, type=int)
     unique_only = request.args.get("unique", "")
-    all_commands = session_parser.get_all_commands(hours=hours)
+    source_filter = request.args.get("source", "")
+
+    # Get available sources for multi-honeypot mode
+    available_sources = []
+    if hasattr(session_parser, "sources"):
+        available_sources = list(session_parser.sources.keys())
+
+    all_commands = session_parser.get_all_commands(hours=hours, source_filter=source_filter)
 
     # Filter to unique commands if requested
     if unique_only == "1":
@@ -2102,14 +2131,29 @@ def commands():
                 unique_commands.append(cmd)
         all_commands = unique_commands
 
-    return render_template("commands.html", commands=all_commands, hours=hours, unique=unique_only, config=CONFIG)
+    return render_template(
+        "commands.html",
+        commands=all_commands,
+        hours=hours,
+        unique=unique_only,
+        source_filter=source_filter,
+        available_sources=available_sources,
+        config=CONFIG,
+    )
 
 
 @app.route("/ips")
 def ip_list():
     """IP address listing page."""
     hours = request.args.get("hours", 168, type=int)
-    stats = session_parser.get_stats(hours=hours)
+    source_filter = request.args.get("source", "")
+
+    # Get available sources for multi-honeypot mode
+    available_sources = []
+    if hasattr(session_parser, "sources"):
+        available_sources = list(session_parser.sources.keys())
+
+    stats = session_parser.get_stats(hours=hours, source_filter=source_filter)
 
     # Get filter parameters
     asn_filter = request.args.get("asn", "")
@@ -2131,6 +2175,8 @@ def ip_list():
         "ips.html",
         ips=filtered_ips,
         hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
         asn_filter=asn_filter,
         country_filter=country_filter,
         city_filter=city_filter,
@@ -2142,9 +2188,15 @@ def ip_list():
 def countries():
     """All countries listing page."""
     hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
+
+    # Get available sources for multi-honeypot mode
+    available_sources = []
+    if hasattr(session_parser, "sources"):
+        available_sources = list(session_parser.sources.keys())
 
     # Get all countries (not just top 10)
-    sessions = session_parser.parse_all(hours=hours)
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
     country_counter = Counter()
     for session in sessions.values():
         if session.get("src_ip"):
@@ -2153,16 +2205,29 @@ def countries():
 
     all_countries = country_counter.most_common()
 
-    return render_template("countries.html", countries=all_countries, hours=hours, config=CONFIG)
+    return render_template(
+        "countries.html",
+        countries=all_countries,
+        hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
+        config=CONFIG,
+    )
 
 
 @app.route("/credentials")
 def credentials():
     """All credentials listing page."""
     hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
+
+    # Get available sources for multi-honeypot mode
+    available_sources = []
+    if hasattr(session_parser, "sources"):
+        available_sources = list(session_parser.sources.keys())
 
     # Get all credentials (not just top 10)
-    sessions = session_parser.parse_all(hours=hours)
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
     credential_counter = Counter()
     successful_credentials = set()
     for session in sessions.values():
@@ -2179,6 +2244,8 @@ def credentials():
         credentials=all_credentials,
         successful_credentials=successful_credentials,
         hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
         config=CONFIG,
     )
 
@@ -2187,9 +2254,15 @@ def credentials():
 def clients():
     """All SSH clients listing page."""
     hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
+
+    # Get available sources for multi-honeypot mode
+    available_sources = []
+    if hasattr(session_parser, "sources"):
+        available_sources = list(session_parser.sources.keys())
 
     # Get all client versions (not just top 10)
-    sessions = session_parser.parse_all(hours=hours)
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
     client_version_counter = Counter()
     for session in sessions.values():
         if session.get("client_version"):
@@ -2197,16 +2270,29 @@ def clients():
 
     all_clients = client_version_counter.most_common()
 
-    return render_template("clients.html", clients=all_clients, hours=hours, config=CONFIG)
+    return render_template(
+        "clients.html",
+        clients=all_clients,
+        hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
+        config=CONFIG,
+    )
 
 
 @app.route("/asns")
 def asns():
     """All ASNs listing page."""
     hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
+
+    # Get available sources for multi-honeypot mode
+    available_sources = []
+    if hasattr(session_parser, "sources"):
+        available_sources = list(session_parser.sources.keys())
 
     # Get all ASNs (not just top 10)
-    sessions = session_parser.parse_all(hours=hours)
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
     asn_counter = Counter()
     asn_details = {}
     for session in sessions.values():
@@ -2232,7 +2318,14 @@ def asns():
             }
         )
 
-    return render_template("asns.html", asns=all_asns, hours=hours, config=CONFIG)
+    return render_template(
+        "asns.html",
+        asns=all_asns,
+        hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
+        config=CONFIG,
+    )
 
 
 @app.route("/webhook/canary", methods=["POST"])

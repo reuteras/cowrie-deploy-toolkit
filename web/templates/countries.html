@@ -8,13 +8,31 @@
         <h1>All Attacking Countries</h1>
         <div class="header-actions">
             <div class="time-filter">
+                {% if available_sources %}
+                <label>Source:</label>
+                <select id="source-filter" onchange="updateFilters()">
+                    <option value="" {% if not source_filter %}selected{% endif %}>All Honeypots</option>
+                    {% for source_name in available_sources %}
+                    <option value="{{ source_name }}" {% if source_filter == source_name %}selected{% endif %}>{{ source_name }}</option>
+                    {% endfor %}
+                </select>
+                {% endif %}
                 <label>Time range:</label>
-                <select onchange="window.location.href='?hours=' + this.value">
+                <select id="hours-filter" onchange="updateFilters()">
                     <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
                     <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
                     <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
                     <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
                 </select>
+                <script>
+                function updateFilters() {
+                    const source = document.getElementById('source-filter') ? document.getElementById('source-filter').value : '';
+                    const hours = document.getElementById('hours-filter').value;
+                    let url = '?hours=' + hours;
+                    if (source) url += '&source=' + encodeURIComponent(source);
+                    window.location.href = url;
+                }
+                </script>
             </div>
             <a href="{{ url_for('index', hours=hours) }}" class="btn">Back to Dashboard</a>
         </div>
