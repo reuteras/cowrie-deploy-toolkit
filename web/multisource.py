@@ -264,9 +264,12 @@ class MultiSourceDataSource:
         Returns:
             Dict of sessions keyed by session ID
         """
-        # API has max limit of 1000 sessions per request
-        # For most use cases, this is sufficient for the time window
-        result = self.get_sessions(hours=hours, limit=1000, offset=0, source_filter=source_filter)
+        # Use higher limit for parse_all since it's meant to get "all" sessions
+        # In multi-source mode, this means: limit per source * number of sources
+        num_sources = len(self.sources) if not source_filter else 1
+        total_limit = 2000 * num_sources  # Allow 2000 sessions per source
+
+        result = self.get_sessions(hours=hours, limit=total_limit, offset=0, source_filter=source_filter)
 
         print(f"[MultiSource] parse_all: got {len(result.get('sessions', []))} sessions from get_sessions")
 
@@ -290,6 +293,21 @@ class MultiSourceDataSource:
 
         if skipped > 0:
             print(f"[MultiSource] WARNING: Skipped {skipped} sessions without 'id' or 'session_id' field")
+
+        # Enrich sessions with GeoIP data if missing
+        # Import here to avoid circular imports
+        from app import global_geoip
+
+        enriched_count = 0
+        for session_id, session in sessions_dict.items():
+            if not session.get("geo") and session.get("src_ip"):
+                geo_data = global_geoip.lookup(session["src_ip"])
+                if geo_data:
+                    session["geo"] = geo_data
+                    enriched_count += 1
+
+        if enriched_count > 0:
+            print(f"[MultiSource] Enriched {enriched_count} sessions with GeoIP data")
 
         print(f"[MultiSource] parse_all: returning {len(sessions_dict)} sessions")
         return sessions_dict
