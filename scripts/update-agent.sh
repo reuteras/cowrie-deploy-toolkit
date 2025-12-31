@@ -238,26 +238,26 @@ update_scripts() {
     else
         log_success "Scripts updated: ${old_commit:0:10} -> ${new_commit:0:10}"
 
-        # Install or restart event indexer service
-        if [ -f "${COWRIE_DIR}/scripts/cowrie-event-indexer.service" ]; then
-            if ! systemctl is-enabled --quiet cowrie-event-indexer.service 2>/dev/null; then
-                log_info "Installing event indexer service..."
-                cp "${COWRIE_DIR}/scripts/cowrie-event-indexer.service" /etc/systemd/system/
-                chmod +x "${COWRIE_DIR}/scripts/event-indexer.py"
-                systemctl daemon-reload
-                systemctl enable cowrie-event-indexer.service
-                systemctl start cowrie-event-indexer.service
-                log_success "Event indexer service installed and started"
-            elif systemctl is-active --quiet cowrie-event-indexer.service 2>/dev/null; then
-                log_info "Restarting event indexer service..."
-                systemctl restart cowrie-event-indexer.service
-            fi
-        fi
-
         # Restart systemd services if they exist
         if systemctl is-active --quiet yara-scanner.service 2>/dev/null; then
             log_info "Restarting YARA scanner service..."
             systemctl restart yara-scanner.service
+        fi
+    fi
+
+    # Install or restart event indexer service (runs regardless of git status)
+    if [ -f "${COWRIE_DIR}/scripts/cowrie-event-indexer.service" ]; then
+        if ! systemctl is-enabled --quiet cowrie-event-indexer.service 2>/dev/null; then
+            log_info "Installing event indexer service..."
+            cp "${COWRIE_DIR}/scripts/cowrie-event-indexer.service" /etc/systemd/system/
+            chmod +x "${COWRIE_DIR}/scripts/event-indexer.py"
+            systemctl daemon-reload
+            systemctl enable cowrie-event-indexer.service
+            systemctl start cowrie-event-indexer.service
+            log_success "Event indexer service installed and started"
+        elif systemctl is-active --quiet cowrie-event-indexer.service 2>/dev/null; then
+            log_info "Restarting event indexer service..."
+            systemctl restart cowrie-event-indexer.service
         fi
     fi
 
