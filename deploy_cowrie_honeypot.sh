@@ -777,6 +777,20 @@ mkdir -p /opt/cowrie/etc /opt/cowrie/var/lib/cowrie/downloads /opt/cowrie/var/lo
 chown -R 999:999 /opt/cowrie/var
 EOF
 
+# Create deployment config file with honeypot metadata
+echo_info "Creating deployment config file..."
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << DEPLOYEOF
+cat > /opt/cowrie/deployment.conf << 'CONFEOF'
+# Cowrie Honeypot Deployment Configuration
+# This file is auto-generated during deployment
+# DO NOT EDIT - will be overwritten on updates
+
+HONEYPOT_HOSTNAME="$HONEYPOT_HOSTNAME"
+SERVER_IP="$SERVER_IP"
+DEPLOYMENT_DATE="$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+CONFEOF
+DEPLOYEOF
+
 # Upload fs.pickle to share directory (bind mounted)
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
     "$FS_PICKLE" "root@$SERVER_IP:/opt/cowrie/share/cowrie/fs.pickle" > /dev/null

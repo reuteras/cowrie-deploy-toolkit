@@ -313,18 +313,30 @@ update_api() {
 
     cd "${COWRIE_DIR}"
 
-    # Replace placeholders in docker-compose.api.yml with actual values from docker-compose.yml
-    # Extract SERVER_IP and HONEYPOT_HOSTNAME from the main docker-compose.yml
+    # Replace placeholders in docker-compose.api.yml with actual values from deployment config
+    # Extract SERVER_IP and HONEYPOT_HOSTNAME from deployment.conf
     local server_ip honeypot_hostname
-    log_info "Configuring API container with current SERVER_IP..."
-    server_ip=$(grep "out_addr = " etc/cowrie.cfg | head -1 | sed 's/.*out_addr = //' | sed 's/ *#.*//')
-    log_info "Configuring API container with current HONEYPOT_HOSTNAME..."
-    honeypot_hostname=$(grep "HONEYPOT_HOSTNAME=" docker-compose.yml | head -1 | sed 's/.*HONEYPOT_HOSTNAME=//' | sed 's/ *#.*//')
+    log_info "Configuring API container with current SERVER_IP and HONEYPOT_HOSTNAME..."
+
+    # Try to read from deployment.conf first (new method, works for all honeypots)
+    if [ -f "deployment.conf" ]; then
+        # shellcheck disable=SC1091
+        source deployment.conf
+        server_ip="${SERVER_IP}"
+        honeypot_hostname="${HONEYPOT_HOSTNAME}"
+    else
+        # Fallback to old method for backwards compatibility
+        server_ip=$(grep "out_addr = " etc/cowrie.cfg | head -1 | sed 's/.*out_addr = //' | sed 's/ *#.*//')
+        honeypot_hostname=$(grep "HONEYPOT_HOSTNAME=" docker-compose.yml 2>/dev/null | head -1 | sed 's/.*HONEYPOT_HOSTNAME=//' | sed 's/ *#.*//')
+    fi
 
     log_info "Using SERVER_IP: ${server_ip}"
+    log_info "Using HONEYPOT_HOSTNAME: ${honeypot_hostname}"
     if [ -n "$server_ip" ] && [ -n "$honeypot_hostname" ]; then
         sed -i "s|SERVER_IP_PLACEHOLDER|$server_ip|g" docker-compose.api.yml
         sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$honeypot_hostname|g" docker-compose.api.yml
+    else
+        log_warning "Could not determine SERVER_IP or HONEYPOT_HOSTNAME"
     fi
 
     # Get current image ID
