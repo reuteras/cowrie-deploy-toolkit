@@ -1019,26 +1019,13 @@ class TTYLogParser:
         width = 120
         height = 30
 
-        # Create prompt string (e.g., "root@dmz-web01:~# ")
-        prompt = f"{username}@{hostname}:~# "
-
-        # Match TTY logs with commands by timestamp
-        # Sort both by timestamp for correlation
+        # Sort TTY logs by timestamp for proper chronological order
         sorted_ttys = sorted(tty_logs, key=lambda x: x.get("timestamp", ""))
-        sorted_cmds = sorted(commands, key=lambda x: x.get("timestamp", ""))
 
-        for i, tty_entry in enumerate(sorted_ttys):
-            # Add prompt before command
-            merged_stdout.append([total_duration, prompt])
-
-            # Get corresponding command if available
-            if i < len(sorted_cmds):
-                cmd_text = sorted_cmds[i].get("command", "")
-                # Echo the command (what user typed) with a newline
-                merged_stdout.append([total_duration, cmd_text + "\r\n"])
-                total_duration += 0.05
-
-            # Parse and add the TTY log output
+        # Simply concatenate all TTY logs in order
+        # Don't inject prompts/commands - they're already in the TTY logs from TYPE_OUTPUT
+        # TYPE_OUTPUT contains everything shown on terminal: prompts, echoed commands, output
+        for tty_entry in sorted_ttys:
             tty_log_name = tty_entry.get("ttylog")
             if tty_log_name:
                 asciicast = self.parse_tty_log(tty_log_name)
@@ -1047,13 +1034,11 @@ class TTYLogParser:
                     width = max(width, asciicast.get("width", 120))
                     height = max(height, asciicast.get("height", 30))
 
-                    # Add the command output with timing from original TTY file
-                    # Scale timing slightly to make it more readable
+                    # Add all events from this TTY log
+                    # Don't modify the data - asciinema player handles it correctly
                     for event in asciicast.get("stdout", []):
-                        # Scale the timing by 1.5x to slow down fast output
-                        scaled_time = event[0] * 1.5
-                        merged_stdout.append([scaled_time, event[1].replace("\n", "\r\n")])
-                        total_duration += scaled_time
+                        merged_stdout.append([event[0], event[1]])
+                        total_duration += event[0]
 
         print(
             f"[DEBUG] merge_tty_logs: Created asciicast with {len(merged_stdout)} events, duration={total_duration:.2f}s"
