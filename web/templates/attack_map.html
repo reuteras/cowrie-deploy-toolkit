@@ -14,7 +14,16 @@
     <div class="page-header">
         <h1>🎯 Live Attack Visualization</h1>
         <div class="header-actions">
-            <select id="hours-selector" onchange="window.location.href='?hours='+this.value" disabled>
+            {% if available_sources %}
+            <label>Source:</label>
+            <select id="source-filter" onchange="updateFilters()">
+                <option value="" {% if not source_filter %}selected{% endif %}>All Honeypots</option>
+                {% for source_name in available_sources %}
+                <option value="{{ source_name }}" {% if source_filter == source_name %}selected{% endif %}>{{ source_name }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+            <select id="hours-selector" onchange="updateFilters()" disabled>
                 <option value="1" {% if hours == 1 %}selected{% endif %}>Last Hour</option>
                 <option value="6" {% if hours == 6 %}selected{% endif %}>Last 6 Hours</option>
                 <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 Hours</option>
@@ -43,10 +52,16 @@
                 <div style="font-size: 1.5em; font-weight: 600; color: #ffc107;" id="high-volume-count">0</div>
             </div>
             <div>
-                <div style="font-size: 0.9em; color: var(--text-secondary);">Honeypot Location</div>
+                <div style="font-size: 0.9em; color: var(--text-secondary);">Honeypot{{ 's' if honeypot_locations|length > 1 else '' }}</div>
                 <div style="font-size: 1.2em; font-weight: 600;">
-                    {% if honeypot_location %}
-                    {{ honeypot_location.city }}, {{ honeypot_location.country }}
+                    {% if honeypot_locations|length > 0 %}
+                        {% if honeypot_locations|length == 1 %}
+                            {% for hp in honeypot_locations.values() %}
+                            {{ hp.name }}
+                            {% endfor %}
+                        {% else %}
+                            {{ honeypot_locations|length }} locations
+                        {% endif %}
                     {% else %}
                     Unknown
                     {% endif %}
@@ -292,19 +307,48 @@
 </style>
 
 <script>
+// Update filters and reload page
+function updateFilters() {
+    const source = document.getElementById('source-filter') ? document.getElementById('source-filter').value : '';
+    const hours = document.getElementById('hours-selector').value;
+
+    // Build URL with both parameters
+    let url = '?hours=' + hours;
+    if (source) {
+        url += '&source=' + encodeURIComponent(source);
+    }
+
+    window.location.href = url;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const honeypotLocation = {{ honeypot_location | tojson }};
+    const honeypotLocations = {{ honeypot_locations | tojson }};
     const attacks = {{ attacks | tojson }};
 
-    if (!honeypotLocation) {
+    // Check if we have at least one honeypot location
+    if (Object.keys(honeypotLocations).length === 0 && !honeypotLocation) {
         document.getElementById('attack-map').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary);">Honeypot location not available. Please configure SERVER_IP in deployment.</div>';
         return;
     }
 
-    // Initialize map centered on honeypot with explicit options to prevent jumping
+    // Calculate map center - use first honeypot or fall back to default location
+    let mapCenter = [20, 0];  // Default world center
+    let mapZoom = 2;
+
+    const honeypotLocationsList = Object.values(honeypotLocations);
+    if (honeypotLocationsList.length > 0) {
+        // If multiple honeypots, calculate average center
+        const avgLat = honeypotLocationsList.reduce((sum, hp) => sum + hp.lat, 0) / honeypotLocationsList.length;
+        const avgLon = honeypotLocationsList.reduce((sum, hp) => sum + hp.lon, 0) / honeypotLocationsList.length;
+        mapCenter = [avgLat, avgLon];
+        mapZoom = honeypotLocationsList.length === 1 ? 3 : 2;
+    }
+
+    // Initialize map centered appropriately
     const map = L.map('attack-map', {
-        center: [honeypotLocation.lat, honeypotLocation.lon],
-        zoom: 3,
+        center: mapCenter,
+        zoom: mapZoom,
         zoomControl: true,
         preferCanvas: true,  // Use canvas for better performance
         worldCopyJump: false,  // Prevent world wrapping jumps
@@ -325,7 +369,8 @@ document.addEventListener('DOMContentLoaded', function() {
         keepBuffer: 2
     }).addTo(map);
 
-    // Add honeypot marker - simple and static, never moves
+    // Add honeypot markers - one for each honeypot
+    const honeypotMarkers = {};
     const honeypotIcon = L.divIcon({
         className: '',  // No custom class that might interfere
         html: '<div class="honeypot-marker-icon" style="font-size: 32px; text-shadow: 0 0 10px rgba(255, 193, 7, 0.8); display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">🎯</div>',
@@ -333,15 +378,20 @@ document.addEventListener('DOMContentLoaded', function() {
         iconAnchor: [20, 20]  // This centers the icon on the coordinate
     });
 
-    const honeypotMarker = L.marker([honeypotLocation.lat, honeypotLocation.lon], {
-        icon: honeypotIcon,
-        zIndexOffset: 1000
-    }).addTo(map);
+    for (const [sourceName, hp] of Object.entries(honeypotLocations)) {
+        const marker = L.marker([hp.lat, hp.lon], {
+            icon: honeypotIcon,
+            zIndexOffset: 1000
+        }).addTo(map);
 
-    honeypotMarker.bindPopup(`
-        <strong>🎯 Honeypot</strong><br>
-        ${honeypotLocation.city}, ${honeypotLocation.country}
-    `);
+        marker.bindPopup(`
+            <strong>🎯 ${hp.name}</strong><br>
+            ${hp.city}, ${hp.country}<br>
+            <small style="color: var(--text-secondary);">Source: ${sourceName}</small>
+        `);
+
+        honeypotMarkers[sourceName] = marker;
+    }
 
     // Aggregate attacks by IP to determine line thickness
     const ipAttackCounts = {};
@@ -401,12 +451,16 @@ document.addEventListener('DOMContentLoaded', function() {
             isHighVolume = false;
         }
 
+        // Get target honeypot location
+        const targetSource = attack._source || 'local';
+        const targetHoneypot = honeypotLocations[targetSource];
+
         return {
             lat: attack.lat,
             lon: attack.lon,
             from: [attack.lat, attack.lon],
-            to: [honeypotLocation.lat, honeypotLocation.lon],
-            labels: [`${attack.city}, ${attack.country}`, `${honeypotLocation.city}, ${honeypotLocation.country}`],
+            to: targetHoneypot ? [targetHoneypot.lat, targetHoneypot.lon] : [mapCenter[0], mapCenter[1]],
+            labels: [`${attack.city}, ${attack.country}`, targetHoneypot ? `${targetHoneypot.city}, ${targetHoneypot.country}` : ''],
             color: attack.login_success ? '#28a745' : '#dc3545',
             value: 1,
             sessionId: attack.session_id,
@@ -422,7 +476,9 @@ document.addEventListener('DOMContentLoaded', function() {
             lineWidth: lineWidth,
             glowIntensity: glowIntensity,
             asn: ipDetails[attack.ip]?.asn,  // ASN number
-            asn_org: ipDetails[attack.ip]?.asn_org  // ASN organization
+            asn_org: ipDetails[attack.ip]?.asn_org,  // ASN organization
+            _source: targetSource,  // Source honeypot
+            _targetHoneypot: targetHoneypot  // Target honeypot object
         };
     });
 
@@ -516,6 +572,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function addImpactExplosion(attack) {
+        // Get target honeypot location
+        const targetHoneypot = attack._targetHoneypot || honeypotLocations[attack._source];
+        if (!targetHoneypot) return;
+
         // Create dramatic impact explosion at honeypot location (scaled to new thresholds)
         let explosionSize;
         if (attack.attackCount >= 40) {
@@ -545,14 +605,15 @@ document.addEventListener('DOMContentLoaded', function() {
             iconAnchor: [explosionSize / 2, explosionSize / 2]
         });
 
-        const explosionMarker = L.marker([honeypotLocation.lat, honeypotLocation.lon], {
+        const explosionMarker = L.marker([targetHoneypot.lat, targetHoneypot.lon], {
             icon: explosionIcon,
             zIndexOffset: 999
         }).addTo(map);
 
         // Flash the honeypot marker on impact
-        if (honeypotMarker && honeypotMarker._icon) {
-            const iconDiv = honeypotMarker._icon.querySelector('.honeypot-marker-icon');
+        const targetMarker = honeypotMarkers[attack._source];
+        if (targetMarker && targetMarker._icon) {
+            const iconDiv = targetMarker._icon.querySelector('.honeypot-marker-icon');
             if (iconDiv) {
                 iconDiv.style.animation = 'honeypot-flash 0.6s ease-out';
                 setTimeout(() => {
@@ -568,10 +629,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function addAttackArc(attack) {
+        // Get target honeypot location
+        const targetHoneypot = attack._targetHoneypot || honeypotLocations[attack._source];
+        if (!targetHoneypot) return null;
+
         // Calculate curved path points
         const arcPoints = calculateArcPoints(
             [attack.lat, attack.lon],
-            [honeypotLocation.lat, honeypotLocation.lon]
+            [targetHoneypot.lat, targetHoneypot.lon]
         );
 
         // Determine visual properties based on attack volume
@@ -1004,10 +1069,14 @@ document.addEventListener('DOMContentLoaded', function() {
             color: '#ffc107'  // Golden/amber color for canary tokens
         };
 
+        // Get first available honeypot location (canary tokens don't have source attribution in live mode)
+        const firstHoneypot = Object.values(honeypotLocations)[0];
+        if (!firstHoneypot) return;
+
         // Calculate curved path
         const arcPoints = calculateArcPoints(
             [data.lat, data.lon],
-            [honeypotLocation.lat, honeypotLocation.lon]
+            [firstHoneypot.lat, firstHoneypot.lon]
         );
 
         // Create distinctive arc for canary token
@@ -1242,10 +1311,14 @@ document.addEventListener('DOMContentLoaded', function() {
             color: '#dc3545'
         };
 
+        // Get first available honeypot location (live connections don't have source attribution yet)
+        const firstHoneypot = Object.values(honeypotLocations)[0];
+        if (!firstHoneypot) return;
+
         // Calculate curved path
         const arcPoints = calculateArcPoints(
             [data.lat, data.lon],
-            [honeypotLocation.lat, honeypotLocation.lon]
+            [firstHoneypot.lat, firstHoneypot.lon]
         );
 
         // Create arc

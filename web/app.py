@@ -1309,19 +1309,57 @@ def index():
 def attack_map_page():
     """Attack visualization map page."""
     hours = request.args.get("hours", 24, type=int)
-    sessions = session_parser.parse_all(hours=hours)
+    source_filter = request.args.get("source", "")
 
-    # Get honeypot location from server IP (use global GeoIP instance)
+    # Get sessions with source filter
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
+
+    # Get available sources for multi-honeypot mode
+    available_sources = []
+    honeypot_locations = {}  # Map of source -> location
+
+    if hasattr(session_parser, "sources"):
+        # Multi-source mode
+        available_sources = list(session_parser.sources.keys())
+
+        # Get location for each honeypot
+        for source_name in available_sources:
+            try:
+                source = session_parser.sources[source_name]
+                api_url = source.datasource.api_base_url
+                response = requests.get(f"{api_url}/api/v1/system-info", timeout=5)
+                if response.ok:
+                    info = response.json()
+                    server_ip = info.get("server_ip")
+                    honeypot_hostname = info.get("honeypot_hostname", source_name)
+                    if server_ip:
+                        honeypot_geo = global_geoip.lookup(server_ip)
+                        if "latitude" in honeypot_geo and "longitude" in honeypot_geo:
+                            honeypot_locations[source_name] = {
+                                "name": honeypot_hostname,
+                                "lat": honeypot_geo["latitude"],
+                                "lon": honeypot_geo["longitude"],
+                                "city": honeypot_geo.get("city", "-"),
+                                "country": honeypot_geo.get("country", "-"),
+                            }
+            except Exception as e:
+                app.logger.warning(f"Failed to get location for {source_name}: {e}")
+
+    # Get local honeypot location for single-source or local mode
     honeypot_location = None
     if CONFIG["server_ip"]:
         honeypot_geo = global_geoip.lookup(CONFIG["server_ip"])
         if "latitude" in honeypot_geo and "longitude" in honeypot_geo:
             honeypot_location = {
+                "name": CONFIG.get("honeypot_hostname", "local"),
                 "lat": honeypot_geo["latitude"],
                 "lon": honeypot_geo["longitude"],
                 "city": honeypot_geo.get("city", "-"),
                 "country": honeypot_geo.get("country", "-"),
             }
+            # Add to honeypot_locations if not multi-source
+            if not honeypot_locations:
+                honeypot_locations["local"] = honeypot_location
 
     # Collect attack data with timestamps for animation
     attacks = []
@@ -1329,26 +1367,33 @@ def attack_map_page():
         if session.get("src_ip") and session.get("geo"):
             geo = session["geo"]
             if "latitude" in geo and "longitude" in geo:
-                attacks.append(
-                    {
-                        "session_id": session["id"],
-                        "ip": session["src_ip"],
-                        "lat": geo["latitude"],
-                        "lon": geo["longitude"],
-                        "city": geo.get("city", "-"),
-                        "country": geo.get("country", "-"),
-                        "timestamp": session.get("start_time", ""),
-                        "username": session.get("username", ""),
-                        "password": session.get("password", ""),
-                        "login_success": session.get("login_success", False),
-                    }
-                )
+                attack = {
+                    "session_id": session["id"],
+                    "ip": session["src_ip"],
+                    "lat": geo["latitude"],
+                    "lon": geo["longitude"],
+                    "city": geo.get("city", "-"),
+                    "country": geo.get("country", "-"),
+                    "timestamp": session.get("start_time", ""),
+                    "username": session.get("username", ""),
+                    "password": session.get("password", ""),
+                    "login_success": session.get("login_success", False),
+                    "_source": session.get("_source", "local"),  # Track which honeypot
+                }
+                attacks.append(attack)
 
     # Sort by timestamp
     attacks.sort(key=lambda x: x["timestamp"])
 
     return render_template(
-        "attack_map.html", attacks=attacks, honeypot_location=honeypot_location, hours=hours, config=CONFIG
+        "attack_map.html",
+        attacks=attacks,
+        honeypot_location=honeypot_location,
+        honeypot_locations=honeypot_locations,
+        hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
+        config=CONFIG,
     )
 
 
