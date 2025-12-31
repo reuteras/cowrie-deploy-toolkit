@@ -921,12 +921,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function connectEventSource() {
         // Check if we're in multi-source mode
         const availableSources = {{ available_sources | tojson }};
-        if (availableSources && availableSources.length > 0) {
-            console.log('[SSE] Live mode not available in multi-honeypot deployment');
-            document.getElementById('mode-indicator').innerHTML =
-                '<span style="color: #ffc107;">ℹ️ Live Mode: Not available in multi-honeypot mode</span>';
-            return;
-        }
+        const isMultiSource = availableSources && availableSources.length > 0;
 
         // Close existing connection if any
         if (eventSource) {
@@ -941,8 +936,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         try {
-            // Create new EventSource connection
-            eventSource = new EventSource('/api/attack-stream');
+            // Create new EventSource connection - use multi-source endpoint if available
+            const streamEndpoint = isMultiSource ? '/api/attack-stream-multi' : '/api/attack-stream';
+            console.log(`[SSE] Connecting to ${streamEndpoint}`);
+            eventSource = new EventSource(streamEndpoint);
 
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
@@ -1109,17 +1106,22 @@ document.addEventListener('DOMContentLoaded', function() {
             isHighVolume: true,  // Canary tokens are always high priority
             lineWidth: 8,  // Thicker line for canary tokens
             glowIntensity: 25,  // High glow
-            color: '#ffc107'  // Golden/amber color for canary tokens
+            color: '#ffc107',  // Golden/amber color for canary tokens
+            _source: data._source || 'canary'  // Store source
         };
 
-        // Get first available honeypot location (canary tokens don't have source attribution in live mode)
-        const firstHoneypot = Object.values(honeypotLocations)[0];
-        if (!firstHoneypot) return;
+        // Get target honeypot location based on source (or first available if no source)
+        const targetSource = data._source || Object.keys(honeypotLocations)[0] || 'local';
+        const targetHoneypot = honeypotLocations[targetSource];
+        if (!targetHoneypot) {
+            console.warn(`[Canary] No location found for source: ${targetSource}`);
+            return;
+        }
 
         // Calculate curved path
         const arcPoints = calculateArcPoints(
             [data.lat, data.lon],
-            [firstHoneypot.lat, firstHoneypot.lon]
+            [targetHoneypot.lat, targetHoneypot.lon]
         );
 
         // Create distinctive arc for canary token
@@ -1351,17 +1353,22 @@ document.addEventListener('DOMContentLoaded', function() {
             isHighVolume: false,
             lineWidth: 3,
             glowIntensity: 8,
-            color: '#dc3545'
+            color: '#dc3545',
+            _source: data._source || 'local'  // Store source attribution
         };
 
-        // Get first available honeypot location (live connections don't have source attribution yet)
-        const firstHoneypot = Object.values(honeypotLocations)[0];
-        if (!firstHoneypot) return;
+        // Get target honeypot location based on source
+        const targetSource = data._source || Object.keys(honeypotLocations)[0] || 'local';
+        const targetHoneypot = honeypotLocations[targetSource];
+        if (!targetHoneypot) {
+            console.warn(`[Live] No location found for source: ${targetSource}`);
+            return;
+        }
 
         // Calculate curved path
         const arcPoints = calculateArcPoints(
             [data.lat, data.lon],
-            [firstHoneypot.lat, firstHoneypot.lon]
+            [targetHoneypot.lat, targetHoneypot.lon]
         );
 
         // Create arc
@@ -1378,9 +1385,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Bind popup
         arc.bindPopup(`
-            <strong>${data.city}, ${data.country}</strong><br>
+            <strong>${data.city}, ${data.country}</strong> → <strong style="color:#28a745;">🍯 ${targetHoneypot.name}</strong><br>
             IP: <a href="/sessions?ip=${data.ip}" target="_blank">${data.ip}</a><br>
-            Session: ${data.session_id}
+            Session: ${data.session_id}<br>
+            Source: ${targetSource}
         `);
 
         // Add explosion
@@ -1603,9 +1611,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const typingIndicator = session.commandCount > 0 ? ' ⌨️' : '';
         const expandIcon = session.isExpanded ? '▼' : '▶';
 
-        // Get target honeypot name (for live mode, use first available honeypot)
-        const firstHoneypot = Object.values(honeypotLocations)[0];
-        const targetName = firstHoneypot ? firstHoneypot.name : 'local';
+        // Get target honeypot name based on source attribution
+        const targetSource = attack._source || Object.keys(honeypotLocations)[0] || 'local';
+        const targetHoneypot = honeypotLocations[targetSource];
+        const targetName = targetHoneypot ? targetHoneypot.name : targetSource;
 
         // Build command display
         let commandDisplay = '';

@@ -2701,6 +2701,241 @@ def attack_stream():
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 
+@app.route("/api/attack-stream-multi")
+def attack_stream_multi():
+    """Server-Sent Events endpoint for multi-source real-time attack feed."""
+
+    def generate():
+        """Generate SSE events by polling multiple honeypot APIs."""
+        # Only enable in multi-source mode
+        if not hasattr(session_parser, "sources"):
+            yield f"data: {json.dumps({'event': 'error', 'message': 'Multi-source mode not enabled'})}\n\n"
+            return
+
+        import requests
+
+        # Track seen sessions per source: {source_name: {session_id: session_data}}
+        seen_sessions = {source_name: {} for source_name in session_parser.sources.keys()}
+        last_keepalive = time.time()
+        keepalive_interval = 30  # Send keepalive every 30 seconds
+        poll_interval = 2  # Poll each source every 2 seconds
+
+        print(f"[+] Multi-source SSE stream started for sources: {list(session_parser.sources.keys())}")
+
+        # Send initial connected message
+        yield f"data: {json.dumps({'event': 'connected', 'message': 'Multi-source live stream connected'})}\n\n"
+
+        try:
+            while True:
+                # Send keepalive comment to prevent timeout
+                if time.time() - last_keepalive > keepalive_interval:
+                    yield ": keepalive\n\n"
+                    last_keepalive = time.time()
+
+                # Check for canary token events (shared queue)
+                try:
+                    with canary_queue_lock:
+                        canary_event = canary_event_queue.get_nowait()
+
+                    print(f"[+] Multi-SSE: Got canary event from queue: {canary_event.get('token_name')}")
+
+                    # Send canary token trigger event (no source attribution for canary tokens)
+                    if (
+                        canary_event.get("geo")
+                        and "latitude" in canary_event["geo"]
+                        and "longitude" in canary_event["geo"]
+                    ):
+                        event_data = {
+                            "event": "canary_trigger",
+                            "id": canary_event.get("id"),
+                            "ip": canary_event.get("trigger_ip"),
+                            "lat": canary_event["geo"].get("latitude"),
+                            "lon": canary_event["geo"].get("longitude"),
+                            "city": canary_event["geo"].get("city", "-"),
+                            "country": canary_event["geo"].get("country", "-"),
+                            "asn": canary_event["geo"].get("asn"),
+                            "asn_org": canary_event["geo"].get("asn_org"),
+                            "timestamp": canary_event.get("timestamp"),
+                            "token_type": canary_event.get("token_type"),
+                            "token_name": canary_event.get("token_name"),
+                            "trigger_user_agent": canary_event.get("trigger_user_agent"),
+                            "trigger_location": canary_event.get("trigger_location"),
+                            "_source": "canary",  # Special source for canary tokens
+                        }
+                        yield f"data: {json.dumps(event_data)}\n\n"
+                except queue.Empty:
+                    pass  # No canary events, continue
+                except Exception as e:
+                    print(f"[!] Error processing canary event from queue: {e}")
+
+                # Poll each source for new sessions
+                for source_name, source in session_parser.sources.items():
+                    try:
+                        # Get sessions from last 5 minutes, sorted by start time (newest first)
+                        api_url = source.datasource.api_base_url
+                        response = requests.get(
+                            f"{api_url}/api/v1/sessions",
+                            params={"hours": 0.083, "limit": 50},  # Last 5 minutes, max 50 sessions
+                            timeout=3,
+                        )
+
+                        if not response.ok:
+                            continue
+
+                        result = response.json()
+                        sessions = result.get("sessions", [])
+
+                        # Process sessions in reverse order (oldest first) to maintain chronological order
+                        for session in reversed(sessions):
+                            session_id = session.get("session_id") or session.get("id")
+                            if not session_id:
+                                continue
+
+                            # Check if this is a new session
+                            if session_id not in seen_sessions[source_name]:
+                                # New session detected - send connect event
+                                src_ip = session.get("src_ip")
+                                if not src_ip:
+                                    continue
+
+                                # Get geo data (should already be enriched by API)
+                                geo = session.get("geo", {})
+                                if not geo or "latitude" not in geo:
+                                    # Fallback to local GeoIP lookup
+                                    geo = global_geoip.lookup(src_ip)
+
+                                # Initialize session tracking
+                                seen_sessions[source_name][session_id] = {
+                                    "src_ip": src_ip,
+                                    "geo": geo,
+                                    "start_time": session.get("start_time"),
+                                    "login_success": session.get("login_success", False),
+                                    "username": session.get("username"),
+                                    "password": session.get("password"),
+                                    "commands_seen": 0,
+                                    "end_time": session.get("end_time"),
+                                }
+
+                                # Send connect event
+                                event_data = {
+                                    "event": "connect",
+                                    "session_id": session_id,
+                                    "ip": src_ip,
+                                    "lat": geo.get("latitude"),
+                                    "lon": geo.get("longitude"),
+                                    "city": geo.get("city", "-"),
+                                    "country": geo.get("country", "-"),
+                                    "timestamp": session.get("start_time"),
+                                    "asn": geo.get("asn"),
+                                    "asn_org": geo.get("asn_org"),
+                                    "_source": source_name,  # Tag with source
+                                }
+                                yield f"data: {json.dumps(event_data)}\n\n"
+
+                                # If session already has credentials, send login event
+                                if session.get("username"):
+                                    login_event = "login_success" if session.get("login_success") else "login_failed"
+                                    event_data = {
+                                        "event": login_event,
+                                        "session_id": session_id,
+                                        "ip": src_ip,
+                                        "username": session.get("username"),
+                                        "password": session.get("password"),
+                                        "timestamp": session.get("start_time"),  # Use session start time as approximation
+                                        "_source": source_name,
+                                    }
+                                    yield f"data: {json.dumps(event_data)}\n\n"
+
+                                # Send command events for any commands
+                                commands = session.get("commands", [])
+                                for cmd in commands:
+                                    event_data = {
+                                        "event": "command_input",
+                                        "session_id": session_id,
+                                        "ip": src_ip,
+                                        "command": cmd.get("command", cmd.get("input", "")),
+                                        "timestamp": cmd.get("timestamp", session.get("start_time")),
+                                        "_source": source_name,
+                                    }
+                                    yield f"data: {json.dumps(event_data)}\n\n"
+                                    seen_sessions[source_name][session_id]["commands_seen"] += 1
+
+                                # Check if session is already closed
+                                if session.get("end_time"):
+                                    event_data = {
+                                        "event": "session_closed",
+                                        "session_id": session_id,
+                                        "ip": src_ip,
+                                        "login_success": session.get("login_success", False),
+                                        "timestamp": session.get("end_time"),
+                                        "_source": source_name,
+                                    }
+                                    yield f"data: {json.dumps(event_data)}\n\n"
+
+                            else:
+                                # Existing session - check for updates
+                                tracked = seen_sessions[source_name][session_id]
+
+                                # Check for new commands
+                                commands = session.get("commands", [])
+                                if len(commands) > tracked["commands_seen"]:
+                                    # Send new commands
+                                    for cmd in commands[tracked["commands_seen"] :]:
+                                        event_data = {
+                                            "event": "command_input",
+                                            "session_id": session_id,
+                                            "ip": tracked["src_ip"],
+                                            "command": cmd.get("command", cmd.get("input", "")),
+                                            "timestamp": cmd.get("timestamp", session.get("start_time")),
+                                            "_source": source_name,
+                                        }
+                                        yield f"data: {json.dumps(event_data)}\n\n"
+                                    tracked["commands_seen"] = len(commands)
+
+                                # Check for login success (if not already tracked)
+                                if session.get("login_success") and not tracked["login_success"]:
+                                    tracked["login_success"] = True
+                                    tracked["username"] = session.get("username")
+                                    tracked["password"] = session.get("password")
+
+                                    event_data = {
+                                        "event": "login_success",
+                                        "session_id": session_id,
+                                        "ip": tracked["src_ip"],
+                                        "username": session.get("username"),
+                                        "password": session.get("password"),
+                                        "timestamp": session.get("start_time"),  # Approximation
+                                        "_source": source_name,
+                                    }
+                                    yield f"data: {json.dumps(event_data)}\n\n"
+
+                                # Check for session closure
+                                if session.get("end_time") and not tracked.get("end_time"):
+                                    tracked["end_time"] = session.get("end_time")
+
+                                    event_data = {
+                                        "event": "session_closed",
+                                        "session_id": session_id,
+                                        "ip": tracked["src_ip"],
+                                        "login_success": tracked["login_success"],
+                                        "timestamp": session.get("end_time"),
+                                        "_source": source_name,
+                                    }
+                                    yield f"data: {json.dumps(event_data)}\n\n"
+
+                    except Exception as e:
+                        print(f"[!] Error polling source '{source_name}': {e}")
+                        # Continue with other sources
+
+                # Sleep before next poll
+                time.sleep(poll_interval)
+
+        except GeneratorExit:
+            print("[+] Multi-source SSE stream closed")
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+
+
 @app.template_filter("format_duration")
 def format_duration(seconds):
     """Format duration in seconds to human readable string."""
