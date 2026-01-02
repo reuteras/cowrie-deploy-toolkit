@@ -387,7 +387,7 @@ sync_filesystem() {
     # Sync fs.pickle
     if [ -f "${output_dir}/fs.pickle" ]; then
         log_info "  - Uploading fs.pickle..."
-        if ! scp_copy "${output_dir}/fs.pickle" "root@${ts_host}:/opt/cowrie/share/cowrie/" "${ssh_port}"; then
+        if ! scp_copy "${output_dir}/fs.pickle" "root@${ts_host}:/opt/cowrie/share/cowrie/" "${ssh_port}" > /dev/null 2>&1 ; then
             log_error "Failed to upload fs.pickle"
             return 1
         fi
@@ -456,7 +456,7 @@ sync_filesystem() {
 
     # Restart Cowrie container to pick up new filesystem
     log_info "Restarting Cowrie container..."
-    if ssh_exec "${ts_host}" "cd /opt/cowrie && docker compose restart cowrie" "${ssh_port}"; then
+    if ssh_exec "${ts_host}" "cd /opt/cowrie && docker compose restart cowrie > /dev/null 2>&1" "${ssh_port}"; then
         log_success "Cowrie container restarted"
     else
         log_error "Failed to restart Cowrie container"
