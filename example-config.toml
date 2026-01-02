@@ -21,7 +21,7 @@
 
 [shared.deployment]
 # Hetzner Cloud settings for all servers
-server_type = "cpx11"          # Server size: cpx11 (cheapest), cpx21, cpx31, etc.
+server_type = "cx23"
 
 # OS Version Configuration (NEW in v2.1)
 generation_image = "debian-13"   # OS to capture filesystem FROM (what attackers see)
