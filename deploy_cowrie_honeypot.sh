@@ -1111,6 +1111,10 @@ logfile = var/log/cowrie/cowrie.json
 enabled = true
 logfile = var/log/cowrie/cowrie.log
 
+[output_sqlite]
+enabled = true
+db_file = var/lib/cowrie/cowrie.db
+
 EOFCFG
 
 # Add VirusTotal configuration if API key is available
@@ -1266,6 +1270,16 @@ docker run --rm \
   -v cowrie-etc:/dest \
   -v /opt/cowrie/etc/userdb.txt:/src/userdb.txt:ro \
   alpine cp /src/userdb.txt /dest/ > /dev/null 2>&1
+
+# Create SQLite database
+echo "[remote] Creating SQLite database..."
+docker run --rm -i \
+  -v cowrie-var:/var \
+  alpine sh -c '
+    apk add --no-cache sqlite curl &&
+    mkdir -p /var/lib/cowrie &&
+    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db
+  ' > /dev/null 2>&1
 
 # Set proper ownership (UID 999 = cowrie user)
 docker run --rm \
