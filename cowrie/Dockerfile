@@ -16,9 +16,13 @@ COPY cowrie-core /tmp/cowrie-core
 # hadolint ignore=SC1088
 RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp/cowrie-plugins'); dest = Path('/cowrie/cowrie-git/src/cowrie/output'); files = list(src.glob('*.py')); [shutil.copy2(f, dest / f.name) for f in files]; print(f'Installed {len(files)} custom plugin(s)' if files else 'No custom plugins, using defaults'); shutil.rmtree(src)"]
 
-# Copy core files (excluding commands) if they exist (exec form - no shell at all)
+# Copy core files (excluding commands and special files) if they exist (exec form - no shell at all)
 # hadolint ignore=SC1088
-RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp/cowrie-core'); dest = Path('/cowrie/cowrie-git/src/cowrie/core'); files = [f for f in src.glob('*.py') if f.name != 'commands']; [shutil.copy2(f, dest / f.name) for f in files]; print(f'Installed {len(files)} custom file(s) for core' if files else 'No custom files for core, using defaults')"]
+RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp/cowrie-core'); dest = Path('/cowrie/cowrie-git/src/cowrie/core'); exclude = ['commands', 'fs_dynamic', 'server_dynamic']; files = [f for f in src.glob('*.py') if f.stem not in exclude]; [shutil.copy2(f, dest / f.name) for f in files]; print(f'Installed {len(files)} custom file(s) for core' if files else 'No custom files for core, using defaults')"]
+
+# Copy dynamic filesystem file if it exists (exec form - no shell at all)
+# hadolint ignore=SC1088
+RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp/cowrie-core'); dest = Path('/cowrie/cowrie-git/src/cowrie/shell'); dynamic_file = src / 'fs_dynamic.py'; installed = False; [shutil.copy2(dynamic_file, dest / 'fs_dynamic.py') or (installed := True)] if dynamic_file.exists() else None; print('Installed dynamic filesystem' if installed else 'No dynamic filesystem, using standard filesystem')"]
 
 # Copy command files if they exist (exec form - no shell at all)
 # hadolint ignore=SC1088
