@@ -16,9 +16,13 @@ COPY cowrie-core /tmp/cowrie-core
 # hadolint ignore=SC1088
 RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp/cowrie-plugins'); dest = Path('/cowrie/cowrie-git/src/cowrie/output'); files = list(src.glob('*.py')); [shutil.copy2(f, dest / f.name) for f in files]; print(f'Installed {len(files)} custom plugin(s)' if files else 'No custom plugins, using defaults'); shutil.rmtree(src)"]
 
-# Copy core file if they exist (exec form - no shell at all)
+# Copy core files (excluding commands) if they exist (exec form - no shell at all)
 # hadolint ignore=SC1088
-RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp/cowrie-core'); dest = Path('/cowrie/cowrie-git/src/cowrie/core'); files = list(src.glob('*.py')); [shutil.copy2(f, dest / f.name) for f in files]; print(f'Installed {len(files)} custom file(s) for core' if files else 'No custom files for core, using defaults'); shutil.rmtree(src)"]
+RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp/cowrie-core'); dest = Path('/cowrie/cowrie-git/src/cowrie/core'); files = [f for f in src.glob('*.py') if f.name != 'commands']; [shutil.copy2(f, dest / f.name) for f in files]; print(f'Installed {len(files)} custom file(s) for core' if files else 'No custom files for core, using defaults')"]
+
+# Copy command files if they exist (exec form - no shell at all)
+# hadolint ignore=SC1088
+RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp/cowrie-core/commands'); dest = Path('/cowrie/cowrie-git/src/cowrie/commands'); files = list(src.glob('*.py')); [shutil.copy2(f, dest / f.name) for f in files]; print(f'Installed {len(files)} custom command(s)' if files else 'No custom commands, using defaults'); shutil.rmtree('/tmp/cowrie-core')"]
 
 # Generate build metadata JSON file (exec form - no shell at all)
 # hadolint ignore=SC1088
