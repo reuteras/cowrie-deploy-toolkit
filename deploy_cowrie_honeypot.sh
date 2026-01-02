@@ -224,7 +224,7 @@ if [ ! -d "$IDENTITY_DIR" ]; then
 fi
 
 # Default deployment configuration
-SERVER_TYPE="cpx11"
+SERVER_TYPE="cx23"
 SERVER_IMAGE="debian-13"
 COWRIE_SSH_PORT="22"        # Cowrie listens on port 22
 REAL_SSH_PORT="2222"        # Move real SSH to 2222
@@ -300,7 +300,7 @@ execute_if_command() {
 }
 
 # Extract deployment configuration
-SERVER_TYPE=$(get_config "server_type" "cpx11")
+SERVER_TYPE=$(get_config "server_type" "cx23")
 SERVER_IMAGE=$(get_config "deployment_image" "debian-13")
 SERVER_LOCATION=$(get_config "location" "")
 HONEYPOT_HOSTNAME=$(get_config "hostname" "dmz-web01")
