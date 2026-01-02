@@ -500,7 +500,7 @@ class SessionParser:
 
     def get_threat_intel_for_ip(self, ip_address: str) -> dict:
         """Get threat intelligence data for a specific IP address."""
-        result = {"greynoise": None}
+        result = {}
 
         if not os.path.exists(self.log_path):
             return result
@@ -515,21 +515,7 @@ class SessionParser:
                     if src_ip != ip_address:
                         continue
 
-                    if event_id == "cowrie.greynoise.result":
-                        # Extract classification from message if available
-                        classification = entry.get("classification", "unknown")
-                        if not classification or classification == "unknown":
-                            message = entry.get("message", "")
-                            if "classification is malicious" in message.lower():
-                                classification = "malicious"
-                            elif "classification is benign" in message.lower():
-                                classification = "benign"
-
-                        result["greynoise"] = {
-                            "classification": classification,
-                            "message": entry.get("message", ""),
-                            "timestamp": entry["timestamp"],
-                        }
+                    # Future threat intelligence integrations can be added here
 
                 except (json.JSONDecodeError, KeyError):
                     continue
@@ -555,7 +541,6 @@ class SessionParser:
                 "top_commands": [],
                 "top_clients": [],
                 "top_asns": [],
-                "greynoise_ips": [],
                 "hourly_activity": [],
                 "vt_stats": {
                     "total_scanned": 0,
@@ -577,7 +562,6 @@ class SessionParser:
         client_version_counter = Counter()
         asn_counter = Counter()  # Track sessions by ASN
         asn_details = {}  # ASN -> {asn_org, asn_number}
-        greynoise_results = {}  # IP -> {classification, message, timestamp}
         sessions_with_cmds = 0
         total_downloads = 0
         unique_downloads = set()
@@ -654,54 +638,12 @@ class SessionParser:
                 except Exception:
                     pass
 
-        # Parse threat intelligence events (GreyNoise)
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
-        if os.path.exists(self.log_path):
-            with open(self.log_path) as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line.strip())
-                        timestamp = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
-
-                        if timestamp < cutoff_time:
-                            continue
-
-                        event_id = entry.get("eventid", "")
-                        src_ip = entry.get("src_ip")
-
-                        if event_id == "cowrie.greynoise.result" and src_ip:
-                            # Extract classification from message if available
-                            classification = entry.get("classification", "unknown")
-                            if not classification or classification == "unknown":
-                                # Try to parse from message
-                                message = entry.get("message", "")
-                                if "classification is malicious" in message.lower():
-                                    classification = "malicious"
-                                elif "classification is benign" in message.lower():
-                                    classification = "benign"
-
-                            greynoise_results[src_ip] = {
-                                "classification": classification,
-                                "message": entry.get("message", ""),
-                                "timestamp": entry["timestamp"],
-                            }
-
-                    except (json.JSONDecodeError, KeyError, ValueError):
-                        continue
-
         # Sort hourly activity
         sorted_hours = sorted(hourly_activity.items())
 
         # Sort IP details by session count
         sorted_ips = sorted(
             [{"ip": ip, **details} for ip, details in ip_details.items()], key=lambda x: x["count"], reverse=True
-        )
-
-        # Convert threat intelligence dicts to sorted lists
-        greynoise_list = sorted(
-            [{"ip": ip, **data} for ip, data in greynoise_results.items()],
-            key=lambda x: x["timestamp"],
-            reverse=True,
         )
 
         # Build top ASNs list with details
@@ -810,7 +752,6 @@ class SessionParser:
             "top_commands": command_counter.most_common(20),
             "top_clients": client_version_counter.most_common(10),
             "top_asns": top_asns,
-            "greynoise_ips": greynoise_list,
             "top_malicious_downloads": top_downloads,
             "vt_stats": vt_stats,
             "hourly_activity": sorted_hours[-48:],  # Last 48 hours
@@ -1220,10 +1161,10 @@ def health():
 def favicon():
     """Serve favicon to prevent 404 errors in browser console."""
     # Return SVG favicon with honey pot emoji
-    svg = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
         <text y=".9em" font-size="90">🍯</text>
-    </svg>'''
-    return Response(svg, mimetype='image/svg+xml')
+    </svg>"""
+    return Response(svg, mimetype="image/svg+xml")
 
 
 @app.route("/")
@@ -1464,7 +1405,9 @@ def sessions():
     if client_version_filter:
         sorted_sessions = [s for s in sorted_sessions if s.get("client_version") == client_version_filter]
     if command_filter:
-        sorted_sessions = [s for s in sorted_sessions if any(cmd["command"] == command_filter for cmd in s.get("commands", []))]
+        sorted_sessions = [
+            s for s in sorted_sessions if any(cmd["command"] == command_filter for cmd in s.get("commands", []))
+        ]
     if has_commands == "1":
         sorted_sessions = [s for s in sorted_sessions if s.get("commands")]
     if has_tty == "1":
@@ -1897,7 +1840,9 @@ def system_info():
                 }
             )
 
-    return render_template("system_info.html", system=system_data, canary_tokens=canary_tokens, multi_source=False, config=CONFIG)
+    return render_template(
+        "system_info.html", system=system_data, canary_tokens=canary_tokens, multi_source=False, config=CONFIG
+    )
 
 
 @app.route("/downloads")
@@ -2834,7 +2779,9 @@ def attack_stream_multi():
                                         "ip": src_ip,
                                         "username": session.get("username"),
                                         "password": session.get("password"),
-                                        "timestamp": session.get("start_time"),  # Use session start time as approximation
+                                        "timestamp": session.get(
+                                            "start_time"
+                                        ),  # Use session start time as approximation
                                         "_source": source_name,
                                     }
                                     yield f"data: {json.dumps(event_data)}\n\n"

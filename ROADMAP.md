@@ -92,7 +92,7 @@ The first milestone combines daily reporting with essential threat intelligence 
 
 Completed integrations:
 - [x] VirusTotal with extended threat intelligence (threat labels, categories, families)
-- [x] GreyNoise classification (benign scanner vs malicious)
+
 - [x] DShield (SANS ISC) data sharing
 - [x] MaxMind GeoIP with ASN enrichment
 - [x] YARA scanning with real-time daemon (YARA Forge ruleset)

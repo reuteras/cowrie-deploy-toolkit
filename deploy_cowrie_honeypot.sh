@@ -473,16 +473,7 @@ if [ "$DSHIELD_ENABLED" = "true" ]; then
     echo_info "DShield data sharing enabled"
 fi
 
-GREYNOISE_ENABLED=$(get_config "greynoise_enabled" "false")
-GREYNOISE_API_KEY=""
-GREYNOISE_TAGS=$(get_config "greynoise_tags" "all")
-GREYNOISE_DEBUG=$(get_config "greynoise_debug" "false")
 
-if [ "$GREYNOISE_ENABLED" = "true" ]; then
-    GREYNOISE_API_KEY=$(get_config "greynoise_api_key" "")
-    GREYNOISE_API_KEY=$(execute_if_command "$GREYNOISE_API_KEY")
-    echo_info "GreyNoise threat intelligence enabled"
-fi
 
 echo_info "Configuration loaded successfully"
 
@@ -1165,23 +1156,7 @@ EOFDSHIELD
     echo_info "DShield data sharing enabled in cowrie.cfg"
 fi
 
-# Add GreyNoise configuration if enabled
-if [ "$GREYNOISE_ENABLED" = "true" ]; then
-    cat >> /tmp/cowrie.cfg << EOFGREYNOISE
 
-[output_greynoise]
-enabled = true
-debug = $GREYNOISE_DEBUG
-tags = $GREYNOISE_TAGS
-EOFGREYNOISE
-
-    # Add API key if provided
-    if [ -n "$GREYNOISE_API_KEY" ]; then
-        echo "api_key = $GREYNOISE_API_KEY" >> /tmp/cowrie.cfg
-    fi
-
-    echo_info "GreyNoise threat intelligence lookup enabled in cowrie.cfg"
-fi
 
 # Upload cowrie.cfg
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \

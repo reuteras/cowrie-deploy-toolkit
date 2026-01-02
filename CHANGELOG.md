@@ -127,7 +127,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Threat Intelligence Integration**:
   - AbuseIPDB: IP reputation with abuse confidence scores
   - DShield: SANS Internet Storm Center data sharing
-  - GreyNoise: Scanner and bot identification
+
   - ASN data with MaxMind GeoLite2-ASN
 
 - **Tailscale VPN** (Optional in v2.0):

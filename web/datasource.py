@@ -270,10 +270,12 @@ class DataSource:
             # Convert top_ips to ip_list format (list of dicts with "ip" key)
             ip_list = []
             for ip_data in api_data.get("top_ips", []):
-                ip_list.append({
-                    "ip": ip_data.get("ip", ""),
-                    "count": ip_data.get("count", 0),
-                })
+                ip_list.append(
+                    {
+                        "ip": ip_data.get("ip", ""),
+                        "count": ip_data.get("count", 0),
+                    }
+                )
 
             return {
                 "total_sessions": totals.get("total_sessions", 0),
@@ -289,7 +291,6 @@ class DataSource:
                 "top_commands": api_data.get("top_commands", []),
                 "top_clients": api_data.get("top_clients", []),  # Now enriched by API
                 "top_asns": api_data.get("top_asns", []),  # Now enriched by API
-                "greynoise_ips": [],  # GreyNoise enrichment not available
                 "hourly_activity": [],  # Not calculated in SQLite stats
                 "vt_stats": {
                     "total_scanned": 0,
@@ -314,7 +315,6 @@ class DataSource:
                 "top_commands": [],
                 "top_clients": [],
                 "top_asns": [],
-                "greynoise_ips": [],
                 "hourly_activity": [],
                 "vt_stats": {
                     "total_scanned": 0,
@@ -474,7 +474,7 @@ class DataSource:
             ip_address: IP address to lookup
 
         Returns:
-            Threat intelligence dict with GeoIP, GreyNoise, etc.
+            Threat intelligence dict with GeoIP and other sources.
         """
         if self.mode == "local":
             return self._get_threat_intel_local(ip_address)
@@ -488,13 +488,9 @@ class DataSource:
         result = {
             "ip": ip_address,
             "geo": global_geoip.lookup(ip_address),
-            "greynoise": None,
         }
 
-        # Get GreyNoise data from logs
-        threat_intel = session_parser.get_threat_intel_for_ip(ip_address)
-        if threat_intel.get("greynoise"):
-            result["greynoise"] = threat_intel["greynoise"]
+        # Future threat intelligence sources can be added here
 
         return result
 
@@ -512,7 +508,6 @@ class DataSource:
             return {
                 "ip": ip_address,
                 "geo": {"country": "-", "country_code": "XX", "city": "-"},
-                "greynoise": None,
             }
 
     def get_health(self) -> dict:
