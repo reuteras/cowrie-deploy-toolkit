@@ -224,7 +224,7 @@ if [ ! -d "$IDENTITY_DIR" ]; then
 fi
 
 # Default deployment configuration
-SERVER_TYPE="cpx11"
+SERVER_TYPE="cx23"
 SERVER_IMAGE="debian-13"
 COWRIE_SSH_PORT="22"        # Cowrie listens on port 22
 REAL_SSH_PORT="2222"        # Move real SSH to 2222
@@ -300,7 +300,7 @@ execute_if_command() {
 }
 
 # Extract deployment configuration
-SERVER_TYPE=$(get_config "server_type" "cpx11")
+SERVER_TYPE=$(get_config "server_type" "cx23")
 SERVER_IMAGE=$(get_config "deployment_image" "debian-13")
 SERVER_LOCATION=$(get_config "location" "")
 HONEYPOT_HOSTNAME=$(get_config "hostname" "dmz-web01")
@@ -473,16 +473,7 @@ if [ "$DSHIELD_ENABLED" = "true" ]; then
     echo_info "DShield data sharing enabled"
 fi
 
-GREYNOISE_ENABLED=$(get_config "greynoise_enabled" "false")
-GREYNOISE_API_KEY=""
-GREYNOISE_TAGS=$(get_config "greynoise_tags" "all")
-GREYNOISE_DEBUG=$(get_config "greynoise_debug" "false")
 
-if [ "$GREYNOISE_ENABLED" = "true" ]; then
-    GREYNOISE_API_KEY=$(get_config "greynoise_api_key" "")
-    GREYNOISE_API_KEY=$(execute_if_command "$GREYNOISE_API_KEY")
-    echo_info "GreyNoise threat intelligence enabled"
-fi
 
 echo_info "Configuration loaded successfully"
 
@@ -1111,6 +1102,10 @@ logfile = var/log/cowrie/cowrie.json
 enabled = true
 logfile = var/log/cowrie/cowrie.log
 
+[output_sqlite]
+enabled = true
+db_file = var/lib/cowrie/cowrie.db
+
 EOFCFG
 
 # Add VirusTotal configuration if API key is available
@@ -1161,23 +1156,7 @@ EOFDSHIELD
     echo_info "DShield data sharing enabled in cowrie.cfg"
 fi
 
-# Add GreyNoise configuration if enabled
-if [ "$GREYNOISE_ENABLED" = "true" ]; then
-    cat >> /tmp/cowrie.cfg << EOFGREYNOISE
 
-[output_greynoise]
-enabled = true
-debug = $GREYNOISE_DEBUG
-tags = $GREYNOISE_TAGS
-EOFGREYNOISE
-
-    # Add API key if provided
-    if [ -n "$GREYNOISE_API_KEY" ]; then
-        echo "api_key = $GREYNOISE_API_KEY" >> /tmp/cowrie.cfg
-    fi
-
-    echo_info "GreyNoise threat intelligence lookup enabled in cowrie.cfg"
-fi
 
 # Upload cowrie.cfg
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
@@ -1266,6 +1245,16 @@ docker run --rm \
   -v cowrie-etc:/dest \
   -v /opt/cowrie/etc/userdb.txt:/src/userdb.txt:ro \
   alpine cp /src/userdb.txt /dest/ > /dev/null 2>&1
+
+# Create SQLite database
+echo "[remote] Creating SQLite database..."
+docker run --rm -i \
+  -v cowrie-var:/var \
+  alpine sh -c '
+    apk add --no-cache sqlite curl &&
+    mkdir -p /var/lib/cowrie &&
+    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db
+  ' > /dev/null 2>&1
 
 # Set proper ownership (UID 999 = cowrie user)
 docker run --rm \

@@ -62,7 +62,9 @@ class HoneypotSource:
                     # Local source uses the local API endpoint
                     actual_api_url = "http://cowrie-api:8000"
                     actual_mode = "remote"  # Always use API-based access
-                    print(f"[MultiSource] Initialized source '{name}' ({source_type}) using local API at {actual_api_url}")
+                    print(
+                        f"[MultiSource] Initialized source '{name}' ({source_type}) using local API at {actual_api_url}"
+                    )
                 elif mode == "remote":
                     if not api_base_url:
                         raise ValueError(f"API base URL required for remote mode (source: {name})")
@@ -228,6 +230,7 @@ class MultiSourceDataSource:
                 except Exception as e:
                     print(f"[MultiSource] Error fetching sessions from '{source.name}': {e}")
                     import traceback
+
                     traceback.print_exc()
                     source_errors[source.name] = str(e)
                     self.backoff.record_failure(source.name)  # Record failure for backoff
@@ -673,7 +676,7 @@ class MultiSourceDataSource:
         """
         # TODO: Query sources for threat intel events
         # For now, return empty to avoid errors
-        return {"greynoise": None}
+        return {}
 
 
 def create_multisource_from_config(config_sources: list) -> Optional[MultiSourceDataSource]:

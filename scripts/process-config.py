@@ -118,12 +118,7 @@ def generate_env_file(config: dict) -> str:
             lines.append(f'export SMTP_PASSWORD="{e["smtp_password"]}"')
         if "smtp_tls" in e:
             lines.append(f'export SMTP_TLS="{"true" if e["smtp_tls"] else "false"}"')
-        if "sendgrid_api_key" in e:
-            lines.append(f'export SENDGRID_API_KEY="{e["sendgrid_api_key"]}"')
-        if "mailgun_api_key" in e:
-            lines.append(f'export MAILGUN_API_KEY="{e["mailgun_api_key"]}"')
-        if "mailgun_domain" in e:
-            lines.append(f'export MAILGUN_DOMAIN="{e["mailgun_domain"]}"')
+
         lines.append("")
 
     # Report settings

@@ -11,7 +11,7 @@ Deploy realistic [Cowrie](https://github.com/cowrie/cowrie) SSH honeypots on Het
 - **Automated deployment** - Single script deploys a production-ready honeypot
 - **Daily threat reports** - GeoIP (with ASN), VirusTotal, YARA scanning with automated email delivery
 - **Web dashboard** - Session playback with asciinema-player, live attack map, malware browser, system info
-- **Threat intelligence** - AbuseIPDB IP reputation, DShield data sharing, GreyNoise integration
+- **Threat intelligence** - AbuseIPDB IP reputation, DShield data sharing
 - **Canary tokens** - Optional honeytokens for immediate exfiltration alerts
 - **Tailscale VPN** - Zero-trust management access with optional public SSH blocking
 - **Security hardening** - Automatic updates, Docker isolation, capability dropping, read-only containers

@@ -58,7 +58,7 @@ This project deploys realistic Cowrie SSH honeypots on Hetzner Cloud infrastruct
 - GeoIP enrichment with MaxMind GeoLite2
 - VirusTotal malware analysis with threat labels
 - Real-time YARA scanning (~1000+ rules)
-- AbuseIPDB, DShield, GreyNoise integration
+- AbuseIPDB, DShield integration
 - Daily email reports with HTML/text formats
 
 ## Quick Start
@@ -466,18 +466,7 @@ dshield_userid = "YOUR_USERID"
 dshield_auth_key = "YOUR_KEY"
 ```
 
-### GreyNoise
 
-Identifies known scanners and mass internet scanners.
-
-```toml
-[data_sharing]
-greynoise_enabled = true
-greynoise_api_key = ""  # Optional
-```
-
-**Free tier:** 5,000 queries/month
-**Provides:** Classification (benign/malicious), actor tags
 
 ### ASN Data
 

@@ -54,7 +54,7 @@ class Config:
             "cache_db_path": os.getenv("CACHE_DB_PATH", "/opt/cowrie/var/report-cache.db"),
             "yara_cache_db_path": os.getenv("YARA_CACHE_DB_PATH", "/opt/cowrie/var/yara-cache.db"),
             # VirusTotal
-            "virustotal_api_key": os.getenv("VT_API_KEY"),
+            "virustotal_api_key": os.getenv("VT_API_KEY") or "",
             "virustotal_enabled": os.getenv("VT_ENABLED", "true").lower() == "true",
             # Email settings
             "email_enabled": os.getenv("EMAIL_ENABLED", "true").lower() == "true",
@@ -64,13 +64,9 @@ class Config:
             # SMTP settings
             "smtp_host": os.getenv("SMTP_HOST", "localhost"),
             "smtp_port": int(os.getenv("SMTP_PORT", "25")),
-            "smtp_user": os.getenv("SMTP_USER"),
-            "smtp_password": os.getenv("SMTP_PASSWORD"),
+            "smtp_user": os.getenv("SMTP_USER") or None,
+            "smtp_password": os.getenv("SMTP_PASSWORD") or None,
             "smtp_tls": os.getenv("SMTP_TLS", "false").lower() == "true",
-            # SendGrid/Mailgun API (alternative to SMTP)
-            "sendgrid_api_key": os.getenv("SENDGRID_API_KEY"),
-            "mailgun_api_key": os.getenv("MAILGUN_API_KEY"),
-            "mailgun_domain": os.getenv("MAILGUN_DOMAIN"),
             # Report settings
             "report_hours": int(os.getenv("REPORT_HOURS", "24")),
             "max_commands_per_session": int(os.getenv("MAX_COMMANDS_PER_SESSION", "20")),
@@ -206,12 +202,12 @@ class YARACache:
 
     def set_result(
         self,
-        sha256: str,
+        file_hash: str,
         matches: list[str],
-        rules_version: str = None,
-        file_type: str = None,
-        file_mime: str = None,
-        file_category: str = None,
+        rules_version: Optional[str] = None,
+        file_type: Optional[str] = None,
+        file_mime: Optional[str] = None,
+        file_category: Optional[str] = None,
     ):
         """Cache scan result with optional file type info."""
         conn = sqlite3.connect(self.db_path)
@@ -220,7 +216,7 @@ class YARACache:
                (sha256, matches, scan_timestamp, rules_version, file_type, file_mime, file_category)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
-                sha256,
+                file_hash,
                 json.dumps(matches),
                 int(datetime.now().timestamp()),
                 rules_version,
@@ -563,7 +559,7 @@ class YARAScanner:
             except Exception as e:
                 print(f"[!] Error loading YARA rules: {e}")
 
-    def scan_file(self, file_path: str, sha256: str = None) -> list[str]:
+    def scan_file(self, file_path: str, sha256: Optional[str] = None) -> list[str]:
         """Scan file and return matched rule names.
 
         Args:
@@ -610,8 +606,8 @@ class ReportGenerator:
         self.country_counts = country_counts
         self.file_analysis = file_analysis
         self.config = config
-        self.max_commands = config.get("max_commands_per_session", 20)
-        self.web_base_url = config.get("web_base_url", "").rstrip("/")
+        self.max_commands = config.get("max_commands_per_session") or 20
+        self.web_base_url = (config.get("web_base_url") or "").rstrip("/")
 
     def generate_text_report(self) -> str:
         """Generate plain text report."""
@@ -1094,31 +1090,22 @@ class EmailSender:
             print("[*] Email delivery disabled")
             return False
 
-        # Try SendGrid first
-        if self.config.get("sendgrid_api_key"):
-            return self._send_sendgrid(subject, text_body, html_body)
-
-        # Try Mailgun
-        elif self.config.get("mailgun_api_key"):
-            return self._send_mailgun(subject, text_body, html_body)
-
-        # Fall back to SMTP
-        else:
-            return self._send_smtp(subject, text_body, html_body)
+        # Use SMTP (Scaleway)
+        return self._send_smtp(subject, text_body, html_body)
 
     def _send_smtp(self, subject: str, text_body: str, html_body: str) -> bool:
         """Send via SMTP."""
         try:
             msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"{self.config.get('email_subject_prefix')} {subject}"
-            msg["From"] = self.config.get("email_from")
-            msg["To"] = self.config.get("email_to")
+            msg["Subject"] = f"{self.config.get('email_subject_prefix') or '[Honeypot]'} {subject}"
+            msg["From"] = self.config.get("email_from") or "honeypot@example.com"
+            msg["To"] = self.config.get("email_to") or "admin@example.com"
 
             msg.attach(MIMEText(text_body, "plain"))
             msg.attach(MIMEText(html_body, "html"))
 
-            smtp_host = self.config.get("smtp_host")
-            smtp_port = self.config.get("smtp_port")
+            smtp_host = self.config.get("smtp_host") or "localhost"
+            smtp_port = self.config.get("smtp_port") or 25
 
             if self.config.get("smtp_tls"):
                 server = smtplib.SMTP(smtp_host, smtp_port)
@@ -1126,8 +1113,10 @@ class EmailSender:
             else:
                 server = smtplib.SMTP(smtp_host, smtp_port)
 
-            if self.config.get("smtp_user"):
-                server.login(self.config.get("smtp_user"), self.config.get("smtp_password"))
+            smtp_user = self.config.get("smtp_user")
+            smtp_password = self.config.get("smtp_password")
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
 
             server.send_message(msg)
             server.quit()
@@ -1137,64 +1126,6 @@ class EmailSender:
 
         except Exception as e:
             print(f"[!] SMTP error: {e}")
-            return False
-
-    def _send_sendgrid(self, subject: str, text_body: str, html_body: str) -> bool:
-        """Send via SendGrid API."""
-        try:
-            url = "https://api.sendgrid.com/v3/mail/send"
-            headers = {
-                "Authorization": f"Bearer {self.config.get('sendgrid_api_key')}",
-                "Content-Type": "application/json",
-            }
-
-            data = {
-                "personalizations": [{"to": [{"email": self.config.get("email_to")}]}],
-                "from": {"email": self.config.get("email_from")},
-                "subject": f"{self.config.get('email_subject_prefix')} {subject}",
-                "content": [{"type": "text/plain", "value": text_body}, {"type": "text/html", "value": html_body}],
-            }
-
-            response = requests.post(url, headers=headers, json=data, timeout=10)
-
-            if response.status_code == 202:
-                print(f"[*] Email sent via SendGrid to {self.config.get('email_to')}")
-                return True
-            else:
-                print(f"[!] SendGrid error: {response.status_code}")
-                return False
-
-        except Exception as e:
-            print(f"[!] SendGrid error: {e}")
-            return False
-
-    def _send_mailgun(self, subject: str, text_body: str, html_body: str) -> bool:
-        """Send via Mailgun API."""
-        try:
-            url = f"https://api.mailgun.net/v3/{self.config.get('mailgun_domain')}/messages"
-
-            response = requests.post(
-                url,
-                auth=("api", self.config.get("mailgun_api_key")),
-                data={
-                    "from": self.config.get("email_from"),
-                    "to": self.config.get("email_to"),
-                    "subject": f"{self.config.get('email_subject_prefix')} {subject}",
-                    "text": text_body,
-                    "html": html_body,
-                },
-                timeout=10,
-            )
-
-            if response.status_code == 200:
-                print(f"[*] Email sent via Mailgun to {self.config.get('email_to')}")
-                return True
-            else:
-                print(f"[!] Mailgun error: {response.status_code}")
-                return False
-
-        except Exception as e:
-            print(f"[!] Mailgun error: {e}")
             return False
 
 
@@ -1214,22 +1145,28 @@ def main():
         config.config["report_hours"] = args.hours
 
     print("[*] Starting Cowrie daily report generator")
-    print(f"[*] Report period: last {config.get('report_hours')} hours")
+    report_hours = config.get("report_hours") or 24
+    print(f"[*] Report period: last {report_hours} hours")
 
     # Parse logs
-    parser = LogParser(config.get("log_path"), hours=config.get("report_hours"))
+    parser = LogParser(
+        config.get("log_path") or "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json", hours=report_hours
+    )
     stats = parser.parse()
 
     print(f"[*] Parsed {stats['total_connections']} connections from {stats['unique_ips']} unique IPs")
 
     # GeoIP enrichment
-    geo_enricher = GeoIPEnricher(config.get("geoip_db_path"), config.get("geoip_asn_path"))
+    geo_enricher = GeoIPEnricher(
+        config.get("geoip_db_path") or "/var/lib/GeoIP/GeoLite2-City.mmdb",
+        config.get("geoip_asn_path") or "/var/lib/GeoIP/GeoLite2-ASN.mmdb",
+    )
     geo_data, country_counts = geo_enricher.enrich_ip_list(stats["ip_list"])
     print(f"[*] Enriched {len(geo_data)} unique IPs with GeoIP data")
 
     # Analyze downloaded files
     file_analysis = []
-    cache = CacheDB(config.get("cache_db_path"))
+    cache = CacheDB(config.get("cache_db_path") or "/opt/cowrie/var/report-cache.db")
 
     if stats["unique_downloads"]:
         total_downloads = len(stats["downloads"])
@@ -1237,13 +1174,14 @@ def main():
         print(f"[*] Analyzing {unique_downloads} unique files ({total_downloads} total downloads)...")
 
         vt_scanner = None
-        if config.get("virustotal_enabled") and config.get("virustotal_api_key"):
-            vt_scanner = VirusTotalScanner(config.get("virustotal_api_key"), cache)
+        vt_api_key = config.get("virustotal_api_key") or ""
+        if config.get("virustotal_enabled") and vt_api_key:
+            vt_scanner = VirusTotalScanner(vt_api_key, cache)
 
-        yara_cache = YARACache(config.get("yara_cache_db_path"))
-        yara_scanner = YARAScanner(config.get("yara_rules_path"), yara_cache)
+        yara_cache = YARACache(config.get("yara_cache_db_path") or "/opt/cowrie/var/yara-cache.db")
+        yara_scanner = YARAScanner(config.get("yara_rules_path") or "/opt/cowrie/yara-rules", yara_cache)
 
-        download_path = config.get("download_path")
+        download_path = config.get("download_path") or "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
 
         for sha256, download in stats["unique_downloads"].items():
             file_path = os.path.join(download_path, sha256) if download_path else None

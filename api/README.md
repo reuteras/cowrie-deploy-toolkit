@@ -262,11 +262,6 @@ Get threat intelligence for an IP address.
     "longitude": -74.0060,
     "asn": 15169,
     "asn_org": "Google LLC"
-  },
-  "greynoise": {
-    "classification": "malicious",
-    "message": "Known SSH scanner",
-    "timestamp": "2025-12-26T10:30:00Z"
   }
 }
 ```

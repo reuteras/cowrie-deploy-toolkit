@@ -208,43 +208,7 @@
             {% endif %}
         </div>
 
-        <!-- Threat Intelligence: GreyNoise -->
-        <div class="dashboard-card">
-            <h2>🔍 GreyNoise Intelligence <a href="{{ url_for('ip_list', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
-            {% if stats.greynoise_ips %}
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>IP Address</th>
-                        <th>Classification</th>
-                        <th>Last Seen</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for gn in stats.greynoise_ips[:10] %}
-                    <tr>
-                        <td><a href="{{ url_for('sessions', ip=gn.ip, **filter_params) }}">{{ gn.ip }}</a></td>
-                        <td>
-                            {% if gn.classification == 'malicious' %}
-                            <span class="badge badge-danger">Malicious</span>
-                            {% elif gn.classification == 'benign' %}
-                            <span class="badge badge-success">Benign</span>
-                            {% else %}
-                            <span class="badge badge-warning">Unknown</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ gn.timestamp | format_timestamp }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <p class="no-data">No GreyNoise data available</p>
-            <p style="font-size: 0.9em; color: var(--text-secondary); margin-top: 0.5rem;">
-                GreyNoise identifies IPs engaged in mass internet scanning.
-            </p>
-            {% endif %}
-        </div>
+
 
         <!-- Threat Intelligence: VirusTotal -->
         <div class="dashboard-card">

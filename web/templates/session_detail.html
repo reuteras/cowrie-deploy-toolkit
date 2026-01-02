@@ -51,20 +51,7 @@
                 <dt>Client Version</dt>
                 <dd><code>{{ session.client_version or 'Unknown' }}</code></dd>
 
-                {% if threat_intel.greynoise %}
-                <dt>GreyNoise</dt>
-                <dd>
-                    {% if threat_intel.greynoise.classification == 'malicious' %}
-                    <span class="badge badge-danger">Malicious</span>
-                    {% elif threat_intel.greynoise.classification == 'benign' %}
-                    <span class="badge badge-success">Benign</span>
-                    {% else %}
-                    <span class="badge badge-warning">Unknown</span>
-                    {% endif %}
-                    <br>
-                    <small style="color: var(--text-secondary);">{{ threat_intel.greynoise.message }}</small>
-                </dd>
-                {% endif %}
+
 
                 {% if threat_intel.abuseipdb %}
                 <dt>AbuseIPDB</dt>
@@ -311,11 +298,6 @@ Event {{ loop.index }}: {{ event.eventid }}
                     {% elif event.eventid == 'cowrie.session.closed' %}
                         <p><strong>Session closed</strong></p>
                         {% if event.duration %}<p>Duration: {{ event.duration | format_duration }}</p>{% endif %}
-
-                    {% elif event.eventid == 'cowrie.greynoise.result' %}
-                        <p><strong>🔍 GreyNoise Intelligence:</strong></p>
-                        <p>{{ event.message }}</p>
-                        {% if event.classification %}<p>Classification: <span class="badge badge-{{ 'danger' if event.classification == 'malicious' else 'warning' }}">{{ event.classification }}</span></p>{% endif %}
 
                     {% elif event.eventid == 'cowrie.abuseipdb.reportedip' %}
                         <p><strong>🔍 AbuseIPDB Intelligence:</strong></p>
