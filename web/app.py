@@ -509,7 +509,7 @@ class SessionParser:
             for line in f:
                 try:
                     entry = json.loads(line.strip())
-                    event_id = entry.get("eventid", "")
+                    entry.get("eventid", "")
                     src_ip = entry.get("src_ip")
 
                     if src_ip != ip_address:

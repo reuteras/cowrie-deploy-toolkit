@@ -483,7 +483,7 @@ class DataSource:
 
     def _get_threat_intel_local(self, ip_address: str) -> dict:
         """Get threat intel from local sources."""
-        from app import global_geoip, session_parser
+        from app import global_geoip
 
         result = {
             "ip": ip_address,
