@@ -91,7 +91,7 @@ class SQLiteStatsParser:
                 WHERE session = ?
                 ORDER BY timestamp
                 """,
-                (session_id,)
+                (session_id,),
             )
 
             events = []
@@ -362,18 +362,18 @@ class SQLiteStatsParser:
 
                 # Add to map locations if has coordinates
                 if geo["latitude"] and geo["longitude"]:
-                    ip_locations.append({
-                        "ip": ip,
-                        "lat": geo["latitude"],
-                        "lon": geo["longitude"],
-                        "city": geo["city"],
-                        "country": geo["country"],
-                    })
+                    ip_locations.append(
+                        {
+                            "ip": ip,
+                            "lat": geo["latitude"],
+                            "lon": geo["longitude"],
+                            "city": geo["city"],
+                            "country": geo["country"],
+                        }
+                    )
 
             # Format top countries
-            top_countries = [
-                {"country": country, "count": count} for country, count in country_counter.most_common(10)
-            ]
+            top_countries = [{"country": country, "count": count} for country, count in country_counter.most_common(10)]
 
             # Format top ASNs
             top_asns = []
@@ -492,17 +492,13 @@ class SQLiteStatsParser:
                 }
 
                 # Get ALL TTY logs for this session
-                cursor.execute(
-                    "SELECT id, ttylog, size FROM ttylog WHERE session = ? ORDER BY id",
-                    (session_id,)
-                )
+                cursor.execute("SELECT id, ttylog, size FROM ttylog WHERE session = ? ORDER BY id", (session_id,))
                 tty_rows = cursor.fetchall()
                 if tty_rows:
                     # Set tty_logs (plural) as list of dicts with ttylog and timestamp
                     # merge_tty_logs() expects: [{"ttylog": "...", "timestamp": "..."}, ...]
                     session["tty_logs"] = [
-                        {"ttylog": row["ttylog"], "timestamp": str(row["id"])}
-                        for row in tty_rows if row["size"] > 0
+                        {"ttylog": row["ttylog"], "timestamp": str(row["id"])} for row in tty_rows if row["size"] > 0
                     ]
                     # Also set tty_log (singular) for backwards compatibility
                     session["tty_log"] = tty_rows[0]["ttylog"] if tty_rows else None
@@ -521,7 +517,7 @@ class SQLiteStatsParser:
                     ORDER BY timestamp
                     LIMIT 1
                     """,
-                    (session_id,)
+                    (session_id,),
                 )
                 auth_row = cursor.fetchone()
                 if auth_row:
@@ -543,15 +539,17 @@ class SQLiteStatsParser:
                     WHERE session = ?
                     ORDER BY timestamp
                     """,
-                    (session_id,)
+                    (session_id,),
                 )
                 for cmd_row in cursor.fetchall():
-                    session["commands"].append({
-                        "timestamp": cmd_row["timestamp"],
-                        "input": cmd_row["input"],
-                        "command": cmd_row["input"],  # Add for compatibility
-                        "success": bool(cmd_row["success"]),
-                    })
+                    session["commands"].append(
+                        {
+                            "timestamp": cmd_row["timestamp"],
+                            "input": cmd_row["input"],
+                            "command": cmd_row["input"],  # Add for compatibility
+                            "success": bool(cmd_row["success"]),
+                        }
+                    )
 
                 # Get downloads
                 cursor.execute(
@@ -561,15 +559,17 @@ class SQLiteStatsParser:
                     WHERE session = ?
                     ORDER BY timestamp
                     """,
-                    (session_id,)
+                    (session_id,),
                 )
                 for dl_row in cursor.fetchall():
-                    session["downloads"].append({
-                        "timestamp": dl_row["timestamp"],
-                        "url": dl_row["url"],
-                        "outfile": dl_row["outfile"],
-                        "shasum": dl_row["shasum"],
-                    })
+                    session["downloads"].append(
+                        {
+                            "timestamp": dl_row["timestamp"],
+                            "url": dl_row["url"],
+                            "outfile": dl_row["outfile"],
+                            "shasum": dl_row["shasum"],
+                        }
+                    )
 
                 # Calculate duration
                 if session["start_time"] and session["end_time"]:
@@ -618,7 +618,7 @@ class SQLiteStatsParser:
                 LEFT JOIN clients c ON s.client = c.id
                 WHERE s.id = ?
                 """,
-                (session_id,)
+                (session_id,),
             )
             row = cursor.fetchone()
 
@@ -645,8 +645,7 @@ class SQLiteStatsParser:
                 # Set tty_logs (plural) as list of dicts with ttylog and timestamp
                 # merge_tty_logs() expects: [{"ttylog": "...", "timestamp": "..."}, ...]
                 session["tty_logs"] = [
-                    {"ttylog": row["ttylog"], "timestamp": str(row["id"])}
-                    for row in tty_rows if row["size"] > 0
+                    {"ttylog": row["ttylog"], "timestamp": str(row["id"])} for row in tty_rows if row["size"] > 0
                 ]
                 # Also set tty_log (singular) for backwards compatibility
                 session["tty_log"] = tty_rows[0]["ttylog"] if tty_rows else None
@@ -665,7 +664,7 @@ class SQLiteStatsParser:
                 ORDER BY timestamp
                 LIMIT 1
                 """,
-                (session_id,)
+                (session_id,),
             )
             auth_row = cursor.fetchone()
             if auth_row:
@@ -687,15 +686,17 @@ class SQLiteStatsParser:
                 WHERE session = ?
                 ORDER BY timestamp
                 """,
-                (session_id,)
+                (session_id,),
             )
             for cmd_row in cursor.fetchall():
-                session["commands"].append({
-                    "timestamp": cmd_row["timestamp"],
-                    "input": cmd_row["input"],
-                    "command": cmd_row["input"],
-                    "success": bool(cmd_row["success"]),
-                })
+                session["commands"].append(
+                    {
+                        "timestamp": cmd_row["timestamp"],
+                        "input": cmd_row["input"],
+                        "command": cmd_row["input"],
+                        "success": bool(cmd_row["success"]),
+                    }
+                )
 
             # Get downloads
             cursor.execute(
@@ -705,15 +706,17 @@ class SQLiteStatsParser:
                 WHERE session = ?
                 ORDER BY timestamp
                 """,
-                (session_id,)
+                (session_id,),
             )
             for dl_row in cursor.fetchall():
-                session["downloads"].append({
-                    "timestamp": dl_row["timestamp"],
-                    "url": dl_row["url"],
-                    "outfile": dl_row["outfile"],
-                    "shasum": dl_row["shasum"],
-                })
+                session["downloads"].append(
+                    {
+                        "timestamp": dl_row["timestamp"],
+                        "url": dl_row["url"],
+                        "outfile": dl_row["outfile"],
+                        "shasum": dl_row["shasum"],
+                    }
+                )
 
             # Calculate duration
             if session["start_time"] and session["end_time"]:

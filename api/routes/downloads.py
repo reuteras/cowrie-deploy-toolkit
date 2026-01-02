@@ -79,4 +79,3 @@ async def download_file(sha256: str):
         raise HTTPException(status_code=404, detail="File not found")
 
     return FileResponse(filepath, media_type="application/octet-stream", filename=sha256)
-

@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import time
 
+# Monkey patch the original HoneyPotFilesystem to use our dynamic version
+# This allows us to override the filesystem behavior without changing core Cowrie code
+import cowrie.shell.fs
 from cowrie.shell.fs import HoneyPotFilesystem
 
 
@@ -36,9 +39,5 @@ class DynamicHoneyPotFilesystem(HoneyPotFilesystem):
         # For all other files, use the parent implementation
         return super().file_contents(target)
 
-
-# Monkey patch the original HoneyPotFilesystem to use our dynamic version
-# This allows us to override the filesystem behavior without changing core Cowrie code
-import cowrie.shell.fs
 
 cowrie.shell.fs.HoneyPotFilesystem = DynamicHoneyPotFilesystem

@@ -8,7 +8,6 @@ cut command
 from __future__ import annotations
 
 import getopt
-import re
 
 from cowrie.shell.command import HoneyPotCommand
 from cowrie.shell.fs import FileNotFound
@@ -129,7 +128,7 @@ class Command_cut(HoneyPotCommand):
                         fields.append(f"{start}-")  # Special marker for open-ended range
                 except ValueError as e:
                     if "invalid literal" in str(e):
-                        raise ValueError(f"invalid field value: {part}")
+                        raise ValueError(f"invalid field value: {part}") from e
                     raise
             else:
                 # Single field like "7"
@@ -138,10 +137,10 @@ class Command_cut(HoneyPotCommand):
                     if field_num < 1:
                         raise ValueError(f"fields are numbered from 1: {part}")
                     fields.append(field_num)
-                except ValueError:
-                    raise ValueError(f"invalid field value: {part}")
+                except ValueError as e:
+                    raise ValueError(f"invalid field value: {part}") from e
 
-        return sorted(list(set(fields)), key=lambda x: (isinstance(x, str), x))  # Sort with strings after numbers
+        return sorted(set(fields), key=lambda x: (isinstance(x, str), x))  # Sort with strings after numbers
 
     def _process_input(
         self, input_data: bytes | None, delimiter: str, fields: list[int | str], complement: bool, only_delimited: bool

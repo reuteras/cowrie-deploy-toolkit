@@ -32,7 +32,9 @@ DEFAULT_LOG_DIR = "/cowrie-data/log/cowrie"
 class EventIndexer:
     """Indexes Cowrie JSON events into SQLite for fast queries."""
 
-    def __init__(self, db_path: str = DEFAULT_DB_PATH, log_path: str = DEFAULT_LOG_PATH, log_dir: str = DEFAULT_LOG_DIR):
+    def __init__(
+        self, db_path: str = DEFAULT_DB_PATH, log_path: str = DEFAULT_LOG_PATH, log_dir: str = DEFAULT_LOG_DIR
+    ):
         """
         Initialize event indexer.
 
