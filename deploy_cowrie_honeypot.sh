@@ -1896,35 +1896,25 @@ fi
 echo "[remote] Cowrie API deployed on internal network"
 
 # Expose via Tailscale if configured
-if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && command -v tailscale &> /dev/null; then
+# IMPORTANT: Don't expose API via Tailscale if dashboard is running on this server
+# because dashboard has its own /api/* endpoints that would conflict
+if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" != "true" ] && command -v tailscale &> /dev/null; then
     echo "[remote] Configuring Tailscale Serve for API..."
+    echo "[remote] (Dashboard not running on this server, safe to expose API)"
 
-    # Wait for web dashboard Tailscale serve to fully configure (if it was just set up)
-    echo "[remote] Waiting for web dashboard Tailscale configuration to complete..."
-    sleep 5
-
-    # Check if web dashboard is already using port 443
-    if tailscale serve status 2>/dev/null | grep -q ":443"; then
-        echo "[remote] Port 443 already in use by web dashboard"
-        echo "[remote] Using path-based routing: /api -> localhost:8000"
-        tailscale serve --https=443 /api --bg localhost:8000 > /dev/null 2>&1
-    else
-        echo "[remote] Configuring Tailscale Serve for API on port 443..."
-        tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1
-    fi
+    # Configure Tailscale Serve for API on port 443
+    tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1
 
     # Add @reboot cron job to ensure Tailscale Serve persists after reboot
     (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve.*8000" | crontab -
-    if tailscale serve status 2>/dev/null | grep -q ":443"; then
-        # Path-based routing (port 443 already in use by dashboard)
-        # Sleep 35 to ensure web dashboard starts first (sleep 30)
-        (crontab -l; echo "@reboot sleep 35 && /usr/bin/tailscale serve --https=443 /api --bg localhost:8000 > /dev/null 2>&1") | crontab -
-    else
-        # Direct port mapping (API only, no dashboard)
-        (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1") | crontab -
-    fi
+    (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1") | crontab -
 
     echo "[remote] API available at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
+elif [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
+    echo "[remote] Skipping Tailscale Serve for API (dashboard running on this server)"
+    echo "[remote] Dashboard will access API via localhost:8000 internally"
+    echo "[remote] External clients should access API at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}/api/v1/*"
+    echo "[remote] (routed through dashboard - NOT YET IMPLEMENTED)"
 fi
 APIEOF
 
