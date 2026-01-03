@@ -269,29 +269,19 @@ class DataSource:
             # The API now includes GeoIP enrichment and additional data
             totals = api_data.get("totals", {})
 
-            # Convert top_ips to ip_list format (list of dicts with "ip" key)
-            # Create a lookup for geo data from ip_locations
-            geo_lookup = {}
-            for location in api_data.get("ip_locations", []):
-                geo_lookup[location["ip"]] = {
-                    "country": location.get("country", "Unknown"),
-                    "city": location.get("city", "Unknown"),
-                    "latitude": location.get("lat"),
-                    "longitude": location.get("lon"),
-                }
-
+            # Convert top_ips to ip_list format (now enriched with geo, ASN, and login data by API)
             ip_list = []
             for ip_data in api_data.get("top_ips", []):
-                ip = ip_data.get("ip", "")
-                geo = geo_lookup.get(ip, {})
                 ip_list.append(
                     {
-                        "ip": ip,
+                        "ip": ip_data.get("ip", ""),
                         "count": ip_data.get("count", 0),
-                        "geo": geo,
-                        "successful_logins": 0,  # Not available in API overview
-                        "failed_logins": 0,  # Not available in API overview
-                        "last_seen": None,  # Not available in API overview
+                        "geo": ip_data.get("geo", {}),
+                        "asn": ip_data.get("asn"),
+                        "asn_org": ip_data.get("asn_org"),
+                        "successful_logins": ip_data.get("successful_logins", 0),
+                        "failed_logins": ip_data.get("failed_logins", 0),
+                        "last_seen": ip_data.get("last_seen"),
                     }
                 )
 

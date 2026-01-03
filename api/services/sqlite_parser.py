@@ -267,19 +267,45 @@ class SQLiteStatsParser:
             )
             totals["unique_downloads"] = cursor.fetchone()["unique_downloads"]
 
-            # Top IPs
+            # Top IPs with GeoIP enrichment
             cursor.execute(
                 """
-                SELECT ip, COUNT(*) as count
-                FROM sessions
-                WHERE starttime >= ?
-                GROUP BY ip
+                SELECT
+                    s.ip,
+                    COUNT(*) as count,
+                    MAX(s.starttime) as last_seen,
+                    COUNT(CASE WHEN a.success = 1 THEN 1 END) as successful_logins,
+                    COUNT(CASE WHEN a.success = 0 THEN 1 END) as failed_logins
+                FROM sessions s
+                LEFT JOIN auth a ON s.id = a.session
+                WHERE s.starttime >= ?
+                GROUP BY s.ip
                 ORDER BY count DESC
                 LIMIT 10
                 """,
                 (cutoff_str,),
             )
-            top_ips = [{"ip": row["ip"], "count": row["count"]} for row in cursor.fetchall()]
+            top_ips = []
+            for row in cursor.fetchall():
+                ip = row["ip"]
+                geo = self._geoip_lookup(ip)
+                top_ips.append(
+                    {
+                        "ip": ip,
+                        "count": row["count"],
+                        "last_seen": row["last_seen"],
+                        "successful_logins": row["successful_logins"] or 0,
+                        "failed_logins": row["failed_logins"] or 0,
+                        "geo": {
+                            "country": geo["country"],
+                            "city": geo["city"],
+                            "latitude": geo["latitude"],
+                            "longitude": geo["longitude"],
+                        },
+                        "asn": geo["asn"],
+                        "asn_org": geo["asn_org"],
+                    }
+                )
 
             # Top credentials
             cursor.execute(
