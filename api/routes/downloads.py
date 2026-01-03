@@ -4,6 +4,7 @@ Downloads endpoints
 Provides access to downloaded files (malware samples)
 """
 
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -12,6 +13,70 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
 router = APIRouter()
+
+# SECURITY: SHA256 validation regex (exactly 64 hexadecimal characters)
+SHA256_REGEX = re.compile(r"^[a-fA-F0-9]{64}$")
+
+
+def validate_sha256(sha256: str) -> str:
+    """
+    Validate and sanitize SHA256 hash parameter.
+
+    SECURITY: Prevents path traversal attacks by ensuring the parameter
+    is a valid SHA256 hash and cannot escape the downloads directory.
+
+    Args:
+        sha256: User-provided SHA256 hash parameter
+
+    Returns:
+        Validated SHA256 hash
+
+    Raises:
+        HTTPException: If the SHA256 is invalid or contains path traversal attempts
+    """
+    # Check for path traversal attempts
+    if ".." in sha256 or "/" in sha256 or "\\" in sha256:
+        raise HTTPException(status_code=400, detail="Invalid SHA256: path traversal detected")
+
+    # Validate SHA256 format (exactly 64 hex characters)
+    if not SHA256_REGEX.match(sha256):
+        raise HTTPException(
+            status_code=400, detail="Invalid SHA256: must be 64 hexadecimal characters"
+        )
+
+    return sha256.lower()  # Normalize to lowercase
+
+
+def get_safe_download_path(sha256: str) -> Path:
+    """
+    Get a safe, validated path to a download file.
+
+    SECURITY: Double-checks that the resolved path is within the downloads directory
+    to prevent path traversal even if validation is bypassed.
+
+    Args:
+        sha256: Validated SHA256 hash
+
+    Returns:
+        Absolute, resolved path to the download file
+
+    Raises:
+        HTTPException: If the path escapes the downloads directory
+    """
+    downloads_path = Path(config.COWRIE_DOWNLOADS_PATH).resolve()
+    filepath = (downloads_path / sha256).resolve()
+
+    # SECURITY: Verify the resolved path is still within downloads directory
+    # This prevents path traversal even with symlinks or other tricks
+    try:
+        filepath.relative_to(downloads_path)
+    except ValueError:
+        # Path is outside downloads directory - potential attack
+        raise HTTPException(
+            status_code=403, detail="Access denied: path traversal attempt detected"
+        )
+
+    return filepath
 
 
 @router.get("/downloads")
@@ -53,8 +118,9 @@ async def get_downloads(limit: int = Query(100, ge=1, le=1000), offset: int = Qu
 @router.get("/downloads/{sha256}")
 async def get_download_metadata(sha256: str):
     """Get metadata for a specific downloaded file"""
-    downloads_path = Path(config.COWRIE_DOWNLOADS_PATH)
-    filepath = downloads_path / sha256
+    # SECURITY: Validate SHA256 and get safe path
+    validated_sha256 = validate_sha256(sha256)
+    filepath = get_safe_download_path(validated_sha256)
 
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
@@ -62,7 +128,7 @@ async def get_download_metadata(sha256: str):
     stat = filepath.stat()
 
     return {
-        "sha256": sha256,
+        "sha256": validated_sha256,
         "size": stat.st_size,
         "first_seen": datetime.fromtimestamp(stat.st_ctime).isoformat(),
         "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
@@ -72,10 +138,14 @@ async def get_download_metadata(sha256: str):
 @router.get("/downloads/{sha256}/content")
 async def download_file(sha256: str):
     """Download the actual file content"""
-    downloads_path = Path(config.COWRIE_DOWNLOADS_PATH)
-    filepath = downloads_path / sha256
+    # SECURITY: Validate SHA256 and get safe path
+    validated_sha256 = validate_sha256(sha256)
+    filepath = get_safe_download_path(validated_sha256)
 
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
-    return FileResponse(filepath, media_type="application/octet-stream", filename=sha256)
+    # SECURITY: Use validated filename to prevent header injection
+    return FileResponse(
+        filepath, media_type="application/octet-stream", filename=f"{validated_sha256}.bin"
+    )

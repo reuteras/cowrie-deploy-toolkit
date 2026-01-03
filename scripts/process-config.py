@@ -6,6 +6,7 @@ Reads master-config.toml, executes any shell commands in values
 (like "op read op://..."), and outputs a server-ready config.
 """
 
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -21,21 +22,51 @@ def execute_command(value: str) -> str:
     Detects commands like:
     - "op read op://Personal/Item/field"
     - Any string starting with known command prefixes
+
+    SECURITY: Uses array-based execution (shell=False) to prevent command injection.
     """
     value = value.strip()
 
-    # List of known secret management CLIs
-    command_prefixes = ["op read", "pass", "vault", "aws secretsmanager"]
+    # List of allowed secret management CLIs (executable names only)
+    allowed_commands = {
+        "op": ["read"],  # 1Password CLI: op read <ref>
+        "pass": [],  # Unix password manager: pass <entry>
+        "vault": ["read"],  # HashiCorp Vault: vault read <path>
+        "aws": ["secretsmanager"],  # AWS Secrets Manager: aws secretsmanager get-secret-value ...
+    }
 
-    # Check if this looks like a command
-    is_command = any(value.startswith(prefix) for prefix in command_prefixes)
-
-    if not is_command:
+    # Parse command into array (prevents shell injection)
+    try:
+        command_array = shlex.split(value)
+    except ValueError:
+        # Invalid shell syntax - not a valid command
         return value
 
-    # Execute command and return output
+    if not command_array:
+        return value
+
+    # Check if first token is an allowed command
+    cmd = command_array[0]
+    if cmd not in allowed_commands:
+        return value
+
+    # Additional validation for specific commands
+    allowed_subcommands = allowed_commands[cmd]
+    if allowed_subcommands:
+        # Verify subcommand is allowed (e.g., "op read" not "op delete")
+        if len(command_array) < 2 or command_array[1] not in allowed_subcommands:
+            print(f"Warning: Subcommand not allowed: {value}", file=sys.stderr)
+            return value
+
+    # Execute command with array (shell=False) - SAFE from command injection
     try:
-        result = subprocess.run(value, shell=True, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            command_array,  # Array, not string - prevents shell injection
+            shell=False,  # CRITICAL: shell=False prevents command injection
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
         if result.returncode == 0:
             return result.stdout.strip()

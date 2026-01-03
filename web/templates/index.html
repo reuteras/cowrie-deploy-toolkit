@@ -339,6 +339,15 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // SECURITY: HTML escape function to prevent XSS attacks
+    // All attacker-controlled data MUST be escaped before inserting into HTML
+    function escapeHtml(text) {
+        if (text === null || text === undefined) return '';
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+
     // Initialize map
     const map = L.map('attack-map').setView([20, 0], 2);
 
@@ -362,9 +371,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
             }).addTo(map);
 
+            // SECURITY: Escape all user/attacker-controlled data
             marker.bindPopup(`
-                <strong style="color:#28a745;">🍯 Honeypot: ${hp.name}</strong><br>
-                ${hp.city ? hp.city + ', ' : ''}${hp.country || 'Unknown'}
+                <strong style="color:#28a745;">🍯 Honeypot: ${escapeHtml(hp.name)}</strong><br>
+                ${hp.city ? escapeHtml(hp.city) + ', ' : ''}${escapeHtml(hp.country) || 'Unknown'}
             `);
         }
     });
@@ -399,9 +409,10 @@ document.addEventListener('DOMContentLoaded', function() {
             sessionUrl += `&source=${encodeURIComponent(source)}`;
         }
 
+        // SECURITY: Escape all attacker-controlled data (IPs, cities, countries)
         marker.bindPopup(`
-            <strong>${loc.city}, ${loc.country}</strong><br>
-            IP: <a href="${sessionUrl}" target="_blank">${loc.ip}</a><br>
+            <strong>${escapeHtml(loc.city)}, ${escapeHtml(loc.country)}</strong><br>
+            IP: <a href="${sessionUrl}" target="_blank">${escapeHtml(loc.ip)}</a><br>
             Sessions: ${loc.count}
         `);
     });
@@ -418,24 +429,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 let html = '';
                 data.honeypots.forEach(hp => {
                     const buildDate = hp.build_date ? new Date(hp.build_date).toLocaleString() : 'Unknown';
+                    // SECURITY: Escape all data (even if from API, defense in depth)
                     html += `
                         <div style="margin-bottom: 15px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
                             <h3 style="margin: 0 0 10px 0; font-size: 18px;">
-                                🍯 ${hp.name}
+                                🍯 ${escapeHtml(hp.name)}
                                 <a href="{{ url_for('system_info') }}" style="font-size: 0.7em; font-weight: normal; float: right; color: white; opacity: 0.9;">View All Details →</a>
                             </h3>
                             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                                 <div>
                                     <div style="opacity: 0.9; font-size: 12px;">Server IP</div>
-                                    <div style="font-weight: 600; font-size: 16px;">${hp.server_ip || 'N/A'}</div>
+                                    <div style="font-weight: 600; font-size: 16px;">${escapeHtml(hp.server_ip) || 'N/A'}</div>
                                 </div>
                                 <div>
                                     <div style="opacity: 0.9; font-size: 12px;">Hostname</div>
-                                    <div style="font-weight: 600; font-size: 16px;">${hp.honeypot_hostname || 'N/A'}</div>
+                                    <div style="font-weight: 600; font-size: 16px;">${escapeHtml(hp.honeypot_hostname) || 'N/A'}</div>
                                 </div>
                                 <div>
                                     <div style="opacity: 0.9; font-size: 12px;">Cowrie Version</div>
-                                    <div style="font-weight: 600; font-size: 16px;">${hp.cowrie_version || 'Unknown'}</div>
+                                    <div style="font-weight: 600; font-size: 16px;">${escapeHtml(hp.cowrie_version) || 'Unknown'}</div>
                                 </div>
                                 <div>
                                     <div style="opacity: 0.9; font-size: 12px;">Container Built</div>
