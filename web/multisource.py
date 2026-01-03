@@ -587,7 +587,21 @@ class MultiSourceDataSource:
                     not ip_dict[ip].get("last_seen") or ip_info["last_seen"] > ip_dict[ip]["last_seen"]
                 ):
                     ip_dict[ip]["last_seen"] = ip_info["last_seen"]
-                    ip_dict[ip]["geo"] = ip_info.get("geo", {})
+
+                # Preserve geo data - keep existing if new doesn't have it, or update if newer
+                existing_geo = ip_dict[ip].get("geo", {})
+                new_geo = ip_info.get("geo", {})
+                if new_geo and not existing_geo:
+                    # New entry has geo data but existing doesn't
+                    ip_dict[ip]["geo"] = new_geo
+                elif (
+                    new_geo
+                    and existing_geo
+                    and ip_info.get("last_seen")
+                    and (not ip_dict[ip].get("last_seen") or ip_info["last_seen"] > ip_dict[ip]["last_seen"])
+                ):
+                    # Both have geo data, keep from most recent
+                    ip_dict[ip]["geo"] = new_geo
 
         aggregated["ip_list"] = sorted(ip_dict.values(), key=lambda x: x.get("count", 0), reverse=True)
 
