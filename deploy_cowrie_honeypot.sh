@@ -1272,17 +1272,17 @@ volumes:
 DOCKEREOF
 
 # Make container and volume names unique per honeypot
-sed -i '' "s/container_name: cowrie$/container_name: cowrie-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-sed -i '' "s/container_name: cowrie-web$/container_name: cowrie-web-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-sed -i '' "s/container_name: cowrie-api$/container_name: cowrie-api-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-sed -i '' "s/name: cowrie-etc$/name: cowrie-etc-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-sed -i '' "s/name: cowrie-var$/name: cowrie-var-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-sed -i '' "s/name: cowrie-internal$/name: cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i "s/container_name: cowrie$/container_name: cowrie-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i "s/container_name: cowrie-web$/container_name: cowrie-web-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i "s/container_name: cowrie-api$/container_name: cowrie-api-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i "s/name: cowrie-etc$/name: cowrie-etc-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i "s/name: cowrie-var$/name: cowrie-var-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i "s/name: cowrie-internal$/name: cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
 # Update volume references in services
-sed -i '' "s/- cowrie-etc:/- cowrie-etc-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.yml
-sed -i '' "s/- cowrie-var:/- cowrie-var-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.yml
+sed -i "s/- cowrie-etc:/- cowrie-etc-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.yml
+sed -i "s/- cowrie-var:/- cowrie-var-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.yml
 # Update network references
-sed -i '' "s/- cowrie-internal/- cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i "s/- cowrie-internal/- cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
 
 echo "[remote] Pulling pre-built Cowrie image from GitHub Container Registry..."
 cd /opt/cowrie
@@ -1680,6 +1680,9 @@ if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << WEBEOF
 set -e
 
+# Source common functions (for create_temp_file)
+source /opt/cowrie/scripts/common.sh
+
 # Create TTY log directory with correct permissions (if volume exists)
 if [ -d /var/lib/docker/volumes/cowrie-var-${TAILSCALE_NAME}/_data ]; then
     mkdir -p /var/lib/docker/volumes/cowrie-var-${TAILSCALE_NAME}/_data/lib/cowrie/tty
@@ -1782,13 +1785,13 @@ sed -i "s|ghcr.io/reuteras/cowrie:latest|ghcr.io/${REPO_OWNER}/cowrie:latest|g" 
 sed -i "s|ghcr.io/reuteras/cowrie-web:latest|ghcr.io/${REPO_OWNER}/cowrie-web:latest|g" /opt/cowrie/docker-compose.yml
 
 # Write DASHBOARD_SOURCES_JSON to temp file to avoid quoting issues
-DASHBOARD_SOURCES_TMP=$(create_temp_file ".json")
-cat > "$DASHBOARD_SOURCES_TMP" << SOURCES_EOF
+DASHBOARD_SOURCES_TMP=\$(create_temp_file ".json")
+cat > "\$DASHBOARD_SOURCES_TMP" << SOURCES_EOF
 $DASHBOARD_SOURCES_JSON
 SOURCES_EOF
 
 # Compact JSON using jq to remove all extra whitespace
-SOURCES_CONTENT=\$(jq -c '.' "$DASHBOARD_SOURCES_TMP" 2>/dev/null || cat "$DASHBOARD_SOURCES_TMP" | tr -d '\\n')
+SOURCES_CONTENT=\$(jq -c '.' "\$DASHBOARD_SOURCES_TMP" 2>/dev/null || cat "\$DASHBOARD_SOURCES_TMP" | tr -d '\\n')
 
 # Replace DASHBOARD_SOURCES using awk
 awk -v sources="\$SOURCES_CONTENT" '{gsub(/DASHBOARD_SOURCES_PLACEHOLDER/, sources)}1' /opt/cowrie/docker-compose.yml > /opt/cowrie/docker-compose.yml.tmp
@@ -1797,14 +1800,14 @@ mv /opt/cowrie/docker-compose.yml.tmp /opt/cowrie/docker-compose.yml
 # Pull and start web service
 cd /opt/cowrie
 echo "[remote] Pulling web dashboard image from GitHub Container Registry..."
-DOCKER_PULL_WEB_LOG=$(mktemp /tmp/cowrie.XXXXXXXXXX.log)
-if ! docker compose pull cowrie-web 2>&1 | tee "$DOCKER_PULL_WEB_LOG"; then
+DOCKER_PULL_WEB_LOG=\$(mktemp /tmp/cowrie.XXXXXXXXXX.log)
+if ! docker compose pull cowrie-web 2>&1 | tee "\$DOCKER_PULL_WEB_LOG"; then
   echo "[remote] ERROR: Failed to pull web dashboard image"
-  cat "$DOCKER_PULL_WEB_LOG"
-  rm -f "$DOCKER_PULL_WEB_LOG"
+  cat "\$DOCKER_PULL_WEB_LOG"
+  rm -f "\$DOCKER_PULL_WEB_LOG"
   exit 1
 fi
-rm -f "$DOCKER_PULL_WEB_LOG"
+rm -f "\$DOCKER_PULL_WEB_LOG"
 
 echo "[remote] Starting services..."
 # Stop any existing containers to avoid network conflicts (idempotent - won't fail if nothing running)
@@ -1914,15 +1917,15 @@ sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$HONEYPOT_HOSTNAME|g" /opt/cowrie/docker
 sed -i "s|ghcr.io/reuteras/cowrie-api:latest|ghcr.io/${REPO_OWNER}/cowrie-api:latest|g" /opt/cowrie/docker-compose.api.yml
 
 # Make API container and volume names unique per honeypot
-sed -i '' "s/container_name: cowrie-api$/container_name: cowrie-api-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
-sed -i '' "s/name: cowrie-etc$/name: cowrie-etc-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
-sed -i '' "s/name: cowrie-var$/name: cowrie-var-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
-sed -i '' "s/name: cowrie-internal$/name: cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
+sed -i "s/container_name: cowrie-api$/container_name: cowrie-api-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
+sed -i "s/name: cowrie-etc$/name: cowrie-etc-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
+sed -i "s/name: cowrie-var$/name: cowrie-var-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
+sed -i "s/name: cowrie-internal$/name: cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
 # Update volume references in API service
-sed -i '' "s/- cowrie-etc:/- cowrie-etc-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.api.yml
-sed -i '' "s/- cowrie-var:/- cowrie-var-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.api.yml
+sed -i "s/- cowrie-etc:/- cowrie-etc-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.api.yml
+sed -i "s/- cowrie-var:/- cowrie-var-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.api.yml
 # Update network references
-sed -i '' "s/- cowrie-internal/- cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
+sed -i "s/- cowrie-internal/- cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
 
 # Debug: Verify replacement worked
 echo "[remote] Verifying environment variable replacement..."
