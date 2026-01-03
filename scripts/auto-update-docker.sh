@@ -55,11 +55,11 @@ log "Starting auto-update check..."
 # Get list of services in main docker-compose.yml
 AVAILABLE_SERVICES=$(docker compose config --services 2>/dev/null || echo "")
 
-# Build cowrie image (should always exist)
+# Pull cowrie image (now using pre-built from GHCR)
 if echo "$AVAILABLE_SERVICES" | grep -q "^cowrie$"; then
-    log "Building custom Cowrie image (includes latest cowrie/cowrie:latest base)..."
-    if ! docker compose build --pull cowrie >> "$LOG_FILE" 2>&1 ; then
-        log "ERROR: Failed to build custom Cowrie image"
+    log "Pulling Cowrie image from registry..."
+    if ! docker compose pull cowrie >> "$LOG_FILE" 2>&1 ; then
+        log "ERROR: Failed to pull Cowrie image"
         exit 1
     fi
 else
@@ -87,14 +87,7 @@ if [ -f "docker-compose.api.yml" ]; then
             exit 1
         fi
 
-        # Also build cowrie-api if it has a build context
-        if docker compose -f docker-compose.yml -f docker-compose.api.yml config cowrie-api 2>/dev/null | grep -q "build:"; then
-            log "Building cowrie-api image..."
-            if ! docker compose -f docker-compose.yml -f docker-compose.api.yml build cowrie-api >> "$LOG_FILE" 2>&1 ; then
-                log "ERROR: Failed to build API image"
-                exit 1
-            fi
-        fi
+# Note: cowrie-api now uses pre-built images from GHCR, no local build needed
     fi
 else
     log "docker-compose.api.yml not found, skipping API updates..."

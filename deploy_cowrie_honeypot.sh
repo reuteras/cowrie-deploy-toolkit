@@ -14,6 +14,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/scripts/common.sh"
 
 # ============================================================
+# CONFIGURATION
+# ============================================================
+
+# Repository configuration (change these if forking the project)
+REPO_OWNER="${REPO_OWNER:-reuteras}"
+REPO_NAME="${REPO_NAME:-cowrie-deploy-toolkit}"
+
+# ============================================================
 # DEPENDENCY CHECKS
 # ============================================================
 
@@ -775,7 +783,7 @@ if [ -d "cowrie" ]; then
     rm -rf cowrie
 fi
 
-git clone https://github.com/reuteras/cowrie-deploy-toolkit.git cowrie
+git clone "https://github.com/${REPO_OWNER}/${REPO_NAME}.git" cowrie
 cd cowrie
 
 echo "[remote] Repository cloned successfully"
@@ -1260,7 +1268,7 @@ services:
     build:
       context: /opt/cowrie/build
       dockerfile: Dockerfile
-    image: cowrie-custom:latest
+    image: "ghcr.io/${REPO_OWNER}/cowrie:latest"
     container_name: cowrie
     restart: unless-stopped
     ports:
@@ -1697,7 +1705,7 @@ services:
     build:
       context: /opt/cowrie/build
       dockerfile: Dockerfile
-    image: cowrie-custom:latest
+    image: "ghcr.io/${REPO_OWNER}/cowrie:latest"
     container_name: cowrie
     restart: unless-stopped
     ports:
@@ -1719,7 +1727,7 @@ services:
       - cowrie-internal
 
   cowrie-web:
-    image: ghcr.io/reuteras/cowrie-web:latest
+    image: "ghcr.io/${REPO_OWNER}/cowrie-web:latest"
     build:
       context: /opt/cowrie/web
       dockerfile: Dockerfile
@@ -1782,6 +1790,8 @@ sed -i "s|SERVER_IP_PLACEHOLDER|$SERVER_IP|g" /opt/cowrie/docker-compose.yml
 sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$HONEYPOT_HOSTNAME|g" /opt/cowrie/docker-compose.yml
 sed -i "s|DASHBOARD_MODE_PLACEHOLDER|$DASHBOARD_MODE|g" /opt/cowrie/docker-compose.yml
 sed -i "s|DASHBOARD_API_URL_PLACEHOLDER|$DASHBOARD_API_URL|g" /opt/cowrie/docker-compose.yml
+sed -i "s|ghcr.io/reuteras/cowrie:latest|ghcr.io/${REPO_OWNER}/cowrie:latest|g" /opt/cowrie/docker-compose.yml
+sed -i "s|ghcr.io/reuteras/cowrie-web:latest|ghcr.io/${REPO_OWNER}/cowrie-web:latest|g" /opt/cowrie/docker-compose.yml
 
 # Write DASHBOARD_SOURCES_JSON to temp file to avoid quoting issues
 cat > /tmp/dashboard_sources.json << SOURCES_EOF
@@ -1870,6 +1880,7 @@ echo "[remote] HONEYPOT_HOSTNAME: $HONEYPOT_HOSTNAME"
 # Replace placeholders in docker-compose.api.yml with actual values
 sed -i "s|SERVER_IP_PLACEHOLDER|$SERVER_IP|g" /opt/cowrie/docker-compose.api.yml
 sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$HONEYPOT_HOSTNAME|g" /opt/cowrie/docker-compose.api.yml
+sed -i "s|ghcr.io/reuteras/cowrie-api:latest|ghcr.io/${REPO_OWNER}/cowrie-api:latest|g" /opt/cowrie/docker-compose.api.yml
 
 # Debug: Verify replacement worked
 echo "[remote] Verifying environment variable replacement..."
@@ -1881,9 +1892,12 @@ echo "[remote] API will be accessible on localhost:8000 for Tailscale Serve"
 
 # Build and start API with the main compose file
 echo "[remote] Building Cowrie API container (this may take a minute)..."
-if ! docker compose -f docker-compose.yml -f docker-compose.api.yml build --quiet cowrie-api 2>&1 | grep -E "ERROR|WARN" || true; then
-  echo "[remote] WARNING: Build reported errors, but continuing..."
+# Pull API image (no longer building locally)
+if ! docker compose -f docker-compose.yml -f docker-compose.api.yml pull cowrie-api 2>&1; then
+    echo_error "Failed to pull API image"
+    return 1
 fi
+echo_info "API image pulled successfully"
 
 echo "[remote] Starting Cowrie API service..."
 if ! docker compose -f docker-compose.yml -f docker-compose.api.yml up -d cowrie-api 2>&1; then
