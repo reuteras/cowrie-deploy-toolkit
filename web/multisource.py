@@ -420,6 +420,7 @@ class MultiSourceDataSource:
             "sessions_with_commands": 0,
             "total_downloads": 0,
             "unique_downloads": set(),
+            "ip_list": [],  # List of IP details with geo, counts, etc.
             "top_countries": {},
             "top_credentials": {},
             "successful_credentials": set(),
@@ -469,9 +470,13 @@ class MultiSourceDataSource:
                     aggregated["sessions_with_commands"] += stats.get("sessions_with_commands", 0)
                     aggregated["total_downloads"] += stats.get("total_downloads", 0)
 
-                    # Merge unique IPs
+                    # Merge IP list details and unique IPs
                     for ip_info in stats.get("ip_list", []):
                         aggregated["unique_ips"].add(ip_info["ip"])
+                        # Add source tag to IP info for multi-source tracking
+                        ip_info_copy = ip_info.copy()
+                        ip_info_copy["source"] = source.name
+                        aggregated["ip_list"].append(ip_info_copy)
 
                     # Merge unique downloads (handle both set and int formats)
                     unique_dl = stats.get("unique_downloads", 0)
@@ -561,6 +566,27 @@ class MultiSourceDataSource:
         # Convert sets to lists and sort
         aggregated["unique_ips"] = len(aggregated["unique_ips"])
         aggregated["unique_downloads"] = len(aggregated["unique_downloads"])
+
+        # Sort and deduplicate IP list by session count
+        ip_dict = {}
+        for ip_info in aggregated["ip_list"]:
+            ip = ip_info["ip"]
+            if ip not in ip_dict:
+                ip_dict[ip] = ip_info
+            else:
+                # Merge counts from multiple sources
+                ip_dict[ip]["count"] += ip_info.get("count", 0)
+                ip_dict[ip]["successful_logins"] += ip_info.get("successful_logins", 0)
+                ip_dict[ip]["failed_logins"] += ip_info.get("failed_logins", 0)
+                # Keep the most recent last_seen
+                if ip_info.get("last_seen") and (
+                    not ip_dict[ip].get("last_seen") or ip_info["last_seen"] > ip_dict[ip]["last_seen"]
+                ):
+                    ip_dict[ip]["last_seen"] = ip_info["last_seen"]
+                    ip_dict[ip]["geo"] = ip_info.get("geo", {})
+
+        aggregated["ip_list"] = sorted(ip_dict.values(), key=lambda x: x.get("count", 0), reverse=True)
+
         aggregated["top_countries"] = sorted(aggregated["top_countries"].items(), key=lambda x: x[1], reverse=True)[:10]
         aggregated["top_credentials"] = sorted(aggregated["top_credentials"].items(), key=lambda x: x[1], reverse=True)[
             :10
