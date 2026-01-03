@@ -44,7 +44,7 @@ class Config:
         """Load configuration from file or environment variables."""
         config = {
             # Paths
-            "log_path": os.getenv("COWRIE_LOG_PATH", "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json"),
+            "db_path": os.getenv("COWRIE_DB_PATH", "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/cowrie.db"),
             "download_path": os.getenv(
                 "COWRIE_DOWNLOAD_PATH", "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/downloads"
             ),
@@ -230,10 +230,10 @@ class YARACache:
 
 
 class LogParser:
-    """Parse Cowrie JSON logs and extract statistics."""
+    """Parse Cowrie events from SQLite database and extract statistics."""
 
-    def __init__(self, log_path: str, hours: int = 24):
-        self.log_path = log_path
+    def __init__(self, db_path: str, hours: int = 24):
+        self.db_path = db_path
         self.hours = hours
         self.cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
@@ -251,28 +251,43 @@ class LogParser:
         self.ip_list = []
 
     def parse(self) -> dict:
-        """Parse logs and return statistics."""
-        print(f"[*] Parsing logs from: {self.log_path}")
+        """Parse events from SQLite database and return statistics."""
+        print(f"[*] Querying events from database: {self.db_path}")
         print(f"[*] Looking for events in the last {self.hours} hours")
 
-        if not os.path.exists(self.log_path):
-            print(f"[!] Warning: Log file not found: {self.log_path}")
+        if not os.path.exists(self.db_path):
+            print(f"[!] Warning: Database not found: {self.db_path}")
             return self._get_stats()
 
-        with open(self.log_path) as f:
-            for line in f:
+        try:
+            import sqlite3
+
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Query events within time window
+            cursor.execute(
+                """
+                SELECT session, timestamp, eventid, src_ip, data
+                FROM events
+                WHERE timestamp >= ?
+                ORDER BY timestamp ASC
+                """,
+                (self.cutoff_time.isoformat(),),
+            )
+
+            for row in cursor.fetchall():
                 try:
-                    entry = json.loads(line.strip())
-
-                    # Check timestamp
-                    timestamp = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
-                    if timestamp < self.cutoff_time:
-                        continue
-
+                    # Parse the JSON data field
+                    entry = json.loads(row["data"])
                     self._process_entry(entry)
-
                 except (json.JSONDecodeError, KeyError, ValueError):
                     continue
+
+            conn.close()
+        except Exception as e:
+            print(f"[!] Error querying database: {e}")
 
         return self._get_stats()
 
@@ -1148,9 +1163,9 @@ def main():
     report_hours = config.get("report_hours") or 24
     print(f"[*] Report period: last {report_hours} hours")
 
-    # Parse logs
+    # Parse events from database
     parser = LogParser(
-        config.get("log_path") or "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.json", hours=report_hours
+        config.get("db_path") or "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/cowrie.db", hours=report_hours
     )
     stats = parser.parse()
 

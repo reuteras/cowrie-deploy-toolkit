@@ -1769,11 +1769,31 @@ if ! docker compose pull cowrie-web 2>&1 | tee /tmp/docker-pull-web.log; then
 fi
 
 echo "[remote] Starting services..."
-if ! docker compose up -d --quiet-pull 2>&1; then
-  echo "[remote] ERROR: Failed to start services. Checking status..."
-  docker compose ps
-  docker compose logs --tail=50
-  exit 1
+# Stop any existing containers to avoid network conflicts (idempotent - won't fail if nothing running)
+if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
+  echo "[remote] Stopping any existing services (API included)..."
+  docker compose -f docker-compose.yml -f docker-compose.api.yml down --remove-orphans 2>/dev/null || true
+else
+  echo "[remote] Stopping any existing services..."
+  docker compose down --remove-orphans 2>/dev/null || true
+fi
+
+# Include API compose file if API is enabled to avoid network conflicts
+if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
+  echo "[remote] API is enabled, including docker-compose.api.yml"
+  if ! docker compose -f docker-compose.yml -f docker-compose.api.yml up -d cowrie cowrie-web --quiet-pull 2>&1; then
+    echo "[remote] ERROR: Failed to start services. Checking status..."
+    docker compose -f docker-compose.yml -f docker-compose.api.yml ps
+    docker compose -f docker-compose.yml -f docker-compose.api.yml logs --tail=50
+    exit 1
+  fi
+else
+  if ! docker compose up -d --quiet-pull 2>&1; then
+    echo "[remote] ERROR: Failed to start services. Checking status..."
+    docker compose ps
+    docker compose logs --tail=50
+    exit 1
+  fi
 fi
 
 echo "[remote] Web dashboard deployed on localhost:5000"

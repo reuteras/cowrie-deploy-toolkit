@@ -109,41 +109,9 @@ class SQLiteStatsParser:
             print(f"[!] Error querying events from database: {e}")
             return []
 
-    def _get_session_events_from_log(self, session_id: str) -> list:
-        """
-        Get all events for a session from the JSON log file.
-        This is a fallback if the events database table doesn't exist.
-
-        Args:
-            session_id: Session ID to search for
-
-        Returns:
-            List of event dicts for this session
-        """
-        events = []
-        if not os.path.exists(self.log_path):
-            return events
-
-        try:
-            with open(self.log_path) as f:
-                for line in f:
-                    try:
-                        event = json.loads(line.strip())
-                        if event.get("session") == session_id:
-                            events.append(event)
-                    except json.JSONDecodeError:
-                        continue
-        except Exception as e:
-            print(f"[!] Error reading JSON log: {e}")
-            return events
-
-        # Sort by timestamp
-        events.sort(key=lambda x: x.get("timestamp", ""))
-        return events
-
     def _get_session_events(self, session_id: str) -> list:
         """
-        Get all events for a session, trying database first then falling back to log file.
+        Get all events for a session from the database.
 
         Args:
             session_id: Session ID to search for
@@ -151,14 +119,8 @@ class SQLiteStatsParser:
         Returns:
             List of event dicts for this session
         """
-        # Try database first (fast)
-        events = self._get_session_events_from_db(session_id)
-
-        # Fall back to log file if no events found in database
-        if not events:
-            events = self._get_session_events_from_log(session_id)
-
-        return events
+        # Get events from database (indexed by event-indexer daemon)
+        return self._get_session_events_from_db(session_id)
 
     def _geoip_lookup(self, ip: str) -> dict:
         """Lookup GeoIP information for an IP address"""
