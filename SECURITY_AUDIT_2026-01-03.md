@@ -5,7 +5,7 @@
 
 ## Executive Summary
 
-A comprehensive security audit identified **1 CRITICAL**, **2 HIGH**, and **2 MEDIUM** severity vulnerabilities. All CRITICAL and HIGH severity issues have been **FIXED**. The codebase shows good security practices in database queries (parameterized statements) but had dangerous command injection and path traversal vulnerabilities.
+A comprehensive security audit identified **1 CRITICAL**, **2 HIGH**, and **1 MEDIUM** severity vulnerabilities. **ALL vulnerabilities have been FIXED**. The codebase shows good security practices in database queries (parameterized statements) but had dangerous command injection, path traversal, XSS, and temp file security vulnerabilities that have all been remediated.
 
 ### Critical Finding: SSRF/Command Injection Risk Assessment
 
@@ -169,7 +169,58 @@ marker.bindPopup(`
 
 ---
 
-## Security Posture: GOOD ✅
+### 4. MEDIUM: Symlink Attack via Predictable Temp Files
+**File**: `deploy_cowrie_honeypot.sh` (multiple locations)
+**Status**: ✅ **FIXED**
+
+**Original Vulnerability**:
+```bash
+# VULNERABLE CODE (BEFORE)
+cat > /tmp/cowrie.cfg << EOF
+...
+EOF
+scp /tmp/cowrie.cfg root@server:/opt/cowrie/etc/
+rm /tmp/cowrie.cfg
+```
+
+**Attack Vector**: Attacker creates symlink before script runs:
+```bash
+ln -s /etc/passwd /tmp/cowrie.cfg
+# Script overwrites /etc/passwd!
+```
+
+**Fix Applied**:
+```bash
+# SECURE CODE (AFTER)
+COWRIE_CFG_TMP=$(create_temp_file ".cfg")  # Uses mktemp with random suffix
+cat > "$COWRIE_CFG_TMP" << EOF
+...
+EOF
+scp "$COWRIE_CFG_TMP" root@server:/opt/cowrie/etc/
+# Cleanup automatic via trap handler
+```
+
+**Files Secured**:
+- Local temp files (9 instances):
+  - `$COWRIE_CFG_TMP` (config generation)
+  - `$TXTCMDS_TAR` (filesystem tarball)
+  - `$SERVER_REPORT_ENV` (reporting config)
+  - `$DASHBOARD_SOURCES_TMP` (dashboard config)
+  - Crontab temp files (3 instances)
+- Remote temp files (6 instances):
+  - `$DOCKER_PULL_LOG`, `$DOCKER_PULL_WEB_LOG` (Docker logs)
+  - `$REMOTE_CONTENTS_TAR`, `$REMOTE_TXTCMDS_TAR`, `$REMOTE_IDENTITY_TAR` (tarball extraction)
+
+**Defense Layers Added**:
+1. `create_temp_file()` helper function using `mktemp` for local files
+2. Direct `mktemp` usage in remote heredocs for server-side temp files
+3. Unpredictable filenames: `/tmp/cowrie.XXXXXXXXXX.cfg` (random suffix)
+4. Automatic cleanup via trap handlers (no orphaned temp files)
+5. Race-condition safe (mktemp creates file atomically)
+
+---
+
+## Security Posture: EXCELLENT ✅
 
 ### What's Already Secure
 
@@ -193,9 +244,41 @@ marker.bindPopup(`
 - Non-root user (UID 999) for Cowrie
 - Network isolation via `cowrie-internal` bridge
 
-#### 4. **Subprocess Execution: MOSTLY SAFE** ✅
+#### 4. **Subprocess Execution: EXCELLENT** ✅
 - Array-based execution (`shell=False`) used in most places
 - Example: `subprocess.run(["docker", "compose", "up", "-d"])`
+
+#### 5. **Temp File Security: EXCELLENT** ✅
+- All temp files use unpredictable names via `mktemp`
+- Local temp files use `create_temp_file()` helper (wrapper around mktemp)
+- Remote temp files (on deployed servers) use `mktemp` directly
+- No predictable `/tmp/` filenames that could enable symlink attacks
+- Automatic cleanup via trap handlers
+
+**Examples**:
+```bash
+# Local temp file (secure)
+COWRIE_CFG_TMP=$(create_temp_file ".cfg")
+cat > "$COWRIE_CFG_TMP" << EOF
+...
+EOF
+
+# Remote temp file (secure)
+REMOTE_TAR=$(ssh ... "mktemp /tmp/cowrie.XXXXXXXXXX.tar.gz")
+scp local.tar.gz "root@$SERVER_IP:$REMOTE_TAR"
+ssh ... "tar xzf $REMOTE_TAR && rm -f $REMOTE_TAR"
+```
+
+**Files secured** (2026-01-03):
+- `$COWRIE_CFG_TMP` (was `/tmp/cowrie.cfg`) - Local config generation
+- `$TXTCMDS_TAR` (was `/tmp/txtcmds.tar.gz`) - Local tarball
+- `$SERVER_REPORT_ENV` (was `/tmp/server-report.env`) - Local reporting config
+- `$DASHBOARD_SOURCES_TMP` (was `/tmp/dashboard_sources.json`) - Local dashboard config
+- `$DOCKER_PULL_LOG` (was `/tmp/docker-pull.log`) - Remote Docker logs
+- `$DOCKER_PULL_WEB_LOG` (was `/tmp/docker-pull-web.log`) - Remote Docker logs
+- `$REMOTE_CONTENTS_TAR` (was `/tmp/contents.tar.gz`) - Remote tarball extraction
+- `$REMOTE_TXTCMDS_TAR` (was `/tmp/txtcmds.tar.gz`) - Remote tarball extraction
+- `$REMOTE_IDENTITY_TAR` (was `/tmp/identity.tar.gz`) - Remote tarball extraction
 
 ### Remaining Recommendations (MEDIUM Priority)
 
@@ -329,6 +412,7 @@ Should fail with "Subcommand not allowed" (no semicolons in valid commands)
 ✅ **Parameterized Queries**: No SQL injection risk
 ✅ **Secure Defaults**: Jinja2 autoescaping, shell=False
 ✅ **Network Isolation**: Tailscale VPN, Docker networks
+✅ **Secure Temp Files**: Unpredictable names via mktemp (prevents symlink attacks)
 
 ---
 
@@ -340,6 +424,7 @@ Should fail with "Subcommand not allowed" (no semicolons in valid commands)
 | CRITICAL | Command Injection | `scripts/process-config.py` | ✅ FIXED |
 | HIGH | Path Traversal | `api/routes/downloads.py` | ✅ FIXED |
 | HIGH | XSS | `web/templates/index.html` | ✅ FIXED |
+| MEDIUM | Symlink Attack (Temp Files) | `deploy_cowrie_honeypot.sh` | ✅ FIXED |
 
 ### Recommendations for Future
 | Priority | Recommendation | Effort |

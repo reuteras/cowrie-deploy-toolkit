@@ -908,10 +908,15 @@ if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A "$CONTENTS_DIR" 2>/dev/null)" ]; then
     # Upload contents as tarball for efficiency (--no-xattrs to avoid macOS extended attributes)
     CONTENTS_TAR=$(create_temp_file ".tar.gz")
     tar --no-xattrs -czf "$CONTENTS_TAR" -C "$CONTENTS_DIR" . 2>/dev/null
+
+    # SECURITY: Create unpredictable remote temp file to prevent symlink attacks
+    REMOTE_CONTENTS_TAR=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+        "mktemp /tmp/cowrie.XXXXXXXXXX.tar.gz")
+
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-        "$CONTENTS_TAR" "root@$SERVER_IP:/tmp/contents.tar.gz" > /dev/null
+        "$CONTENTS_TAR" "root@$SERVER_IP:$REMOTE_CONTENTS_TAR" > /dev/null
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-        "cd /opt/cowrie/share/cowrie/contents && tar xzf /tmp/contents.tar.gz && rm /tmp/contents.tar.gz"
+        "cd /opt/cowrie/share/cowrie/contents && tar xzf $REMOTE_CONTENTS_TAR && rm -f $REMOTE_CONTENTS_TAR"
 
     FILE_COUNT=$(find "$CONTENTS_DIR" -type f | wc -l | tr -d ' ')
     echo_info "Uploaded $FILE_COUNT files with real content"
@@ -927,12 +932,17 @@ if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A "$CONTENTS_DIR" 2>/dev/null)" ]; then
         "mkdir -p /opt/cowrie/share/cowrie/txtcmds"
 
     # Upload txtcmds as tarball for efficiency (--no-xattrs to avoid macOS extended attributes)
-    tar --no-xattrs -czf /tmp/txtcmds.tar.gz -C "$CONTENTS_DIR" . 2>/dev/null
+    TXTCMDS_TAR=$(create_temp_file ".tar.gz")
+    tar --no-xattrs -czf "$TXTCMDS_TAR" -C "$CONTENTS_DIR" . 2>/dev/null
+
+    # SECURITY: Create unpredictable remote temp file to prevent symlink attacks
+    REMOTE_TXTCMDS_TAR=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+        "mktemp /tmp/cowrie.XXXXXXXXXX.tar.gz")
+
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-        /tmp/txtcmds.tar.gz "root@$SERVER_IP:/tmp/txtcmds.tar.gz" > /dev/null
+        "$TXTCMDS_TAR" "root@$SERVER_IP:$REMOTE_TXTCMDS_TAR" > /dev/null
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-        "cd /opt/cowrie/share/cowrie/txtcmds && tar xzf /tmp/txtcmds.tar.gz && rm /tmp/txtcmds.tar.gz"
-    rm /tmp/txtcmds.tar.gz
+        "cd /opt/cowrie/share/cowrie/txtcmds && tar xzf $REMOTE_TXTCMDS_TAR && rm -f $REMOTE_TXTCMDS_TAR"
 
     FILE_COUNT=$(find "$CONTENTS_DIR" -type f | wc -l | tr -d ' ')
     echo_info "Uploaded $FILE_COUNT files with txtcmds content"
@@ -949,10 +959,15 @@ if [ -d "$IDENTITY_DIR" ] && [ "$(ls -A "$IDENTITY_DIR" 2>/dev/null)" ]; then
     # Upload identity as tarball for efficiency (--no-xattrs to avoid macOS extended attributes)
     IDENTITY_TAR=$(create_temp_file ".tar.gz")
     tar --no-xattrs -czf "$IDENTITY_TAR" -C "$IDENTITY_DIR" . 2>/dev/null
+
+    # SECURITY: Create unpredictable remote temp file to prevent symlink attacks
+    REMOTE_IDENTITY_TAR=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+        "mktemp /tmp/cowrie.XXXXXXXXXX.tar.gz")
+
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-        "$IDENTITY_TAR" "root@$SERVER_IP:/tmp/identity.tar.gz" > /dev/null
+        "$IDENTITY_TAR" "root@$SERVER_IP:$REMOTE_IDENTITY_TAR" > /dev/null
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-        "cd /opt/cowrie/identity && tar xzf /tmp/identity.tar.gz && rm /tmp/identity.tar.gz"
+        "cd /opt/cowrie/identity && tar xzf $REMOTE_IDENTITY_TAR && rm -f $REMOTE_IDENTITY_TAR"
 
     FILE_COUNT=$(find "$IDENTITY_DIR" -type f | wc -l | tr -d ' ')
     echo_info "Uploaded $FILE_COUNT identity files (SSH config, kernel info, etc.)"
@@ -986,6 +1001,9 @@ fi
 # ============================================================
 
 echo_info "Generating cowrie.cfg with identity data..."
+
+# SECURITY: Use mktemp for config file (prevents symlink attacks)
+COWRIE_CFG_TMP=$(mktemp)
 
 # Read identity data
 KERNEL_VERSION=$(cat "$IDENTITY_DIR/kernel.txt" | awk '{print $3}')
@@ -1094,7 +1112,7 @@ if [ -f "$MASTER_CONFIG" ]; then
 fi
 
 # Create cowrie.cfg
-cat > /tmp/cowrie.cfg << EOFCFG
+cat > "$COWRIE_CFG_TMP" << EOFCFG
 [honeypot]
 hostname = $HOSTNAME
 log_path = var/log/cowrie
@@ -1127,16 +1145,16 @@ EOFCFG
 
 # Add SSH cipher configuration if captured from source server
 if [ -n "$SSH_CIPHERS" ]; then
-    echo "ciphers = $SSH_CIPHERS" >> /tmp/cowrie.cfg
+    echo "ciphers = $SSH_CIPHERS" >> "$COWRIE_CFG_TMP"
 fi
 if [ -n "$SSH_MACS" ]; then
-    echo "macs = $SSH_MACS" >> /tmp/cowrie.cfg
+    echo "macs = $SSH_MACS" >> "$COWRIE_CFG_TMP"
 fi
 if [ -n "$SSH_KEX" ]; then
-    echo "key_exchange = $SSH_KEX" >> /tmp/cowrie.cfg
+    echo "key_exchange = $SSH_KEX" >> "$COWRIE_CFG_TMP"
 fi
 
-cat >> /tmp/cowrie.cfg << EOFCFG
+cat >> "$COWRIE_CFG_TMP" << EOFCFG
 
 [telnet]
 enabled = false
@@ -1157,7 +1175,7 @@ EOFCFG
 
 # Add VirusTotal configuration if API key is available
 if [ -n "$VT_API_KEY" ]; then
-    cat >> /tmp/cowrie.cfg << EOFVT
+    cat >> "$COWRIE_CFG_TMP" << EOFVT
 
 [output_virustotal]
 enabled = true
@@ -1177,7 +1195,7 @@ fi
 
 # Add AbuseIPDB configuration if enabled
 if [ "$ABUSEIPDB_ENABLED" = "true" ] && [ -n "$ABUSEIPDB_API_KEY" ]; then
-    cat >> /tmp/cowrie.cfg << EOFABUSEIPDB
+    cat >> "$COWRIE_CFG_TMP" << EOFABUSEIPDB
 
 [output_abuseipdb]
 enabled = true
@@ -1192,7 +1210,7 @@ fi
 
 # Add DShield configuration if enabled
 if [ "$DSHIELD_ENABLED" = "true" ] && [ -n "$DSHIELD_USERID" ] && [ -n "$DSHIELD_AUTH_KEY" ]; then
-    cat >> /tmp/cowrie.cfg << EOFDSHIELD
+    cat >> "$COWRIE_CFG_TMP" << EOFDSHIELD
 
 [output_dshield]
 enabled = true
@@ -1207,9 +1225,9 @@ fi
 
 # Upload cowrie.cfg
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-    /tmp/cowrie.cfg "root@$SERVER_IP:/opt/cowrie/etc/cowrie.cfg" > /dev/null
+    "$COWRIE_CFG_TMP" "root@$SERVER_IP:/opt/cowrie/etc/cowrie.cfg" > /dev/null
 
-rm /tmp/cowrie.cfg
+rm -f "$COWRIE_CFG_TMP"
 
 echo_info "Configuration uploaded."
 
@@ -1255,11 +1273,14 @@ DOCKEREOF
 
 echo "[remote] Pulling pre-built Cowrie image from GitHub Container Registry..."
 cd /opt/cowrie
-if ! docker compose pull 2>&1 | tee /tmp/docker-pull.log; then
+DOCKER_PULL_LOG=$(mktemp /tmp/cowrie.XXXXXXXXXX.log)
+if ! docker compose pull 2>&1 | tee "$DOCKER_PULL_LOG"; then
   echo "[remote] ERROR: Failed to pull Cowrie image"
-  cat /tmp/docker-pull.log
+  cat "$DOCKER_PULL_LOG"
+  rm -f "$DOCKER_PULL_LOG"
   exit 1
 fi
+rm -f "$DOCKER_PULL_LOG"
 
 echo "[remote] Extracting metadata.json from pulled image..."
 docker run --rm ghcr.io/reuteras/cowrie:latest -c "print(open('/cowrie/cowrie-git/metadata.json').read(), end='')" > /opt/cowrie/metadata.json
@@ -1531,22 +1552,24 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
 
     # Process master config to generate server config
     echo_info "Processing master-config.toml..."
+    SERVER_REPORT_ENV=$(create_temp_file ".env")
     if command -v uv &> /dev/null; then
-        uv run --quiet scripts/process-config.py "$MASTER_CONFIG" > /tmp/server-report.env
+        uv run --quiet scripts/process-config.py "$MASTER_CONFIG" > "$SERVER_REPORT_ENV"
     else
         echo_warn " Error: Neither uv nor python3 found. Cannot process config."
         exit 1
     fi
 
-    if [ -f /tmp/server-report.env ]; then
+    if [ -f "$SERVER_REPORT_ENV" ]; then
         # Upload reporting config (scripts/ and pyproject.toml already from git)
         echo_info "Uploading reporting configuration..."
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-            /tmp/server-report.env "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
+            "$SERVER_REPORT_ENV" "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
 
-        # Move config to correct location
+        # Move config to correct location (get basename of temp file for remote path)
+        REPORT_ENV_BASENAME=$(basename "$SERVER_REPORT_ENV")
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-            "mv /opt/cowrie/server-report.env /opt/cowrie/etc/report.env && chmod 600 /opt/cowrie/etc/report.env"
+            "mv /opt/cowrie/$REPORT_ENV_BASENAME /opt/cowrie/etc/report.env && chmod 600 /opt/cowrie/etc/report.env"
 
         # Run setup-reporting.sh on the server
         echo_info "Running setup-reporting.sh on server..."
@@ -1557,7 +1580,6 @@ chmod +x scripts/setup-reporting.sh scripts/daily-report.py scripts/process-conf
 REPORTEOF
 
         echo_info "Reporting configured successfully"
-        rm -f /tmp/server-report.env
     else
         echo_warn " Error: Failed to process config. Skipping automated reporting setup."
         exit 1
@@ -1747,13 +1769,13 @@ sed -i "s|ghcr.io/reuteras/cowrie:latest|ghcr.io/${REPO_OWNER}/cowrie:latest|g" 
 sed -i "s|ghcr.io/reuteras/cowrie-web:latest|ghcr.io/${REPO_OWNER}/cowrie-web:latest|g" /opt/cowrie/docker-compose.yml
 
 # Write DASHBOARD_SOURCES_JSON to temp file to avoid quoting issues
-cat > /tmp/dashboard_sources.json << SOURCES_EOF
+DASHBOARD_SOURCES_TMP=$(create_temp_file ".json")
+cat > "$DASHBOARD_SOURCES_TMP" << SOURCES_EOF
 $DASHBOARD_SOURCES_JSON
 SOURCES_EOF
 
 # Compact JSON using jq to remove all extra whitespace
-SOURCES_CONTENT=\$(jq -c '.' /tmp/dashboard_sources.json 2>/dev/null || cat /tmp/dashboard_sources.json | tr -d '\\n')
-rm -f /tmp/dashboard_sources.json
+SOURCES_CONTENT=\$(jq -c '.' "$DASHBOARD_SOURCES_TMP" 2>/dev/null || cat "$DASHBOARD_SOURCES_TMP" | tr -d '\\n')
 
 # Replace DASHBOARD_SOURCES using awk
 awk -v sources="\$SOURCES_CONTENT" '{gsub(/DASHBOARD_SOURCES_PLACEHOLDER/, sources)}1' /opt/cowrie/docker-compose.yml > /opt/cowrie/docker-compose.yml.tmp
@@ -1762,11 +1784,14 @@ mv /opt/cowrie/docker-compose.yml.tmp /opt/cowrie/docker-compose.yml
 # Pull and start web service
 cd /opt/cowrie
 echo "[remote] Pulling web dashboard image from GitHub Container Registry..."
-if ! docker compose pull cowrie-web 2>&1 | tee /tmp/docker-pull-web.log; then
+DOCKER_PULL_WEB_LOG=$(mktemp /tmp/cowrie.XXXXXXXXXX.log)
+if ! docker compose pull cowrie-web 2>&1 | tee "$DOCKER_PULL_WEB_LOG"; then
   echo "[remote] ERROR: Failed to pull web dashboard image"
-  cat /tmp/docker-pull-web.log
+  cat "$DOCKER_PULL_WEB_LOG"
+  rm -f "$DOCKER_PULL_WEB_LOG"
   exit 1
 fi
+rm -f "$DOCKER_PULL_WEB_LOG"
 
 echo "[remote] Starting services..."
 # Stop any existing containers to avoid network conflicts (idempotent - won't fail if nothing running)
@@ -1807,19 +1832,37 @@ if command -v tailscale &> /dev/null; then
     if [ "$ENABLE_API" = "true" ] && [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ]; then
         echo "[remote] API will also be exposed - using path-based routing"
         echo "[remote] Dashboard: / -> port 5000, API: /api -> port 8000"
+
+        # Configure dashboard on root path
         tailscale serve --https=443 / --bg localhost:5000 > /dev/null 2>&1
 
-        # Add @reboot cron job (path-based routing for dashboard)
+        # Configure API on /api path
+        tailscale serve --https=443 /api --bg localhost:8000 > /dev/null 2>&1
+
+        # Add @reboot cron jobs (path-based routing for both dashboard and API)
         # Sleep 30 to ensure Tailscale is ready
-        (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve.*5000" | crontab -
-        (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 / --bg localhost:5000 > /dev/null 2>&1") | crontab -
+        # SECURITY: Use mktemp for unpredictable filename (prevents symlink attacks)
+        CRON_TMP=\$(mktemp)
+        # Remove old cron entries for these services
+        (crontab -l 2>/dev/null | grep -v "tailscale serve.*5000" | grep -v "tailscale serve.*8000") > "\$CRON_TMP" || true
+        # Add new cron entries
+        echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 / --bg localhost:5000 > /dev/null 2>&1" >> "\$CRON_TMP"
+        echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 /api --bg localhost:8000 > /dev/null 2>&1" >> "\$CRON_TMP"
+        crontab "\$CRON_TMP"
+        rm -f "\$CRON_TMP"
     else
         echo "[remote] Dashboard only - using direct port mapping"
         tailscale serve --bg --https=443 5000 > /dev/null 2>&1
 
         # Add @reboot cron job (direct port mapping)
-        (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve.*5000" | crontab -
-        (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 5000 > /dev/null 2>&1") | crontab -
+        # SECURITY: Use mktemp for unpredictable filename (prevents symlink attacks)
+        CRON_TMP=\$(mktemp)
+        # Remove old cron entry
+        (crontab -l 2>/dev/null | grep -v "tailscale serve.*5000") > "\$CRON_TMP" || true
+        # Add new cron entry
+        echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 5000 > /dev/null 2>&1" >> "\$CRON_TMP"
+        crontab "\$CRON_TMP"
+        rm -f "\$CRON_TMP"
     fi
 
     echo "[remote] Web dashboard available at: https://\$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
@@ -1895,8 +1938,14 @@ if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" != "tru
     tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1
 
     # Add @reboot cron job to ensure Tailscale Serve persists after reboot
-    (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve.*8000" | crontab -
-    (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1") | crontab -
+    # SECURITY: Use mktemp for unpredictable filename (prevents symlink attacks)
+    CRON_TMP=\$(mktemp)
+    # Remove old cron entry
+    (crontab -l 2>/dev/null | grep -v "tailscale serve.*8000") > "\$CRON_TMP" || true
+    # Add new cron entry
+    echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1" >> "\$CRON_TMP"
+    crontab "\$CRON_TMP"
+    rm -f "\$CRON_TMP"
 
     echo "[remote] API available at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
 elif [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
