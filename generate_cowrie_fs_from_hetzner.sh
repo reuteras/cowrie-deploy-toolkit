@@ -467,9 +467,8 @@ rm -rf /root/cowrie
 rm -rf /tmp/cowrie* /var/tmp/cowrie* /opt/cowrie* 2>/dev/null || true
 
 # Create dummy files for commands below
-echo "Dummy file" > /bin/enable && chmod +x /bin/enable
-touch /bin/sync && chmod +x /bin/sync
-echo "Dummy file" > /bin/ulimit && chmod +x /bin/ulimit
+echo "Dummy file" > /usr/bin/enable && chmod +x /usr/bin/enable
+touch /usr/bin/sync && chmod +x /usr/bin/sync
 
 # Create the pickle from cleaned filesystem
 cd /tmp
@@ -484,14 +483,11 @@ rm -rf /tmp/.venv /tmp/createfs.py
 # Use 'ps aux' format for easier parsing into cmdoutput.json
 ps aux > /root/ps.txt
 
-# /bin
-mkdir -p /root/txtcmds/bin
-enable > /root/txtcmds/bin/enable 2>&1
-ulimit > /root/txtcmds/bin/ulimit 2>&1
-
+# /usr/bin
 mkdir -p /root/txtcmds/usr/bin
 df > /root/txtcmds/usr/bin/df 2>&1
 dmesg > /root/txtcmds/usr/bin/dmesg 2>&1
+enable > /root/txtcmds/usr/bin/enable 2>&1
 locate > /root/txtcmds/usr/bin/locate 2>&1
 lscpu > /root/txtcmds/usr/bin/lscpu 2>&1
 make > /root/txtcmds/usr/bin/make 2>&1
@@ -597,7 +593,6 @@ cp /proc/cpuinfo \
     /proc/meminfo \
     /proc/mounts \
     /proc/modules \
-    /proc/uptime \
     /proc/version \
     proc/
 
