@@ -31,6 +31,70 @@ This project deploys realistic Cowrie SSH honeypots on Hetzner Cloud infrastruct
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## Deployment Architecture
+
+### File Sources and Management
+
+The deployment uses a **git-first architecture** with clear separation between version-controlled code and deployment-specific artifacts:
+
+#### Git-Managed (Version Controlled)
+```
+/opt/cowrie/ (cloned from GitHub)
+├── scripts/          # Python/bash automation scripts
+├── api/              # FastAPI service code
+├── web/              # Flask dashboard code
+├── cowrie/           # Cowrie Dockerfile and configs
+├── pyproject.toml    # Python dependencies (uv)
+├── docker-compose*.yml
+└── README.md, CLAUDE.md
+```
+
+**Source**: `git clone https://github.com/reuteras/cowrie-deploy-toolkit.git`
+**Updates**: `git pull` via `update-agent.sh`
+
+#### SCP-Managed (Deployment Artifacts)
+```
+/opt/cowrie/
+├── share/cowrie/
+│   ├── fs.pickle              # Filesystem snapshot (from template server)
+│   ├── cmdoutput.json         # Process list (from template server)
+│   ├── contents/              # File contents (from template server)
+│   └── txtcmds/               # Command outputs (from template server)
+├── identity/                   # SSH keys, kernel info (from template server)
+├── etc/
+│   ├── cowrie.cfg             # Generated (SERVER_IP, etc.)
+│   ├── userdb.txt             # Generated (IP-locked creds)
+│   └── report.env             # Generated (API keys, SMTP)
+├── var/                        # Runtime data, caches, databases
+├── build/                      # Custom plugins
+├── deployment.conf             # Per-deployment metadata
+├── metadata.json              # Extracted from container
+└── VERSION.json               # Update tracking
+```
+
+**Source**: SCP uploads from local machine or generated on server
+**Updates**: Not updated (deployment-specific)
+**Git**: These paths are in `.gitignore` to prevent conflicts
+
+### Deployment Flow Details
+
+1. **STEP 6**: `git clone` repository → All code files available immediately
+2. **STEP 6.5**: Install `uv` → `uv sync` using git-provided `pyproject.toml`
+3. **STEP 6.75**: Create artifact directories (share/, identity/, etc/, var/, build/)
+4. **STEP 7+**: Upload template artifacts (fs.pickle, identity/, etc.) via SCP
+5. **STEP 8+**: Generate configs (cowrie.cfg, userdb.txt) and upload via SCP
+6. **STEP 9+**: Build and configure services using git-provided code
+7. **STEP 15**: Create VERSION.json for update tracking
+
+### Key Benefits
+
+- **Clear ownership**: Git = code, SCP = data
+- **No timing issues**: All code files available from STEP 6 onwards
+- **No redundant uploads**: Each file uploaded once from correct source
+- **Consistent versions**: All deployments use canonical code from GitHub
+- **Simpler updates**: `update-agent.sh` only updates git files
+- **Always works**: `uv` installed unconditionally (not just if reporting enabled)
+
 ## Requirements
 
 - Hetzner Cloud account with API access
