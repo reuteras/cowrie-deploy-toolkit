@@ -117,8 +117,10 @@ class DataSource:
         if not start_time and not end_time:
             end_dt = datetime.now(timezone.utc)
             start_dt = end_dt - timedelta(hours=hours)
-            start_time = start_dt.isoformat()
-            end_time = end_dt.isoformat()
+            # Remove timezone suffix to avoid URL encoding issues with '+'
+            # All times are UTC, so timezone info is redundant
+            start_time = start_dt.isoformat().replace("+00:00", "")
+            end_time = end_dt.isoformat().replace("+00:00", "")
 
         params = {
             "limit": limit,
