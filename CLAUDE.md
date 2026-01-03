@@ -38,7 +38,7 @@ This project deploys realistic Cowrie SSH honeypots on Hetzner Cloud infrastruct
 The deployment uses a **git-first architecture** with clear separation between version-controlled code and deployment-specific artifacts:
 
 #### Git-Managed (Version Controlled)
-```
+```text
 /opt/cowrie/ (cloned from GitHub)
 ├── scripts/          # Python/bash automation scripts
 ├── api/              # FastAPI service code
@@ -53,7 +53,7 @@ The deployment uses a **git-first architecture** with clear separation between v
 **Updates**: `git pull` via `update-agent.sh`
 
 #### SCP-Managed (Deployment Artifacts)
-```
+```text
 /opt/cowrie/
 ├── share/cowrie/
 │   ├── fs.pickle              # Filesystem snapshot (from template server)

@@ -947,7 +947,7 @@ class TTYLogParser:
         """
         tty_logs = session.get("tty_logs", [])
         commands = session.get("commands", [])
-        username = session.get("username", "root")
+        session.get("username", "root")
 
         print(f"[DEBUG] merge_tty_logs: Found {len(tty_logs)} TTY logs and {len(commands)} commands")
 
