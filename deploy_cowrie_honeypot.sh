@@ -679,6 +679,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -qq -y \
     ca-certificates \
     curl \
     gnupg \
+    git \
     jq > /dev/null
 
 # Add Docker's official GPG key
