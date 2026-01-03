@@ -1297,16 +1297,18 @@ docker run --rm cowrie-custom:latest -c "print(open('/cowrie/cowrie-git/metadata
 
 echo "[remote] Initializing Cowrie volumes with custom configuration..."
 
-# Start container briefly to initialize volumes
-if ! docker compose up -d 2>&1; then
-  echo "[remote] ERROR: Failed to start Cowrie container"
-  echo "[remote] Checking container status..."
-  docker compose ps
-  docker compose logs --tail=50
-  exit 1
-fi
-sleep 10
-docker compose stop > /dev/null 2>&1
+# IMPORTANT: Create and configure database BEFORE first container start
+# Otherwise Cowrie will initialize it with wrong permissions
+
+# Create SQLite database with schema
+echo "[remote] Creating SQLite database..."
+docker run --rm -i \
+  -v cowrie-var:/var \
+  alpine sh -c '
+    apk add --no-cache sqlite curl &&
+    mkdir -p /var/lib/cowrie &&
+    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db
+  ' > /dev/null 2>&1
 
 # Copy cowrie.cfg into etc volume
 echo "[remote] Copying cowrie.cfg to volume..."
@@ -1322,22 +1324,17 @@ docker run --rm \
   -v /opt/cowrie/etc/userdb.txt:/src/userdb.txt:ro \
   alpine cp /src/userdb.txt /dest/ > /dev/null 2>&1
 
-# Create SQLite database
-echo "[remote] Creating SQLite database..."
-docker run --rm -i \
-  -v cowrie-var:/var \
-  alpine sh -c '
-    apk add --no-cache sqlite curl &&
-    mkdir -p /var/lib/cowrie &&
-    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db &&
-    chmod 644 /var/lib/cowrie/cowrie.db
-  ' > /dev/null 2>&1
-
 # Set proper ownership (UID 999 = cowrie user) and permissions
+# CRITICAL: Must be done BEFORE Cowrie starts
+echo "[remote] Setting ownership and permissions..."
 docker run --rm \
   -v cowrie-etc:/etc \
   -v cowrie-var:/var \
-  alpine sh -c 'chown -R 999:999 /etc /var && chmod -R u+w /var/lib/cowrie' > /dev/null 2>&1
+  alpine sh -c '
+    chown -R 999:999 /etc /var &&
+    chmod 755 /var/lib/cowrie &&
+    chmod 644 /var/lib/cowrie/cowrie.db
+  ' > /dev/null 2>&1
 
 # Start Cowrie with custom configuration
 echo "[remote] Starting Cowrie with custom configuration..."
