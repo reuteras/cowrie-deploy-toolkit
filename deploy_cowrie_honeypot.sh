@@ -1861,9 +1861,17 @@ if [ "$ENABLE_API" = "true" ]; then
 set -e
 cd /opt/cowrie
 
+# Debug: Show values that will be used for replacement
+echo "[remote] SERVER_IP: $SERVER_IP"
+echo "[remote] HONEYPOT_HOSTNAME: $HONEYPOT_HOSTNAME"
+
 # Replace placeholders in docker-compose.api.yml with actual values
 sed -i "s|SERVER_IP_PLACEHOLDER|$SERVER_IP|g" /opt/cowrie/docker-compose.api.yml
 sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$HONEYPOT_HOSTNAME|g" /opt/cowrie/docker-compose.api.yml
+
+# Debug: Verify replacement worked
+echo "[remote] Verifying environment variable replacement..."
+grep -E "SERVER_IP=|HONEYPOT_HOSTNAME=" /opt/cowrie/docker-compose.api.yml | grep -v PLACEHOLDER || echo "[remote] WARNING: Replacement may have failed"
 
 # API port is always exposed on localhost (127.0.0.1:8000)
 # This is safe and required for Tailscale Serve to proxy the API
