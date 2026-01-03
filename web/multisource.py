@@ -572,7 +572,11 @@ class MultiSourceDataSource:
         for ip_info in aggregated["ip_list"]:
             ip = ip_info["ip"]
             if ip not in ip_dict:
-                ip_dict[ip] = ip_info
+                # Ensure all necessary keys exist with defaults
+                ip_dict[ip] = ip_info.copy()
+                ip_dict[ip]["count"] = ip_info.get("count", 0)
+                ip_dict[ip]["successful_logins"] = ip_info.get("successful_logins", 0)
+                ip_dict[ip]["failed_logins"] = ip_info.get("failed_logins", 0)
             else:
                 # Merge counts from multiple sources
                 ip_dict[ip]["count"] += ip_info.get("count", 0)
