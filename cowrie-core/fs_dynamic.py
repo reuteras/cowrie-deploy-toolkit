@@ -20,10 +20,15 @@ class DynamicHoneyPotFilesystem(HoneyPotFilesystem):
     HoneyPotFilesystem with dynamic /proc/uptime that changes based on container runtime
     """
 
+    # Class variable to store start time across instances
+    _start_time = None
+
     def __init__(self, arch: str, home: str) -> None:
         super().__init__(arch, home)
         # Track when the container/honeypot started
-        self.start_time = time.time()
+        if DynamicHoneyPotFilesystem._start_time is None:
+            DynamicHoneyPotFilesystem._start_time = time.time()
+        self.start_time = DynamicHoneyPotFilesystem._start_time
 
     def file_contents(self, target: str):
         """
@@ -40,4 +45,12 @@ class DynamicHoneyPotFilesystem(HoneyPotFilesystem):
         return super().file_contents(target)
 
 
+# Apply the monkey patch to replace the filesystem class
+print("Dynamic filesystem: Installing monkey patch for /proc/uptime")
 cowrie.shell.fs.HoneyPotFilesystem = DynamicHoneyPotFilesystem
+
+# Also patch the module's direct reference if it exists
+import sys
+
+if hasattr(sys.modules.get("cowrie.shell.fs"), "HoneyPotFilesystem"):
+    sys.modules["cowrie.shell.fs"].HoneyPotFilesystem = DynamicHoneyPotFilesystem

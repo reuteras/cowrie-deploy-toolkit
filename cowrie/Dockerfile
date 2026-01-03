@@ -20,9 +20,9 @@ RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp
 # hadolint ignore=SC1088
 RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp/cowrie-core'); dest = Path('/cowrie/cowrie-git/src/cowrie/core'); exclude = ['commands', 'fs_dynamic', 'server_dynamic']; files = [f for f in src.glob('*.py') if f.stem not in exclude]; [shutil.copy2(f, dest / f.name) for f in files]; print(f'Installed {len(files)} custom file(s) for core' if files else 'No custom files for core, using defaults')"]
 
-# Copy dynamic filesystem file if it exists (exec form - no shell at all)
+# Copy dynamic filesystem file if it exists and import it to apply monkey patch
 # hadolint ignore=SC1088
-RUN ["python3", "-c", "import shutil; from pathlib import Path; src = Path('/tmp/cowrie-core'); dest = Path('/cowrie/cowrie-git/src/cowrie/shell'); dynamic_file = src / 'fs_dynamic.py'; installed = False; [shutil.copy2(dynamic_file, dest / 'fs_dynamic.py') or (installed := True)] if dynamic_file.exists() else None; print('Installed dynamic filesystem' if installed else 'No dynamic filesystem, using standard filesystem')"]
+RUN ["python3", "-c", "import shutil, sys; from pathlib import Path; src = Path('/tmp/cowrie-core'); dest = Path('/cowrie/cowrie-git/src/cowrie/shell'); dynamic_file = src / 'fs_dynamic.py'; installed = False; shutil.copy2(dynamic_file, dest / 'fs_dynamic.py') if dynamic_file.exists() else None; installed = dynamic_file.exists(); print('Installed dynamic filesystem' if installed else 'No dynamic filesystem, using standard filesystem'); sys.path.insert(0, str(dest)); exec(open(dest / 'fs_dynamic.py').read()) if installed else None"]
 
 # Copy command files if they exist (exec form - no shell at all)
 # hadolint ignore=SC1088
