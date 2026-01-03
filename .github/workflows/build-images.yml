@@ -1,15 +1,9 @@
+---
 name: Build Docker Images
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'web/**'
-      - 'api/**'
-      - 'cowrie/**'
-      - 'cowrie-core/**'
-      - '.github/workflows/build-images.yml'
+    branches: [main]
   schedule:
     - cron: '0 6 * * 1'  # Every Monday at 6:00 AM UTC
   #checkov:skip=CKV_GHA_7:Manual workflow with safe boolean input for tag control
