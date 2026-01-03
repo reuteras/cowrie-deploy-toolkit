@@ -1329,14 +1329,15 @@ docker run --rm -i \
   alpine sh -c '
     apk add --no-cache sqlite curl &&
     mkdir -p /var/lib/cowrie &&
-    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db
+    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db &&
+    chmod 644 /var/lib/cowrie/cowrie.db
   ' > /dev/null 2>&1
 
-# Set proper ownership (UID 999 = cowrie user)
+# Set proper ownership (UID 999 = cowrie user) and permissions
 docker run --rm \
   -v cowrie-etc:/etc \
   -v cowrie-var:/var \
-  alpine chown -R 999:999 /etc /var > /dev/null 2>&1
+  alpine sh -c 'chown -R 999:999 /etc /var && chmod -R u+w /var/lib/cowrie' > /dev/null 2>&1
 
 # Start Cowrie with custom configuration
 echo "[remote] Starting Cowrie with custom configuration..."
