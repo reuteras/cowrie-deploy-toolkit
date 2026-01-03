@@ -447,11 +447,13 @@ class SQLiteStatsParser:
 
             if start_time:
                 where_clauses.append("s.starttime >= ?")
-                params.append(start_time.strftime("%Y-%m-%d %H:%M:%S"))
+                # Format as ISO8601 to match database format (YYYY-MM-DDTHH:MM:SS.ffffffZ)
+                params.append(start_time.strftime("%Y-%m-%dT%H:%M:%S"))
 
             if end_time:
                 where_clauses.append("s.starttime <= ?")
-                params.append(end_time.strftime("%Y-%m-%d %H:%M:%S"))
+                # Format as ISO8601 to match database format (YYYY-MM-DDTHH:MM:SS.ffffffZ)
+                params.append(end_time.strftime("%Y-%m-%dT%H:%M:%S"))
 
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
