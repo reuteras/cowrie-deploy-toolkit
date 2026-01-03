@@ -1271,6 +1271,19 @@ volumes:
     name: cowrie-var
 DOCKEREOF
 
+# Make container and volume names unique per honeypot
+sed -i '' "s/container_name: cowrie$/container_name: cowrie-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i '' "s/container_name: cowrie-web$/container_name: cowrie-web-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i '' "s/container_name: cowrie-api$/container_name: cowrie-api-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i '' "s/name: cowrie-etc$/name: cowrie-etc-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i '' "s/name: cowrie-var$/name: cowrie-var-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+sed -i '' "s/name: cowrie-internal$/name: cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+# Update volume references in services
+sed -i '' "s/- cowrie-etc:/- cowrie-etc-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.yml
+sed -i '' "s/- cowrie-var:/- cowrie-var-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.yml
+# Update network references
+sed -i '' "s/- cowrie-internal/- cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+
 echo "[remote] Pulling pre-built Cowrie image from GitHub Container Registry..."
 cd /opt/cowrie
 DOCKER_PULL_LOG=$(mktemp /tmp/cowrie.XXXXXXXXXX.log)
@@ -1293,7 +1306,7 @@ echo "[remote] Initializing Cowrie volumes with custom configuration..."
 # Create SQLite database with schema
 echo "[remote] Creating SQLite database..."
 docker run --rm -i \
-  -v cowrie-var:/var \
+  -v cowrie-var-${TAILSCALE_NAME}:/var \
   alpine sh -c '
     apk add --no-cache sqlite curl &&
     mkdir -p /var/lib/cowrie &&
@@ -1303,14 +1316,14 @@ docker run --rm -i \
 # Copy cowrie.cfg into etc volume
 echo "[remote] Copying cowrie.cfg to volume..."
 docker run --rm \
-  -v cowrie-etc:/dest \
+  -v cowrie-etc-${TAILSCALE_NAME}:/dest \
   -v /opt/cowrie/etc/cowrie.cfg:/src/cowrie.cfg:ro \
   alpine cp /src/cowrie.cfg /dest/ > /dev/null 2>&1
 
 # Copy userdb.txt into etc volume
 echo "[remote] Copying userdb.txt to volume..."
 docker run --rm \
-  -v cowrie-etc:/dest \
+  -v cowrie-etc-${TAILSCALE_NAME}:/dest \
   -v /opt/cowrie/etc/userdb.txt:/src/userdb.txt:ro \
   alpine cp /src/userdb.txt /dest/ > /dev/null 2>&1
 
@@ -1318,8 +1331,8 @@ docker run --rm \
 # CRITICAL: Must be done BEFORE Cowrie starts
 echo "[remote] Setting ownership and permissions..."
 docker run --rm \
-  -v cowrie-etc:/etc \
-  -v cowrie-var:/var \
+  -v cowrie-etc-${TAILSCALE_NAME}:/etc \
+  -v cowrie-var-${TAILSCALE_NAME}:/var \
   alpine sh -c '
     chown -R 999:999 /etc /var &&
     chmod 755 /var/lib/cowrie &&
@@ -1668,9 +1681,9 @@ if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
 set -e
 
 # Create TTY log directory with correct permissions (if volume exists)
-if [ -d /var/lib/docker/volumes/cowrie-var/_data ]; then
-    mkdir -p /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty
-    chown -R 999:999 /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty
+if [ -d /var/lib/docker/volumes/cowrie-var-${TAILSCALE_NAME}/_data ]; then
+    mkdir -p /var/lib/docker/volumes/cowrie-var-${TAILSCALE_NAME}/_data/lib/cowrie/tty
+    chown -R 999:999 /var/lib/docker/volumes/cowrie-var-${TAILSCALE_NAME}/_data/lib/cowrie/tty
 else
     echo "[remote] Cowrie volume not yet created, will be created by docker compose"
 fi
@@ -1899,6 +1912,17 @@ echo "[remote] HONEYPOT_HOSTNAME: $HONEYPOT_HOSTNAME"
 sed -i "s|SERVER_IP_PLACEHOLDER|$SERVER_IP|g" /opt/cowrie/docker-compose.api.yml
 sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$HONEYPOT_HOSTNAME|g" /opt/cowrie/docker-compose.api.yml
 sed -i "s|ghcr.io/reuteras/cowrie-api:latest|ghcr.io/${REPO_OWNER}/cowrie-api:latest|g" /opt/cowrie/docker-compose.api.yml
+
+# Make API container and volume names unique per honeypot
+sed -i '' "s/container_name: cowrie-api$/container_name: cowrie-api-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
+sed -i '' "s/name: cowrie-etc$/name: cowrie-etc-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
+sed -i '' "s/name: cowrie-var$/name: cowrie-var-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
+sed -i '' "s/name: cowrie-internal$/name: cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
+# Update volume references in API service
+sed -i '' "s/- cowrie-etc:/- cowrie-etc-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.api.yml
+sed -i '' "s/- cowrie-var:/- cowrie-var-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.api.yml
+# Update network references
+sed -i '' "s/- cowrie-internal/- cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
 
 # Debug: Verify replacement worked
 echo "[remote] Verifying environment variable replacement..."
