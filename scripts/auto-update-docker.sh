@@ -49,21 +49,55 @@ fi
 log "Starting auto-update check..."
 
 # ============================================================
-# Step 1: Update images (build cowrie, pull cowrie-web)
+# Step 1: Update images based on available services
 # ============================================================
 
-# Build cowrie image (always needs building due to custom plugins/core)
-log "Building custom Cowrie image (includes latest cowrie/cowrie:latest base)..."
-if ! docker compose build --pull cowrie >> "$LOG_FILE" 2>&1 ; then
-    log "ERROR: Failed to build custom Cowrie image"
-    exit 1
+# Get list of services in main docker-compose.yml
+AVAILABLE_SERVICES=$(docker compose config --services 2>/dev/null || echo "")
+
+# Build cowrie image (should always exist)
+if echo "$AVAILABLE_SERVICES" | grep -q "^cowrie$"; then
+    log "Building custom Cowrie image (includes latest cowrie/cowrie:latest base)..."
+    if ! docker compose build --pull cowrie >> "$LOG_FILE" 2>&1 ; then
+        log "ERROR: Failed to build custom Cowrie image"
+        exit 1
+    fi
+else
+    log "WARNING: cowrie service not found in docker-compose.yml"
 fi
 
-# Pull cowrie-web image from registry (no custom build needed)
-log "Pulling cowrie-web image from registry..."
-if ! docker compose pull cowrie-web >> "$LOG_FILE" 2>&1 ; then
-    log "ERROR: Failed to pull web dashboard image"
-    exit 1
+# Pull cowrie-web image if service exists
+if echo "$AVAILABLE_SERVICES" | grep -q "^cowrie-web$"; then
+    log "Pulling cowrie-web image from registry..."
+    if ! docker compose pull cowrie-web >> "$LOG_FILE" 2>&1 ; then
+        log "ERROR: Failed to pull web dashboard image"
+        exit 1
+    fi
+else
+    log "cowrie-web service not found, skipping..."
+fi
+
+# Handle cowrie-api if docker-compose.api.yml exists
+if [ -f "docker-compose.api.yml" ]; then
+    API_SERVICES=$(docker compose -f docker-compose.yml -f docker-compose.api.yml config --services 2>/dev/null || echo "")
+    if echo "$API_SERVICES" | grep -q "^cowrie-api$"; then
+        log "Pulling cowrie-api image from registry..."
+        if ! docker compose -f docker-compose.yml -f docker-compose.api.yml pull cowrie-api >> "$LOG_FILE" 2>&1 ; then
+            log "ERROR: Failed to pull API image"
+            exit 1
+        fi
+
+        # Also build cowrie-api if it has a build context
+        if docker compose -f docker-compose.yml -f docker-compose.api.yml config cowrie-api 2>/dev/null | grep -q "build:"; then
+            log "Building cowrie-api image..."
+            if ! docker compose -f docker-compose.yml -f docker-compose.api.yml build cowrie-api >> "$LOG_FILE" 2>&1 ; then
+                log "ERROR: Failed to build API image"
+                exit 1
+            fi
+        fi
+    fi
+else
+    log "docker-compose.api.yml not found, skipping API updates..."
 fi
 
 # ============================================================
@@ -71,25 +105,32 @@ fi
 # ============================================================
 log "Updating containers..."
 
-# docker compose up -d automatically:
-# - Recreates containers if images have changed
-# - Leaves containers alone if nothing changed
-# - Handles dependencies correctly
+# Update main containers
 if docker compose up -d >> "$LOG_FILE" 2>&1 ; then
-    log "Containers updated successfully"
-
-    # Wait a few seconds for containers to start
-    sleep 5
-
-    # Clean up old images
-    log "Cleaning up old images..."
-    docker image prune -f >> "$LOG_FILE" 2>&1
-
-    log "Auto-update completed successfully"
+    log "Main containers updated successfully"
 else
-    log "ERROR: Failed to update containers"
+    log "ERROR: Failed to update main containers"
     exit 1
 fi
+
+# Update API containers if they exist
+if [ -f "docker-compose.api.yml" ]; then
+    if docker compose -f docker-compose.yml -f docker-compose.api.yml up -d >> "$LOG_FILE" 2>&1 ; then
+        log "API containers updated successfully"
+    else
+        log "ERROR: Failed to update API containers"
+        exit 1
+    fi
+fi
+
+# Wait a few seconds for containers to start
+sleep 5
+
+# Clean up old images
+log "Cleaning up old images..."
+docker image prune -f >> "$LOG_FILE" 2>&1
+
+log "Auto-update completed successfully"
 
 # ============================================================
 # Step 5: Health check
@@ -110,11 +151,20 @@ else
 fi
 
 # Check if web dashboard is running (if it exists)
-if docker compose config --services 2>/dev/null | grep -q cowrie-web; then
+if echo "$AVAILABLE_SERVICES" | grep -q "^cowrie-web$"; then
     if docker ps --filter "name=cowrie-web" --filter "status=running" | grep -q cowrie-web; then
         log "✓ Web dashboard is running"
     else
         log "WARNING: Web dashboard container is not running"
+    fi
+fi
+
+# Check if API is running (if docker-compose.api.yml exists)
+if [ -f "docker-compose.api.yml" ]; then
+    if docker ps --filter "name=cowrie-api" --filter "status=running" | grep -q cowrie-api; then
+        log "✓ API container is running"
+    else
+        log "WARNING: API container is not running"
     fi
 fi
 
