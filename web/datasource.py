@@ -270,12 +270,28 @@ class DataSource:
             totals = api_data.get("totals", {})
 
             # Convert top_ips to ip_list format (list of dicts with "ip" key)
+            # Create a lookup for geo data from ip_locations
+            geo_lookup = {}
+            for location in api_data.get("ip_locations", []):
+                geo_lookup[location["ip"]] = {
+                    "country": location.get("country", "Unknown"),
+                    "city": location.get("city", "Unknown"),
+                    "latitude": location.get("lat"),
+                    "longitude": location.get("lon"),
+                }
+
             ip_list = []
             for ip_data in api_data.get("top_ips", []):
+                ip = ip_data.get("ip", "")
+                geo = geo_lookup.get(ip, {})
                 ip_list.append(
                     {
-                        "ip": ip_data.get("ip", ""),
+                        "ip": ip,
                         "count": ip_data.get("count", 0),
+                        "geo": geo,
+                        "successful_logins": 0,  # Not available in API overview
+                        "failed_logins": 0,  # Not available in API overview
+                        "last_seen": None,  # Not available in API overview
                     }
                 )
 
