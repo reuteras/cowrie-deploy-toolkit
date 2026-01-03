@@ -1822,11 +1822,12 @@ if command -v tailscale &> /dev/null; then
     if [ "$ENABLE_API" = "true" ] && [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ]; then
         echo "[remote] API will also be exposed - using path-based routing"
         echo "[remote] Dashboard: / -> port 5000, API: /api -> port 8000"
-        tailscale serve --https=443 --bg localhost:5000 > /dev/null 2>&1
+        tailscale serve --https=443 / --bg localhost:5000 > /dev/null 2>&1
 
         # Add @reboot cron job (path-based routing for dashboard)
+        # Sleep 30 to ensure Tailscale is ready
         (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve.*5000" | crontab -
-        (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:5000 > /dev/null 2>&1") | crontab -
+        (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 / --bg localhost:5000 > /dev/null 2>&1") | crontab -
     else
         echo "[remote] Dashboard only - using direct port mapping"
         tailscale serve --bg --https=443 5000 > /dev/null 2>&1
@@ -1896,9 +1897,9 @@ if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && command -v tailscale &> /dev/null
 
     # Check if web dashboard is already using port 443
     if tailscale serve status 2>/dev/null | grep -q ":443"; then
-        echo "[remote] WARNING: Port 443 already in use by another service (likely web dashboard)"
+        echo "[remote] Port 443 already in use by web dashboard"
         echo "[remote] Using path-based routing: /api -> localhost:8000"
-        tailscale serve --https=443 --set-path=/api --bg localhost:8000 > /dev/null 2>&1
+        tailscale serve --https=443 /api --bg localhost:8000 > /dev/null 2>&1
     else
         echo "[remote] Configuring Tailscale Serve for API on port 443..."
         tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1
@@ -1908,8 +1909,8 @@ if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && command -v tailscale &> /dev/null
     (crontab -l 2>/dev/null || echo "") | grep -v "tailscale serve.*8000" | crontab -
     if tailscale serve status 2>/dev/null | grep -q ":443"; then
         # Path-based routing (port 443 already in use by dashboard)
-        # Longer sleep to ensure web dashboard is fully configured first
-        (crontab -l; echo "@reboot sleep 45 && /usr/bin/tailscale serve --https=443 --set-path=/api --bg localhost:8000 > /dev/null 2>&1") | crontab -
+        # Sleep 35 to ensure web dashboard starts first (sleep 30)
+        (crontab -l; echo "@reboot sleep 35 && /usr/bin/tailscale serve --https=443 /api --bg localhost:8000 > /dev/null 2>&1") | crontab -
     else
         # Direct port mapping (API only, no dashboard)
         (crontab -l; echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1") | crontab -
