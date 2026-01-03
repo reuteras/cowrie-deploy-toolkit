@@ -755,18 +755,93 @@ EOF
 echo_info "Security configuration complete."
 
 # ============================================================
-# STEP 6 — Upload configuration
+# STEP 6 — Clone Git Repository
 # ============================================================
 
-echo_info "Uploading Cowrie configuration..."
+echo_info "Cloning cowrie-deploy-toolkit repository..."
 
-# Create remote directory structure
+# Clone repository to /opt/cowrie
+# This provides all version-controlled files: scripts, configs, docker files, etc.
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
-mkdir -p /opt/cowrie/etc /opt/cowrie/var/lib/cowrie/downloads /opt/cowrie/var/log/cowrie /opt/cowrie/share/cowrie
+set -e
+
+# Clone repository
+cd /opt
+if [ -d "cowrie" ]; then
+    echo "[remote] WARNING: /opt/cowrie already exists, removing..."
+    rm -rf cowrie
+fi
+
+git clone https://github.com/reuteras/cowrie-deploy-toolkit.git cowrie
+cd cowrie
+
+echo "[remote] Repository cloned successfully"
+echo "[remote] Git commit: $(git rev-parse --short HEAD)"
+EOF
+
+echo_info "Repository cloned successfully"
+
+# ============================================================
+# STEP 6.5 — Install uv and Python dependencies
+# ============================================================
+
+echo_info "Installing uv and Python dependencies..."
+
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'UVEOF'
+set -e
+
+# Install uv
+if ! command -v uv &> /dev/null; then
+    echo "[remote] Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
+    export PATH="$HOME/.local/bin:$PATH"
+    echo "[remote] uv installed successfully"
+else
+    echo "[remote] uv already installed"
+fi
+
+# Sync Python dependencies (pyproject.toml is now available from git)
+cd /opt/cowrie
+export PATH="$HOME/.local/bin:$PATH"
+echo "[remote] Syncing Python dependencies..."
+uv sync --quiet > /dev/null 2>&1
+echo "[remote] Python environment ready"
+UVEOF
+
+echo_info "uv and Python dependencies installed"
+
+# ============================================================
+# STEP 6.75 — Create deployment artifact directories
+# ============================================================
+
+echo_info "Creating deployment artifact directories..."
+
+# Create directories for deployment-specific files (not in git)
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
+set -e
+
+# Create artifact directories (gitignored, for scp'd files)
+mkdir -p /opt/cowrie/share/cowrie/{contents,txtcmds}
+mkdir -p /opt/cowrie/identity
+mkdir -p /opt/cowrie/etc
+mkdir -p /opt/cowrie/var/lib/cowrie/downloads
+mkdir -p /opt/cowrie/var/log/cowrie
+mkdir -p /opt/cowrie/build/cowrie-plugins
+mkdir -p /opt/cowrie/build/cowrie-core
 
 # Set ownership to UID 999 (cowrie user in container) for writable directories
 chown -R 999:999 /opt/cowrie/var
+
+echo "[remote] Artifact directories created"
 EOF
+
+echo_info "Artifact directories created"
+
+# ============================================================
+# STEP 7 — Upload template server artifacts
+# ============================================================
+
+echo_info "Uploading template server artifacts..."
 
 # Create deployment config file with honeypot metadata
 echo_info "Creating deployment config file..."
@@ -1496,10 +1571,10 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     fi
 
     if [ -f /tmp/server-report.env ]; then
-        # Upload toolkit files to server
-        echo_info "Uploading reporting toolkit..."
-        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
-            scripts README.md pyproject.toml /tmp/server-report.env "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
+        # Upload reporting config (scripts/ and pyproject.toml already from git)
+        echo_info "Uploading reporting configuration..."
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+            /tmp/server-report.env "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
 
         # Move config to correct location
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
@@ -1596,16 +1671,7 @@ if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
     WEB_BASE_URL="https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
     echo_info "Web dashboard base URL: $WEB_BASE_URL"
 
-    # Upload web service files
-    echo_info "Uploading web service files..."
-    scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
-        web "root@$SERVER_IP:/opt/cowrie/" || {
-            echo_warn " Error: Failed to upload web service files"
-            echo_warn " This usually means the web/ directory is missing from your local directory"
-            echo_warn " Make sure you're running the script from the cowrie-deploy-toolkit directory"
-            exit 1
-        }
-
+    # Web service files already from git (STEP 6)
     # Set up web dashboard on server
     # shellcheck disable=SC2087
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << WEBEOF
@@ -1787,21 +1853,7 @@ fi
 if [ "$ENABLE_API" = "true" ]; then
     echo_info "Setting up Cowrie API for multi-host dashboard deployment..."
 
-    # Upload API directory
-    echo_info "Uploading API service files..."
-    scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" -r \
-        api "root@$SERVER_IP:/opt/cowrie/" || {
-            echo_warn " Error: Failed to upload API service files"
-            exit 1
-        }
-
-    # Upload docker-compose.api.yml
-    scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-        docker-compose.api.yml "root@$SERVER_IP:/opt/cowrie/" || {
-            echo_warn " Error: Failed to upload docker-compose.api.yml"
-            exit 1
-        }
-
+    # API service files and docker-compose.api.yml already from git (STEP 6)
     # Deploy API container
     echo_info "Building and starting Cowrie API container..."
     # shellcheck disable=SC2087
@@ -1882,25 +1934,8 @@ fi
 
 echo_info "Setting up Cowrie Event Indexer Daemon..."
 
-# Upload event indexer script and service file
-scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-    scripts/event-indexer.py "root@$SERVER_IP:/opt/cowrie/scripts/" || {
-        echo_warn " Error: Failed to upload event-indexer.py"
-        exit 1
-    }
-
-scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-    scripts/cowrie-event-indexer.service "root@$SERVER_IP:/tmp/" || {
-        echo_warn " Error: Failed to upload cowrie-event-indexer.service"
-        exit 1
-    }
-
-# Upload events schema SQL file
-scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-    api/sql/events_schema.sql "root@$SERVER_IP:/opt/cowrie/api/sql/" || {
-        echo_warn " Error: Failed to upload events_schema.sql"
-        exit 1
-    }
+# Event indexer script and schema are already from git (STEP 6)
+# Just install and configure the systemd service
 
 # Install and start event indexer daemon
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'INDEXEREOF'
@@ -1921,12 +1956,10 @@ fi
 echo "[remote] Detected uv at: ${UV_PATH}"
 
 # Replace UV_PATH_PLACEHOLDER with actual path and install service
+# (Service file is from git clone in STEP 6)
 sed "s|UV_PATH_PLACEHOLDER|${UV_PATH}|g" \
-    /tmp/cowrie-event-indexer.service \
+    /opt/cowrie/scripts/cowrie-event-indexer.service \
     > /etc/systemd/system/cowrie-event-indexer.service
-
-# Clean up temp file
-rm /tmp/cowrie-event-indexer.service
 
 # Reload systemd and enable service
 systemctl daemon-reload
@@ -1962,41 +1995,23 @@ AUTOUPDATEEOF
 echo_info "Automatic Docker updates configured"
 
 # ============================================================
-# STEP 15 — Initialize Git Repository for Updates
+# STEP 15 — Create VERSION.json
 # ============================================================
 
-echo_info "Initializing git repository for future updates..."
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'GITEOF'
+echo_info "Creating VERSION.json tracking file..."
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'VERSIONEOF'
 set -e
-
-# Initialize git repository
 cd /opt/cowrie
+export PATH="$HOME/.local/bin:$PATH"
 
-if [ ! -d ".git" ]; then
-    echo "[remote] Initializing git repository..."
-    git init
-    git remote add origin https://github.com/reuteras/cowrie-deploy-toolkit.git
-    echo "[remote] Git repository initialized"
-else
-    echo "[remote] Git repository already exists"
-fi
-
-# Fetch latest code
-echo "[remote] Fetching latest code from GitHub..."
-git fetch origin main
-
-# Reset to main branch (preserve local modifications in working tree)
-echo "[remote] Resetting to origin/main..."
-git reset --hard origin/main
-
-# Create initial VERSION.json
+# Create initial VERSION.json (git repo already exists from STEP 6)
 echo "[remote] Creating initial VERSION.json..."
 bash /opt/cowrie/scripts/update-agent.sh --init-version
 
-echo "[remote] Git initialization complete"
-GITEOF
+echo "[remote] VERSION.json created"
+VERSIONEOF
 
-echo_info "Git repository initialized for updates"
+echo_info "VERSION.json created successfully"
 
 # ============================================================
 # DONE

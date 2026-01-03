@@ -240,3 +240,27 @@ canary-tokens/
 
 # Cowrie userdb.txt
 cowrie/userdb.txt
+
+# =================================================================
+# Server-side deployment artifacts (not version controlled)
+# =================================================================
+# These directories are created during deployment on the honeypot
+# server and contain artifacts from the template server or runtime
+# data. They should not be tracked in version control.
+
+# Template server artifacts (from generate_cowrie_fs_from_hetzner.sh)
+share/                  # fs.pickle, cmdoutput.json, contents/, txtcmds/
+identity/               # SSH keys, kernel info, etc.
+
+# Deployment-specific configuration
+etc/                    # cowrie.cfg, userdb.txt, report.env (generated)
+var/                    # Runtime data, caches, databases
+
+# Deployment metadata
+deployment.conf         # Per-deployment config (SERVER_IP, etc.)
+metadata.json          # Extracted from Cowrie container
+VERSION.json           # Update tracking
+
+# Build artifacts (on server)
+build/cowrie-plugins/  # Custom plugins
+build/cowrie-core/     # Custom core files
