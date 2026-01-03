@@ -405,10 +405,12 @@ if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
 
                 if [ "$SOURCE_NAME" = "$TAILSCALE_NAME" ]; then
                     # This is the current honeypot - use local mode
+                    # Local mode still needs api_base_url for /api/system-info endpoint
                     SOURCE_JSON=$(cat <<EOF
 {
   "name": "$SOURCE_NAME",
   "type": "cowrie-ssh",
+  "api_base_url": "http://localhost:8000",
   "mode": "local",
   "location": "$SOURCE_LOCATION",
   "enabled": true
