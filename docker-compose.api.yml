@@ -1,3 +1,4 @@
+---
 services:
   cowrie-api:
     image: ghcr.io/reuteras/cowrie-api:latest

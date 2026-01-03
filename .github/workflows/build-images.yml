@@ -120,10 +120,10 @@ jobs:
           platforms: linux/amd64
           provenance: false
 
-       - name: Image digest
-         env:
-           DIGEST: ${{ steps.build-api.outputs.digest }}
-         run: echo "API image digest $DIGEST"
+      - name: Image digest
+        env:
+          DIGEST: ${{ steps.build-api.outputs.digest }}
+        run: echo "API image digest $DIGEST"
 
   build-cowrie:
     name: Build Patched Cowrie Image
