@@ -49,19 +49,20 @@ fi
 log "Starting auto-update check..."
 
 # ============================================================
-# Step 1: Rebuild custom Cowrie image with latest base
+# Step 1: Update images (build cowrie, pull cowrie-web)
 # ============================================================
-log "Rebuilding custom Cowrie image (pulls latest cowrie/cowrie:latest)..."
 
+# Build cowrie image (always needs building due to custom plugins/core)
+log "Building custom Cowrie image (includes latest cowrie/cowrie:latest base)..."
 if ! docker compose build --pull cowrie >> "$LOG_FILE" 2>&1 ; then
     log "ERROR: Failed to build custom Cowrie image"
     exit 1
 fi
 
-log "Building cowrie-web image..."
-
-if ! docker compose build --pull cowrie-web >> "$LOG_FILE" 2>&1 ; then
-    log "ERROR: Failed to build web dashboard image"
+# Pull cowrie-web image from registry (no custom build needed)
+log "Pulling cowrie-web image from registry..."
+if ! docker compose pull cowrie-web >> "$LOG_FILE" 2>&1 ; then
+    log "ERROR: Failed to pull web dashboard image"
     exit 1
 fi
 
