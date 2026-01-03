@@ -837,8 +837,6 @@ mkdir -p /opt/cowrie/identity
 mkdir -p /opt/cowrie/etc
 mkdir -p /opt/cowrie/var/lib/cowrie/downloads
 mkdir -p /opt/cowrie/var/log/cowrie
-mkdir -p /opt/cowrie/build/cowrie-plugins
-mkdir -p /opt/cowrie/build/cowrie-core
 
 # Set ownership to UID 999 (cowrie user in container) for writable directories
 chown -R 999:999 /opt/cowrie/var
@@ -968,21 +966,8 @@ fi
 
 echo_info "Uploading custom Cowrie build context..."
 
-# Create build directory on server
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-    "mkdir -p /opt/cowrie/build/cowrie-plugins"
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-    "mkdir -p /opt/cowrie/build/cowrie-core"
-
-# Upload Dockerfile
-if [ -f "./cowrie/Dockerfile" ]; then
-    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-        ./cowrie/Dockerfile "root@$SERVER_IP:/opt/cowrie/build/" > /dev/null
-    echo_info "Dockerfile uploaded"
-else
-    echo_error "Error: Dockerfile not found at ./cowrie/Dockerfile"
-    exit 1
-fi
+# NOTE: Build directory no longer needed - using pre-built images from ghcr.io
+# Custom plugins should be added to the repository and rebuilt via GitHub Actions
 
 # Upload userdb.txt (if exists) else upload userdb.txt.default as fallback
 if [ -f "./cowrie/userdb.txt" ]; then
@@ -994,30 +979,6 @@ else
         ./cowrie/userdb.txt.default "root@$SERVER_IP:/opt/cowrie/etc/userdb.txt" > /dev/null
     echo_info "Default userdb.txt uploaded"
 fi
-
-# Upload custom plugins (if any exist)
-if [ -d "./cowrie-plugins" ] && [ "$(ls -A ./cowrie-plugins/*.py 2>/dev/null)" ]; then
-    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-        ./cowrie-plugins/*.py "root@$SERVER_IP:/opt/cowrie/build/cowrie-plugins/" > /dev/null 2>&1
-    # shellcheck disable=SC2012
-    echo_info "Custom plugins uploaded ($(ls -1 ./cowrie-plugins/*.py 2>/dev/null | wc -l | tr -d ' ') files)"
-else
-    echo_info "No custom plugins found (build will use defaults only)"
-fi
-
-# Upload custom core files (if any exist)
-if [ -d "./cowrie-core" ] && [ "$(ls -A ./cowrie-core/*.py 2>/dev/null)" ]; then
-    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-        ./cowrie-core/*.py "root@$SERVER_IP:/opt/cowrie/build/cowrie-core/" > /dev/null 2>&1
-    # shellcheck disable=SC2012
-    echo_info "Custom core file(s) uploaded ($(ls -1 ./cowrie-core/*.py 2>/dev/null | wc -l | tr -d ' ') files)"
-else
-    echo_info "No custom core files found (build will use defaults only)"
-fi
-
-# Ensure .gitkeep exists so directory isn't empty
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-    "touch /opt/cowrie/build/cowrie-plugins/.gitkeep"
 
 # ============================================================
 # ============================================================
@@ -1261,14 +1222,11 @@ echo_info "Starting Cowrie container..."
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
 set -e
 
-# Create docker-compose.yml with custom build
+# Create docker-compose.yml to pull pre-built images
 cat > /opt/cowrie/docker-compose.yml << 'DOCKEREOF'
 services:
   cowrie:
-    build:
-      context: /opt/cowrie/build
-      dockerfile: Dockerfile
-    image: "ghcr.io/${REPO_OWNER}/cowrie:latest"
+    image: "ghcr.io/reuteras/cowrie:latest"
     container_name: cowrie
     restart: unless-stopped
     ports:
@@ -1295,15 +1253,16 @@ volumes:
     name: cowrie-var
 DOCKEREOF
 
-echo "[remote] Building custom Cowrie image with plugins..."
+echo "[remote] Pulling pre-built Cowrie image from GitHub Container Registry..."
 cd /opt/cowrie
-if ! docker compose build > /dev/null 2>&1; then
-  echo "[remote] ERROR: Failed to build custom Cowrie image"
+if ! docker compose pull 2>&1 | tee /tmp/docker-pull.log; then
+  echo "[remote] ERROR: Failed to pull Cowrie image"
+  cat /tmp/docker-pull.log
   exit 1
 fi
 
-echo "[remote] Extracting metadata.json from built image..."
-docker run --rm cowrie-custom:latest -c "print(open('/cowrie/cowrie-git/metadata.json').read(), end='')" > /opt/cowrie/metadata.json
+echo "[remote] Extracting metadata.json from pulled image..."
+docker run --rm ghcr.io/reuteras/cowrie:latest -c "print(open('/cowrie/cowrie-git/metadata.json').read(), end='')" > /opt/cowrie/metadata.json
 
 echo "[remote] Initializing Cowrie volumes with custom configuration..."
 
@@ -1702,10 +1661,7 @@ mkdir -p /var/lib/GeoIP
 cat > /opt/cowrie/docker-compose.yml << 'DOCKEREOF'
 services:
   cowrie:
-    build:
-      context: /opt/cowrie/build
-      dockerfile: Dockerfile
-    image: "ghcr.io/${REPO_OWNER}/cowrie:latest"
+    image: "ghcr.io/reuteras/cowrie:latest"
     container_name: cowrie
     restart: unless-stopped
     ports:
@@ -1727,10 +1683,7 @@ services:
       - cowrie-internal
 
   cowrie-web:
-    image: "ghcr.io/${REPO_OWNER}/cowrie-web:latest"
-    build:
-      context: /opt/cowrie/web
-      dockerfile: Dockerfile
+    image: "ghcr.io/reuteras/cowrie-web:latest"
     container_name: cowrie-web
     restart: unless-stopped
     ports:
@@ -1806,11 +1759,13 @@ rm -f /tmp/dashboard_sources.json
 awk -v sources="\$SOURCES_CONTENT" '{gsub(/DASHBOARD_SOURCES_PLACEHOLDER/, sources)}1' /opt/cowrie/docker-compose.yml > /opt/cowrie/docker-compose.yml.tmp
 mv /opt/cowrie/docker-compose.yml.tmp /opt/cowrie/docker-compose.yml
 
-# Build and start web service
+# Pull and start web service
 cd /opt/cowrie
-echo "[remote] Building web dashboard container (this may take a minute)..."
-if ! docker compose build --quiet cowrie-web 2>&1 | grep -E "ERROR|WARN" || true; then
-  echo "[remote] WARNING: Build reported errors, but continuing..."
+echo "[remote] Pulling web dashboard image from GitHub Container Registry..."
+if ! docker compose pull cowrie-web 2>&1 | tee /tmp/docker-pull-web.log; then
+  echo "[remote] ERROR: Failed to pull web dashboard image"
+  cat /tmp/docker-pull-web.log
+  exit 1
 fi
 
 echo "[remote] Starting services..."
