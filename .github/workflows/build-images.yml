@@ -7,6 +7,8 @@ on:
     paths:
       - 'web/**'
       - 'api/**'
+      - 'cowrie/**'
+      - 'cowrie-core/**'
       - '.github/workflows/build-images.yml'
   schedule:
     - cron: '0 6 * * 1'  # Every Monday at 6:00 AM UTC
@@ -124,15 +126,68 @@ jobs:
           platforms: linux/amd64
           provenance: false
 
-      - name: Image digest
-        env:
-          DIGEST: ${{ steps.build-api.outputs.digest }}
-        run: echo "API image digest $DIGEST"
+       - name: Image digest
+         env:
+           DIGEST: ${{ steps.build-api.outputs.digest }}
+         run: echo "API image digest $DIGEST"
 
-  summary:
+  build-cowrie:
+    name: Build Patched Cowrie Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+         with:
+           persist-credentials: false
+
+       - name: Set up Docker Buildx
+         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+       - name: Log in to GitHub Container Registry
+         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
+         with:
+           registry: ghcr.io
+           username: ${{ github.actor }}
+           password: ${{ secrets.GITHUB_TOKEN }}
+
+       - name: Extract metadata for Docker
+         id: meta
+         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+         with:
+           images: ghcr.io/${{ github.repository_owner }}/cowrie
+           tags: |
+             type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' || inputs.push_latest != false }}
+             type=sha,prefix={{branch}}-
+             type=ref,event=branch
+             type=semver,pattern={{version}}
+             type=semver,pattern={{major}}.{{minor}}
+
+       - name: Build and push patched Cowrie image
+         id: build-cowrie
+         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+         with:
+           context: ./cowrie
+           push: true
+           tags: ${{ steps.meta.outputs.tags }}
+           labels: ${{ steps.meta.outputs.labels }}
+           cache-from: type=gha
+           cache-to: type=gha,mode=max
+           platforms: linux/amd64
+           provenance: false
+
+       - name: Image digest
+         env:
+           DIGEST: ${{ steps.build-cowrie.outputs.digest }}
+         run: echo "Cowrie image digest $DIGEST"
+
+   summary:
     name: Build Summary
     runs-on: ubuntu-latest
-    needs: [build-web, build-api]
+    needs: [build-web, build-api, build-cowrie]
 
     steps:
       - name: Job Summary
@@ -147,6 +202,11 @@ jobs:
             echo "### API Service"
             echo "- **Image:** \`ghcr.io/${{ github.repository_owner }}/cowrie-api\`"
             echo "- **Tags:** latest, ${{ github.sha }}"
+            echo ""
+            echo "### Patched Cowrie Honeypot"
+            echo "- **Image:** \`ghcr.io/${{ github.repository_owner }}/cowrie\`"
+            echo "- **Tags:** latest, ${{ github.sha }}"
+            echo "- **Includes:** Dynamic /proc/uptime, custom commands, filesystem patches"
             echo ""
             echo "### Update Honeypots"
             echo "\`\`\`bash"
