@@ -1305,17 +1305,23 @@ docker run --rm -i \
 
 # Copy cowrie.cfg into etc volume
 echo "[remote] Copying cowrie.cfg to volume..."
-docker run --rm \
+if ! docker run --rm \
   -v cowrie-etc:/dest \
   -v /opt/cowrie/etc/cowrie.cfg:/src/cowrie.cfg:ro \
-  alpine cp /src/cowrie.cfg /dest/ > /dev/null 2>&1
+  alpine cp /src/cowrie.cfg /dest/ 2>&1; then
+  echo "[remote] ERROR: Failed to copy cowrie.cfg to volume"
+  exit 1
+fi
 
 # Copy userdb.txt into etc volume
 echo "[remote] Copying userdb.txt to volume..."
-docker run --rm \
+if ! docker run --rm \
   -v cowrie-etc:/dest \
   -v /opt/cowrie/etc/userdb.txt:/src/userdb.txt:ro \
-  alpine cp /src/userdb.txt /dest/ > /dev/null 2>&1
+  alpine cp /src/userdb.txt /dest/ 2>&1; then
+  echo "[remote] ERROR: Failed to copy userdb.txt to volume"
+  exit 1
+fi
 
 # Set proper ownership (UID 999 = cowrie user) and permissions
 # CRITICAL: Must be done BEFORE Cowrie starts
