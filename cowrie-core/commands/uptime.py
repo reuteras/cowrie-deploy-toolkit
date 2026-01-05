@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 import cowrie.shell.fs
 from cowrie.shell.command import HoneyPotCommand
 
+commands = {}
+
 
 class command_uptime(HoneyPotCommand):
     """
@@ -63,3 +65,7 @@ class command_uptime(HoneyPotCommand):
         load_avg = f"{load_1min:.2f}, {load_5min:.2f}, {load_15min:.2f}"
 
         self.write(f" {time.strftime('%H:%M:%S')} up {hours:2d}:{minutes:02d},  1 user,  load average: {load_avg}\n")
+
+
+commands["/usr/bin/uptime"] = command_uptime
+commands["uptime"] = command_uptime

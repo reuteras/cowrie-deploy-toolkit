@@ -1803,18 +1803,18 @@ fi
 rm -f "\$DOCKER_PULL_WEB_LOG"
 
 echo "[remote] Starting services..."
-# Remove any leftover containers from previous deployments
-echo "[remote] Cleaning up any leftover Cowrie containers..."
-docker rm -f cowrie cowrie-web cowrie-api 2>/dev/null || true
+# Clean up any existing containers (proper order: compose down first, then force remove)
+echo "[remote] Cleaning up any existing Cowrie deployments..."
 
-# Stop any existing containers to avoid network conflicts (idempotent - won't fail if nothing running)
+# First, try docker compose down (proper cleanup)
 if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
-  echo "[remote] Stopping any existing services (API included)..."
-  docker compose -f docker-compose.yml -f docker-compose.api.yml down --remove-orphans 2>/dev/null || true
+  docker compose -f docker-compose.yml -f docker-compose.api.yml down --remove-orphans --volumes 2>/dev/null || true
 else
-  echo "[remote] Stopping any existing services..."
-  docker compose down --remove-orphans 2>/dev/null || true
+  docker compose down --remove-orphans --volumes 2>/dev/null || true
 fi
+
+# Then force remove any stubborn containers
+docker rm -f cowrie cowrie-web cowrie-api 2>/dev/null || true
 
 # Include API compose file if API is enabled to avoid network conflicts
 if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
