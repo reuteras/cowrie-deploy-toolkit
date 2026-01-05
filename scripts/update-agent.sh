@@ -281,14 +281,63 @@ update_scripts() {
 }
 
 # Update web container
+# Update cowrie container
+update_cowrie() {
+    log_info "Phase 2: Updating Cowrie honeypot container..."
+
+    cd "${COWRIE_DIR}"
+
+    # Get current image ID
+    local old_image_id
+    old_image_id=$(docker compose images cowrie --format json 2>/dev/null | jq -r '.[0].ID // "unknown"')
+
+    # Pull latest image
+    log_info "Pulling latest Cowrie image from registry..."
+    if docker compose pull cowrie 2>/dev/null; then
+        log_success "Cowrie image pulled successfully"
+    else
+        log_warning "Failed to pull Cowrie image, will rebuild locally"
+        docker compose build cowrie
+    fi
+
+    # Recreate container
+    log_info "Recreating Cowrie container..."
+    docker compose up -d --no-deps --force-recreate cowrie >/dev/null 2>&1
+
+    # Get new image ID
+    local new_image_id
+    new_image_id=$(docker compose images cowrie --format json 2>/dev/null | jq -r '.[0].ID // "unknown"')
+
+    if [ "${old_image_id}" == "${new_image_id}" ]; then
+        log_info "Cowrie image already up to date"
+    else
+        log_success "Cowrie image updated: ${old_image_id:0:12} -> ${new_image_id:0:12}"
+    fi
+
+    # Health check (wait for Cowrie to fully start and create database)
+    log_info "Waiting for Cowrie to start and initialize..."
+    sleep 5
+
+    # Check if Cowrie container is running
+    if docker compose ps cowrie | grep -q "Up"; then
+        log_success "Cowrie container is running"
+    else
+        log_error "Cowrie container failed to start"
+        docker compose logs cowrie --tail=50
+        return 1
+    fi
+
+    log_success "Phase 2 complete: Cowrie honeypot updated"
+}
+
 update_web() {
     # Check if web dashboard service is defined
     if ! docker compose config --services 2>/dev/null | grep -q "^cowrie-web$"; then
-        log_info "Phase 2: Web dashboard not configured, skipping"
+        log_info "Phase 3: Web dashboard not configured, skipping"
         return 0
     fi
 
-    log_info "Phase 2: Updating web dashboard container..."
+    log_info "Phase 3: Updating web dashboard container..."
 
     cd "${COWRIE_DIR}"
 
@@ -337,11 +386,11 @@ update_web() {
 update_api() {
     # Check if API is enabled
     if [ ! -f "${COWRIE_DIR}/docker-compose.api.yml" ]; then
-        log_info "Phase 3: API not enabled, skipping"
+        log_info "Phase 4: API not enabled, skipping"
         return 0
     fi
 
-    log_info "Phase 3: Updating API container..."
+    log_info "Phase 4: Updating API container..."
 
     cd "${COWRIE_DIR}"
 
@@ -412,7 +461,7 @@ update_api() {
         return 1
     fi
 
-    log_success "Phase 3 complete: API updated"
+    log_success "Phase 4 complete: API updated"
 }
 
 # Update VERSION.json
@@ -521,13 +570,16 @@ main_update() {
     # Phase 1: Update scripts and configuration
     update_scripts
 
-    # Phase 2: Update web dashboard
+    # Phase 2: Update Cowrie honeypot container
+    update_cowrie
+
+    # Phase 3: Update web dashboard
     update_web
 
-    # Phase 3: Update API
+    # Phase 4: Update API
     update_api
 
-    # Phase 4: Update VERSION.json
+    # Phase 5: Update VERSION.json
     update_version_file
 
     log_success "=== Update Completed Successfully ==="

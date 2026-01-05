@@ -194,7 +194,7 @@ class IPUserDB:
 
     def checklogin(self, thelogin: bytes, thepasswd: bytes, src_ip: str = "0.0.0.0") -> bool:
         if len(thepasswd) <= self.min_len:
-            log.msg("Password to short")
+            log.msg("[IPLockAuth] Password too short")
             self.log_attempt(src_ip, thelogin, thepasswd, False, False)
             return False
 
@@ -202,8 +202,8 @@ class IPUserDB:
 
         if locked:
             if locked != (thelogin, thepasswd):
-                log.msg("Password wrong fro IP")
-                # Log failed due to locked
+                log.msg(f"[IPLockAuth] IP {src_ip} locked to different credentials, rejecting")
+                self.log_attempt(src_ip, thelogin, thepasswd, False, True, lock_matched=False)
                 return False
 
         for credentials, policy in self.userdb.items():
@@ -214,12 +214,16 @@ class IPUserDB:
             if self.match_rule(login, thelogin):
                 if self.match_rule(passwd, thepasswd):
                     if policy and not locked:
+                        # First successful login - lock IP to these credentials
                         self.lock_ip_to_credentials(src_ip, thelogin, thepasswd)
-                    else:
+                        self.log_attempt(src_ip, thelogin, thepasswd, True, False)
+                    elif locked:
+                        # Subsequent successful login with locked credentials
                         self.increment_login_count(src_ip)
+                        self.log_attempt(src_ip, thelogin, thepasswd, True, True, lock_matched=True)
                     return policy
 
-        self.log_attempt(src_ip, thelogin, thepasswd, False, False)
+        self.log_attempt(src_ip, thelogin, thepasswd, False, bool(locked), lock_matched=None)
         return False
 
     def match_rule(self, rule: bytes | Pattern[bytes], data: bytes) -> bool | bytes:
