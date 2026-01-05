@@ -1818,9 +1818,9 @@ echo "[remote] Cleaning up any existing Cowrie deployments..."
 
 # First, try docker compose down (proper cleanup)
 if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
-  docker compose -f docker-compose.yml -f docker-compose.api.yml down --remove-orphans --volumes 2>/dev/null || true
+  docker compose -f docker-compose.yml -f docker-compose.api.yml down --remove-orphans 2>/dev/null || true
 else
-  docker compose down --remove-orphans --volumes 2>/dev/null || true
+  docker compose down --remove-orphans 2>/dev/null || true
 fi
 
 # Then force remove any stubborn containers
