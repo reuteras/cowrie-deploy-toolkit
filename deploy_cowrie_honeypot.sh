@@ -1286,7 +1286,7 @@ fi
 rm -f "$DOCKER_PULL_LOG"
 
 echo "[remote] Extracting metadata.json from pulled image..."
-docker run --rm ghcr.io/reuteras/cowrie:latest -c "print(open('/cowrie/cowrie-git/metadata.json').read(), end='')" > /opt/cowrie/metadata.json
+docker run --rm ghcr.io/reuteras/cowrie:latest python3 -c "print(open('/cowrie/cowrie-git/metadata.json').read(), end='')" > /opt/cowrie/metadata.json
 
 echo "[remote] Initializing Cowrie volumes with custom configuration..."
 
