@@ -1565,7 +1565,7 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     if command -v uv &> /dev/null; then
         uv run --quiet scripts/process-config.py "$MASTER_CONFIG" > "$SERVER_REPORT_ENV"
     else
-        echo_warn " Error: Neither uv nor python3 found. Cannot process config."
+        echo_warn " Error: uv not found. Cannot process config."
         exit 1
     fi
 
@@ -1940,10 +1940,13 @@ fi
 echo "[remote] API image pulled successfully"
 
 echo "[remote] Starting Cowrie API service..."
-if ! docker compose -f docker-compose.yml -f docker-compose.api.yml up -d cowrie-api 2>&1; then
+docker compose -f docker-compose.yml -f docker-compose.api.yml up -d cowrie-api 2>&1
+
+# Check if container is actually running (ignore cleanup warnings)
+if ! docker compose -f docker-compose.yml -f docker-compose.api.yml ps cowrie-api | grep -q "Up"; then
   echo "[remote] ERROR: Failed to start API service"
-  docker compose ps
-  docker compose logs cowrie-api --tail=50
+  docker compose -f docker-compose.yml -f docker-compose.api.yml ps
+  docker compose -f docker-compose.yml -f docker-compose.api.yml logs cowrie-api --tail=50
   exit 1
 fi
 
