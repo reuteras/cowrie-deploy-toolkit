@@ -1271,18 +1271,8 @@ volumes:
     name: cowrie-var
 DOCKEREOF
 
-# Make container and volume names unique per honeypot
-sed -i "s/container_name: cowrie$/container_name: cowrie-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-sed -i "s/container_name: cowrie-web$/container_name: cowrie-web-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-sed -i "s/container_name: cowrie-api$/container_name: cowrie-api-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-sed -i "s/name: cowrie-etc$/name: cowrie-etc-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-sed -i "s/name: cowrie-var$/name: cowrie-var-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-sed -i "s/name: cowrie-internal$/name: cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
-# Update volume references in services
-sed -i "s/- cowrie-etc:/- cowrie-etc-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.yml
-sed -i "s/- cowrie-var:/- cowrie-var-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.yml
-# Update network references
-sed -i "s/- cowrie-internal/- cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.yml
+# No need to make names unique - only one honeypot per server
+# docker-compose.yml and docker-compose.api.yml will share the same volumes/networks
 
 echo "[remote] Pulling pre-built Cowrie image from GitHub Container Registry..."
 cd /opt/cowrie
@@ -1797,6 +1787,9 @@ SOURCES_CONTENT=\$(jq -c '.' "\$DASHBOARD_SOURCES_TMP" 2>/dev/null || cat "\$DAS
 awk -v sources="\$SOURCES_CONTENT" '{gsub(/DASHBOARD_SOURCES_PLACEHOLDER/, sources)}1' /opt/cowrie/docker-compose.yml > /opt/cowrie/docker-compose.yml.tmp
 mv /opt/cowrie/docker-compose.yml.tmp /opt/cowrie/docker-compose.yml
 
+# No need to make names unique - only one honeypot per server
+# docker-compose.yml and docker-compose.api.yml will share the same volumes/networks
+
 # Pull and start web service
 cd /opt/cowrie
 echo "[remote] Pulling web dashboard image from GitHub Container Registry..."
@@ -1810,6 +1803,10 @@ fi
 rm -f "\$DOCKER_PULL_WEB_LOG"
 
 echo "[remote] Starting services..."
+# Remove any leftover containers from previous deployments
+echo "[remote] Cleaning up any leftover Cowrie containers..."
+docker rm -f cowrie cowrie-web cowrie-api 2>/dev/null || true
+
 # Stop any existing containers to avoid network conflicts (idempotent - won't fail if nothing running)
 if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
   echo "[remote] Stopping any existing services (API included)..."
@@ -1822,7 +1819,7 @@ fi
 # Include API compose file if API is enabled to avoid network conflicts
 if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
   echo "[remote] API is enabled, including docker-compose.api.yml"
-  if ! docker compose -f docker-compose.yml -f docker-compose.api.yml up -d cowrie cowrie-web --quiet-pull 2>&1; then
+  if ! docker compose -f docker-compose.yml -f docker-compose.api.yml up -d --quiet-pull 2>&1; then
     echo "[remote] ERROR: Failed to start services. Checking status..."
     docker compose -f docker-compose.yml -f docker-compose.api.yml ps
     docker compose -f docker-compose.yml -f docker-compose.api.yml logs --tail=50
@@ -1850,20 +1847,20 @@ if command -v tailscale &> /dev/null; then
         echo "[remote] Dashboard: / -> port 5000, API: /api -> port 8000"
 
         # Configure dashboard on root path
-        tailscale serve --https=443 / --bg localhost:5000 > /dev/null 2>&1
+        tailscale serve --https=443 --bg localhost:5000 > /dev/null 2>&1
 
         # Configure API on /api path
-        tailscale serve --https=443 /api --bg localhost:8000 > /dev/null 2>&1
+        tailscale serve --https=443 --set-path=/api --bg localhost:8000 > /dev/null 2>&1
 
         # Add @reboot cron jobs (path-based routing for both dashboard and API)
-        # Sleep 30 to ensure Tailscale is ready
+        # Sleep 30 to ensure Tailscale is ready (35 for API to ensure dashboard is up first)
         # SECURITY: Use mktemp for unpredictable filename (prevents symlink attacks)
         CRON_TMP=\$(mktemp)
         # Remove old cron entries for these services
         (crontab -l 2>/dev/null | grep -v "tailscale serve.*5000" | grep -v "tailscale serve.*8000") > "\$CRON_TMP" || true
         # Add new cron entries
-        echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 / --bg localhost:5000 > /dev/null 2>&1" >> "\$CRON_TMP"
-        echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 /api --bg localhost:8000 > /dev/null 2>&1" >> "\$CRON_TMP"
+        echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:5000 > /dev/null 2>&1" >> "\$CRON_TMP"
+        echo "@reboot sleep 35 && /usr/bin/tailscale serve --https=443 --set-path=/api --bg localhost:8000 > /dev/null 2>&1" >> "\$CRON_TMP"
         crontab "\$CRON_TMP"
         rm -f "\$CRON_TMP"
     else
@@ -1916,16 +1913,8 @@ sed -i "s|SERVER_IP_PLACEHOLDER|$SERVER_IP|g" /opt/cowrie/docker-compose.api.yml
 sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$HONEYPOT_HOSTNAME|g" /opt/cowrie/docker-compose.api.yml
 sed -i "s|ghcr.io/reuteras/cowrie-api:latest|ghcr.io/${REPO_OWNER}/cowrie-api:latest|g" /opt/cowrie/docker-compose.api.yml
 
-# Make API container and volume names unique per honeypot
-sed -i "s/container_name: cowrie-api$/container_name: cowrie-api-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
-sed -i "s/name: cowrie-etc$/name: cowrie-etc-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
-sed -i "s/name: cowrie-var$/name: cowrie-var-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
-sed -i "s/name: cowrie-internal$/name: cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
-# Update volume references in API service
-sed -i "s/- cowrie-etc:/- cowrie-etc-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.api.yml
-sed -i "s/- cowrie-var:/- cowrie-var-${TAILSCALE_NAME}:/g" /opt/cowrie/docker-compose.api.yml
-# Update network references
-sed -i "s/- cowrie-internal/- cowrie-internal-${TAILSCALE_NAME}/g" /opt/cowrie/docker-compose.api.yml
+# No need to make names unique - only one honeypot per server
+# docker-compose.api.yml shares volumes/networks with docker-compose.yml
 
 # Debug: Verify replacement worked
 echo "[remote] Verifying environment variable replacement..."
@@ -1939,10 +1928,10 @@ echo "[remote] API will be accessible on localhost:8000 for Tailscale Serve"
 echo "[remote] Building Cowrie API container (this may take a minute)..."
 # Pull API image (no longer building locally)
 if ! docker compose -f docker-compose.yml -f docker-compose.api.yml pull cowrie-api 2>&1; then
-    echo_error "Failed to pull API image"
-    return 1
+    echo "[remote] ERROR: Failed to pull API image"
+    exit 1
 fi
-echo_info "API image pulled successfully"
+echo "[remote] API image pulled successfully"
 
 echo "[remote] Starting Cowrie API service..."
 if ! docker compose -f docker-compose.yml -f docker-compose.api.yml up -d cowrie-api 2>&1; then
