@@ -1294,14 +1294,14 @@ echo "[remote] Initializing Cowrie volumes with custom configuration..."
 # Otherwise Cowrie will initialize it with wrong permissions
 
 # Create SQLite database with schema
-echo "[remote] Creating SQLite database..."
+echo "[remote] Creating SQLite database and directory structure..."
 docker run --rm -i \
   -v cowrie-var:/var \
   alpine sh -c '
     apk add --no-cache sqlite curl &&
-    mkdir -p /var/lib/cowrie &&
+    mkdir -p /var/lib/cowrie /var/log/cowrie &&
     curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db
-  ' > /dev/null 2>&1
+  '
 
 # Copy cowrie.cfg into etc volume
 echo "[remote] Copying cowrie.cfg to volume..."
@@ -1326,14 +1326,18 @@ fi
 # Set proper ownership (UID 999 = cowrie user) and permissions
 # CRITICAL: Must be done BEFORE Cowrie starts
 echo "[remote] Setting ownership and permissions..."
-docker run --rm \
+if ! docker run --rm \
   -v cowrie-etc:/etc \
   -v cowrie-var:/var \
   alpine sh -c '
+    mkdir -p /var/lib/cowrie /var/log/cowrie &&
     chown -R 999:999 /etc /var &&
     chmod 755 /var/lib/cowrie &&
     chmod 644 /var/lib/cowrie/cowrie.db
-  ' > /dev/null 2>&1
+  ' 2>&1; then
+  echo "[remote] ERROR: Failed to set permissions"
+  exit 1
+fi
 
 # Start Cowrie with custom configuration
 echo "[remote] Starting Cowrie with custom configuration..."
