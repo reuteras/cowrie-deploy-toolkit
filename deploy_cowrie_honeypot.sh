@@ -1307,9 +1307,7 @@ docker run --rm -i \
              /var/lib/cowrie/downloads \
              /var/log/cowrie &&
     # Create database
-    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db &&
-    # Set ownership
-    chown -R 999:999 /var
+    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db || true
   '
 
 # Copy cowrie.cfg into etc volume
@@ -1339,7 +1337,7 @@ if ! docker run --rm \
   -v cowrie-etc:/etc \
   alpine sh -c '
     # Set ownership to cowrie user (UID 999)
-    chown -R 999:999 /etc
+    chown -R 999:999 /etc /var
   ' 2>&1; then
   echo "[remote] ERROR: Failed to set config ownership"
   exit 1
