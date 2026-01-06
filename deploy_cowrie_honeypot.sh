@@ -1330,10 +1330,14 @@ if ! docker run --rm \
   -v cowrie-etc:/etc \
   -v cowrie-var:/var \
   alpine sh -c '
-    mkdir -p /var/lib/cowrie /var/log/cowrie &&
+    # Create all required directories
+    mkdir -p /var/lib/cowrie/tty \
+             /var/lib/cowrie/downloads \
+             /var/log/cowrie &&
+    # Set ownership to cowrie user (UID 999)
     chown -R 999:999 /etc /var &&
-    chmod 755 /var/lib/cowrie &&
-    chmod 644 /var/lib/cowrie/cowrie.db
+    # Set directory permissions
+    chmod -R 755 /var/lib/cowrie /var/log/cowrie
   ' 2>&1; then
   echo "[remote] ERROR: Failed to set permissions"
   exit 1
