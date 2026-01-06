@@ -114,14 +114,15 @@ RUN if [ -d "${COWRIE_HOME}/custom-core/commands" ] && [ -n "$(find ${COWRIE_HOM
 RUN rm -rf ${COWRIE_HOME}/custom-core
 
 # Generate build metadata JSON file
-RUN ${COWRIE_HOME}/cowrie-env/bin/python3 -c "import json; import sys; from datetime import datetime, timezone; \
-sys.path.insert(0, '${COWRIE_HOME}/cowrie-git/src'); \
-import cowrie._version; \
+RUN python3 -c "import json; import re; from datetime import datetime, timezone; \
+version_file = open('${COWRIE_HOME}/cowrie-git/src/cowrie/_version.py').read(); \
+version_match = re.search(r'__version__\\s*=\\s*[\"\\']([^\"\\.']+)[\"\\']', version_file); \
+version = version_match.group(1) if version_match else 'unknown'; \
 metadata = {'build_date': datetime.now(timezone.utc).isoformat(), \
 'build_timestamp': int(datetime.now(timezone.utc).timestamp()), \
-'cowrie_version': cowrie._version.__version__}; \
+'cowrie_version': version}; \
 open('${COWRIE_HOME}/cowrie-git/metadata.json', 'w').write(json.dumps(metadata, indent=2)); \
-print('Build metadata generated with version:', cowrie._version.__version__)"
+print('Build metadata generated with version:', version)"
 
 # Ensure correct ownership
 RUN chown -R ${COWRIE_USER}:${COWRIE_GROUP} \
