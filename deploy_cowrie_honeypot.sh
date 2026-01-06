@@ -773,6 +773,7 @@ echo_info "Cloning cowrie-deploy-toolkit repository..."
 
 # Clone repository to /opt/cowrie
 # This provides all version-controlled files: scripts, configs, docker files, etc.
+# shellcheck disable=SC2087
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << EOF
 set -e
 

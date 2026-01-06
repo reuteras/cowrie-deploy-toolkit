@@ -40,9 +40,7 @@ def validate_sha256(sha256: str) -> str:
 
     # Validate SHA256 format (exactly 64 hex characters)
     if not SHA256_REGEX.match(sha256):
-        raise HTTPException(
-            status_code=400, detail="Invalid SHA256: must be 64 hexadecimal characters"
-        )
+        raise HTTPException(status_code=400, detail="Invalid SHA256: must be 64 hexadecimal characters")
 
     return sha256.lower()  # Normalize to lowercase
 
@@ -70,11 +68,9 @@ def get_safe_download_path(sha256: str) -> Path:
     # This prevents path traversal even with symlinks or other tricks
     try:
         filepath.relative_to(downloads_path)
-    except ValueError:
+    except ValueError as err:
         # Path is outside downloads directory - potential attack
-        raise HTTPException(
-            status_code=403, detail="Access denied: path traversal attempt detected"
-        )
+        raise HTTPException(status_code=403, detail="Access denied: path traversal attempt detected") from err
 
     return filepath
 
@@ -146,6 +142,4 @@ async def download_file(sha256: str):
         raise HTTPException(status_code=404, detail="File not found")
 
     # SECURITY: Use validated filename to prevent header injection
-    return FileResponse(
-        filepath, media_type="application/octet-stream", filename=f"{validated_sha256}.bin"
-    )
+    return FileResponse(filepath, media_type="application/octet-stream", filename=f"{validated_sha256}.bin")

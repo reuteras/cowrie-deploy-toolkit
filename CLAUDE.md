@@ -173,7 +173,7 @@ hcloud server list -o columns=name,id | grep cowrie-honeypot
 ### Quick Reference Table
 
 | Name Type | Example | Used For | Where Defined |
-|-----------|---------|----------|---------------|
+| --------- | ------- | -------- | ------------- |
 | **Config Name** | `cowrie-hp-1` | Scripts, Tailscale, dashboards | `master-config.toml` (`name` field) |
 | **Hostname** | `dmz-web-01` | Attacker-visible identity | `master-config.toml` (`hostname` field) |
 | **Hetzner Name** | `cowrie-honeypot-1767620038` | Cloud management | Auto-generated |
@@ -877,11 +877,6 @@ rm -rf .maxmind-cache/ output_*/
 - ⚠️ **Silent failures**: Empty secret values silently accepted
 - ⚠️ **Plaintext in config**: Secrets stored in `master-config.toml` (not encrypted)
 - ✅ **Best practice**: Use `op://vault/item/field` syntax, validate with `op read` before deployment
-
-### OS Version Compatibility
-- ⚠️ **No automated testing**: Compatibility matrix not maintained
-- ⚠️ **Warning only**: Allows deployment with >2 version gap (could fail at runtime)
-- ✅ **Tested combinations**: debian-11 → debian-11, debian-11 → debian-13 (recommended)
 
 ### Multi-Host Dashboard Performance
 - ⚠️ **Response time degradation**: 3+ sources can slow dashboard (parallel queries limited to 2 workers)

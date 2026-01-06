@@ -140,7 +140,7 @@ marker.bindPopup(`
 ```
 
 **Attack Vector**: Attacker sends connections from IP with crafted reverse DNS:
-```
+```text
 ip: <img src=x onerror=alert(document.cookie)>
 city: <script>...</script>
 ```
@@ -420,7 +420,7 @@ Should fail with "Subcommand not allowed" (no semicolons in valid commands)
 
 ### Fixed Vulnerabilities
 | Severity | Type | File | Status |
-|----------|------|------|--------|
+| -------- | ---- | ---- | ------ |
 | CRITICAL | Command Injection | `scripts/process-config.py` | ✅ FIXED |
 | HIGH | Path Traversal | `api/routes/downloads.py` | ✅ FIXED |
 | HIGH | XSS | `web/templates/index.html` | ✅ FIXED |
@@ -428,7 +428,7 @@ Should fail with "Subcommand not allowed" (no semicolons in valid commands)
 
 ### Recommendations for Future
 | Priority | Recommendation | Effort |
-|----------|---------------|--------|
+| -------- | ------------- | ------ |
 | MEDIUM | API key authentication | Low (1-2 hours) |
 | MEDIUM | Rate limiting | Low (1 hour) |
 | LOW | Automated security testing | Medium (CI/CD integration) |

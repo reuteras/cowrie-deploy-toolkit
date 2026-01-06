@@ -7,6 +7,7 @@ Dynamic filesystem with real-time /proc/uptime
 
 from __future__ import annotations
 
+import sys
 import time
 
 # Monkey patch the original HoneyPotFilesystem to use our dynamic version
@@ -50,7 +51,5 @@ print("Dynamic filesystem: Installing monkey patch for /proc/uptime")
 cowrie.shell.fs.HoneyPotFilesystem = DynamicHoneyPotFilesystem
 
 # Also patch the module's direct reference if it exists
-import sys
-
 if hasattr(sys.modules.get("cowrie.shell.fs"), "HoneyPotFilesystem"):
     sys.modules["cowrie.shell.fs"].HoneyPotFilesystem = DynamicHoneyPotFilesystem

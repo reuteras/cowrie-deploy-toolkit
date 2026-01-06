@@ -180,7 +180,7 @@ ssh_connect cowrie-hp-1 "cd /opt/cowrie && git pull"
 ### 5. Consolidate Configuration Processing
 
 **Current Chain:**
-```
+```text
 master-config.toml
   → get-honeypot-config.py (Python)
   → JSON
@@ -780,10 +780,6 @@ jobs:
 - `scripts/event-indexer.py` exists but not documented
 - Mentioned in `update-agent.sh` but nowhere else
 
-**Needed:**
-```markdown
-# YARA_AND_INDEXING.md
-
 ## Event Indexer Service
 
 Background daemon for fast event queries.
@@ -821,8 +817,6 @@ systemctl restart event-indexer
 - Tailscale Serve configured automatically
 - No documentation on how it works or how to customize
 
-**Needed:**
-```markdown
 # TAILSCALE_SERVE.md
 
 ## How Tailscale Serve Works

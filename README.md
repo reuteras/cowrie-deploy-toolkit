@@ -70,7 +70,7 @@ Deploys server with Cowrie on port 22. Real SSH moved to port 2222. Automaticall
 
 Deploy multiple honeypots with centralized dashboard using the `[[honeypots]]` array in `master-config.toml`.
 
-#### Configuration
+#### Configuration (Multi-Honeypot Deployment)
 
 Edit `master-config.toml`:
 
