@@ -110,6 +110,11 @@ fi
 
 MASTER_CONFIG="./master-config.toml"
 
+if [ ! -f "$MASTER_CONFIG" ]; then
+    echo_error "master-config.toml not found - required"
+    exit 1
+fi
+
 # Helper function to find latest output directory for a honeypot
 find_latest_output() {
     local honeypot_name="$1"
@@ -129,11 +134,6 @@ find_latest_output() {
 
 # Handle --all flag: deploy all honeypots sequentially
 if [ "$DEPLOY_ALL" = true ]; then
-    if [ ! -f "$MASTER_CONFIG" ]; then
-        echo_error "master-config.toml not found - required for --all deployment"
-        exit 1
-    fi
-
     echo_info "Deploying all honeypots from master-config.toml..."
 
     # Check if honeypots array exists
@@ -248,13 +248,8 @@ TAILSCALE_NAME="cowrie-honeypot"
 TAILSCALE_DOMAIN=""
 
 # ============================================================
-# CONFIGURATION READING (v2.1: Multi-Honeypot Support)
+# CONFIGURATION READING
 # ============================================================
-
-if [ ! -f "$MASTER_CONFIG" ]; then
-    echo_error "master-config.toml not found - required for deployment"
-    exit 1
-fi
 
 echo_info "Reading configuration from master-config.toml..."
 
@@ -483,79 +478,11 @@ if [ "$DSHIELD_ENABLED" = "true" ]; then
     echo_info "DShield data sharing enabled"
 fi
 
-
-
 echo_info "Configuration loaded successfully"
 
 SERVER_NAME="cowrie-honeypot-$(date +%s)"
 
 echo_info "Deploying Cowrie honeypot from: $OUTPUT_DIR"
-
-# ============================================================
-# OS Compatibility Validation (NEW in v2.1)
-# ============================================================
-
-# Check for source_metadata.json and validate OS compatibility
-METADATA_FILE="$OUTPUT_DIR/source_metadata.json"
-if [ -f "$METADATA_FILE" ]; then
-    echo_info "Validating OS compatibility..."
-
-    # Parse source metadata using jq
-    SOURCE_IMAGE=$(jq -r '.generation.server_image' "$METADATA_FILE" 2>/dev/null || echo "unknown")
-    SOURCE_VERSION=$(jq -r '.generation.os_info.version_id' "$METADATA_FILE" 2>/dev/null || echo "unknown")
-
-    # Extract deployment version from image name (e.g., "debian-13" -> "13")
-    # Use sed for portability (macOS doesn't support grep -P)
-    DEPLOY_VERSION=$(echo "$SERVER_IMAGE" | sed -n 's/.*debian-\([0-9][0-9]*\).*/\1/p')
-    [ -z "$DEPLOY_VERSION" ] && DEPLOY_VERSION="0"
-
-    echo_info "Filesystem source: $SOURCE_IMAGE (Debian $SOURCE_VERSION)"
-    echo_info "Deployment target: $SERVER_IMAGE (Debian $DEPLOY_VERSION)"
-
-    # Calculate version difference (if both are numeric)
-    if [[ "$SOURCE_VERSION" =~ ^[0-9]+$ ]] && [[ "$DEPLOY_VERSION" =~ ^[0-9]+$ ]]; then
-        VERSION_DIFF=$((DEPLOY_VERSION - SOURCE_VERSION))
-
-        # Warn for large version gaps
-        if [ "$VERSION_DIFF" -gt 2 ]; then
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo_warn "  LARGE VERSION GAP DETECTED!"
-            echo_warn "  Source: Debian $SOURCE_VERSION → Target: Debian $DEPLOY_VERSION"
-            echo_warn "  Gap: $VERSION_DIFF versions"
-            echo ""
-            echo_warn "  Potential issues:"
-            echo_warn "  • File contents may reference outdated packages"
-            echo_warn "  • System files may show inconsistent versions"
-            echo_warn "  • Attackers might notice version mismatches"
-            echo ""
-            echo_warn "  Recommendation: Regenerate filesystem on Debian $DEPLOY_VERSION"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            read -p "Continue deployment anyway? [y/N] " -r
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                echo_info "Deployment cancelled by user"
-                exit 1
-            fi
-        elif [ "$VERSION_DIFF" -lt 0 ]; then
-            echo_warn "WARNING: Deploying OLDER OS than source filesystem!"
-            echo_warn "This is unusual and may cause compatibility issues."
-            echo ""
-            read -p "Continue? [y/N] " -r
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                echo_info "Deployment cancelled by user"
-                exit 1
-            fi
-        elif [ "$VERSION_DIFF" -gt 0 ]; then
-            echo_info "Note: Deploying newer OS ($DEPLOY_VERSION) than source ($SOURCE_VERSION) - this is OK"
-        else
-            echo_info "OS versions match - no compatibility concerns"
-        fi
-    fi
-else
-    echo_warn "No source_metadata.json found in output directory"
-    echo_info "This may be an older filesystem snapshot - proceeding without version validation"
-fi
-
 
 # ============================================================
 # STEP 1 — Create server
@@ -787,7 +714,6 @@ fi
 git clone "https://github.com/${REPO_OWNER}/${REPO_NAME}.git" cowrie
 cd cowrie
 
-echo "[remote] Repository cloned successfully"
 echo "[remote] Git commit: $(git rev-parse --short HEAD)"
 EOF
 
@@ -806,14 +732,13 @@ set -e
 if ! command -v uv &> /dev/null; then
     echo "[remote] Installing uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
-    export PATH="$HOME/.local/bin:$PATH"
     echo "[remote] uv installed successfully"
 else
     echo "[remote] uv already installed"
 fi
 
 # Sync Python dependencies (pyproject.toml is now available from git)
-cd /opt/cowrie
+cd /opt/cowrie || exit
 export PATH="$HOME/.local/bin:$PATH"
 echo "[remote] Syncing Python dependencies..."
 uv sync --quiet > /dev/null 2>&1
@@ -886,7 +811,7 @@ if [ -f "$IDENTITY_DIR/ps.txt" ]; then
         echo_info "fs.pickle and cmdoutput.json uploaded."
     else
         echo_warn " Warning: uv not found. Cannot generate cmdoutput.json."
-        echo_info "fs.pickle uploaded (cmdoutput.json generation skipped)."
+        exit 1
     fi
 else
     echo_warn " Error ps.txt not found, exiting."
@@ -917,6 +842,7 @@ if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A "$CONTENTS_DIR" 2>/dev/null)" ]; then
     echo_info "Uploaded $FILE_COUNT files with real content"
 else
     echo_warn " Warning: No contents directory found, files will have no content"
+    exit 1
 fi
 
 # Upload txtcmds directory for real command output
@@ -943,6 +869,7 @@ if [ -d "$CONTENTS_DIR" ] && [ "$(ls -A "$CONTENTS_DIR" 2>/dev/null)" ]; then
     echo_info "Uploaded $FILE_COUNT files with txtcmds content"
 else
     echo_warn " Warning: No txtcmds directory found"
+    exit 1
 fi
 
 # Upload identity directory for SSH configuration and system info
@@ -968,6 +895,7 @@ if [ -d "$IDENTITY_DIR" ] && [ "$(ls -A "$IDENTITY_DIR" 2>/dev/null)" ]; then
     echo_info "Uploaded $FILE_COUNT identity files (SSH config, kernel info, etc.)"
 else
     echo_warn " Warning: No identity directory found, web dashboard system info will be limited"
+    exit 1
 fi
 
 # ============================================================
@@ -975,9 +903,6 @@ fi
 # ============================================================
 
 echo_info "Uploading custom Cowrie build context..."
-
-# NOTE: Build directory no longer needed - using pre-built images from ghcr.io
-# Custom plugins should be added to the repository and rebuilt via GitHub Actions
 
 # Upload userdb.txt (if exists) else upload userdb.txt.default as fallback
 if [ -f "./cowrie/userdb.txt" ]; then
@@ -1216,8 +1141,6 @@ EOFDSHIELD
     echo_info "DShield data sharing enabled in cowrie.cfg"
 fi
 
-
-
 # Upload cowrie.cfg
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
     "$COWRIE_CFG_TMP" "root@$SERVER_IP:/opt/cowrie/etc/cowrie.cfg" > /dev/null
@@ -1230,7 +1153,7 @@ echo_info "Configuration uploaded."
 # STEP 8 — Deploy Cowrie container
 # ============================================================
 
-echo_info "Starting Cowrie container..."
+echo_info "Create docker-compose.yml..."
 
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
 set -e
@@ -1266,32 +1189,21 @@ volumes:
     name: cowrie-var
 DOCKEREOF
 
-# No need to make names unique - only one honeypot per server
-# docker-compose.yml and docker-compose.api.yml will share the same volumes/networks
-
 echo "[remote] Pulling pre-built Cowrie image from GitHub Container Registry..."
 cd /opt/cowrie
-DOCKER_PULL_LOG=$(mktemp /tmp/cowrie.XXXXXXXXXX.log)
-if ! docker compose pull 2>&1 | tee "$DOCKER_PULL_LOG"; then
+if ! docker compose pull > /dev/null 2>&1 ; then
   echo "[remote] ERROR: Failed to pull Cowrie image"
-  cat "$DOCKER_PULL_LOG"
-  rm -f "$DOCKER_PULL_LOG"
   exit 1
 fi
-rm -f "$DOCKER_PULL_LOG"
 
 echo "[remote] Extracting metadata.json from pulled image..."
 docker run --rm --entrypoint python3 ghcr.io/reuteras/cowrie:latest -c "print(open('/cowrie/cowrie-git/metadata.json').read(), end='')" > /opt/cowrie/metadata.json
 
 echo "[remote] Initializing Cowrie volumes with custom configuration..."
 
-# IMPORTANT: Create and configure database BEFORE first container start
-# Otherwise Cowrie will initialize it with wrong permissions
-
 # Create directory structure and SQLite database with correct ownership
-# CRITICAL: Must create with UID 999 from the start, not fix afterward
 echo "[remote] Creating directory structure and SQLite database..."
-docker run --rm -i \
+if ! docker run --rm -i \
   -v cowrie-var:/var \
   alpine sh -c '
     # Install packages
@@ -1302,7 +1214,10 @@ docker run --rm -i \
              /var/log/cowrie &&
     # Create database
     curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db || true
-  '
+  ' ; then
+  echo "[remote] ERROR: Failed to create directories and cowrie.db"
+  exit 1
+fi
 
 # Copy cowrie.cfg into etc volume
 echo "[remote] Copying cowrie.cfg to volume..."
@@ -1329,9 +1244,10 @@ fi
 echo "[remote] Setting config volume ownership..."
 if ! docker run --rm \
   -v cowrie-etc:/etc \
+  -v cowrie-var:/var \
   alpine sh -c '
     # Set ownership to cowrie user (UID 999)
-    chown -R 999:999 /etc /var
+    chown -R 999:999 /etc /var/lib/cowrie /var/log/cowrie
   ' 2>&1; then
   echo "[remote] ERROR: Failed to set config ownership"
   exit 1
