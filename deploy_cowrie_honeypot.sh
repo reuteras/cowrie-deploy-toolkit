@@ -1293,14 +1293,22 @@ echo "[remote] Initializing Cowrie volumes with custom configuration..."
 # IMPORTANT: Create and configure database BEFORE first container start
 # Otherwise Cowrie will initialize it with wrong permissions
 
-# Create SQLite database with schema
-echo "[remote] Creating SQLite database and directory structure..."
+# Create directory structure and SQLite database with correct ownership
+# CRITICAL: Must create with UID 999 from the start, not fix afterward
+echo "[remote] Creating directory structure and SQLite database..."
 docker run --rm -i \
   -v cowrie-var:/var \
   alpine sh -c '
+    # Install packages
     apk add --no-cache sqlite curl &&
-    mkdir -p /var/lib/cowrie /var/log/cowrie &&
-    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db
+    # Create directories with correct ownership immediately
+    mkdir -p /var/lib/cowrie/tty \
+             /var/lib/cowrie/downloads \
+             /var/log/cowrie &&
+    # Set ownership BEFORE creating database
+    chown -R 999:999 /var &&
+    # Create database as cowrie user (su to UID 999)
+    su -s /bin/sh -c "curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db" $(adduser -D -u 999 cowrie && echo cowrie)
   '
 
 # Copy cowrie.cfg into etc volume
@@ -1323,23 +1331,16 @@ if ! docker run --rm \
   exit 1
 fi
 
-# Set proper ownership (UID 999 = cowrie user) and permissions
-# CRITICAL: Must be done BEFORE Cowrie starts
-echo "[remote] Setting ownership and permissions..."
+# Verify and fix ownership on config volume (var volume already set above)
+# Ensure cowrie-etc volume has correct ownership for config files
+echo "[remote] Setting config volume ownership..."
 if ! docker run --rm \
   -v cowrie-etc:/etc \
-  -v cowrie-var:/var \
   alpine sh -c '
-    # Create all required directories
-    mkdir -p /var/lib/cowrie/tty \
-             /var/lib/cowrie/downloads \
-             /var/log/cowrie &&
     # Set ownership to cowrie user (UID 999)
-    chown -R 999:999 /etc /var &&
-    # Set directory permissions
-    chmod -R 755 /var/lib/cowrie /var/log/cowrie
+    chown -R 999:999 /etc
   ' 2>&1; then
-  echo "[remote] ERROR: Failed to set permissions"
+  echo "[remote] ERROR: Failed to set config ownership"
   exit 1
 fi
 
