@@ -1,0 +1,16 @@
+# Ignore everything by default
+**
+
+# Allow only what's needed for Cowrie build
+!cowrie-plugins/
+!cowrie-plugins/**
+!cowrie-core/
+!cowrie-core/**
+
+# Exclude cache directories
+cowrie-core/__pycache__/
+cowrie-core/**/__pycache__/
+cowrie-plugins/__pycache__/
+cowrie-plugins/**/__pycache__/
+*.pyc
+*.pyo
