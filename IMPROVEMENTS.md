@@ -2,16 +2,6 @@
 
 This document outlines potential simplifications and robustness improvements identified through comprehensive code analysis.
 
-## Table of Contents
-
-- [Code Simplification Opportunities](#code-simplification-opportunities)
-- [Robustness Improvements](#robustness-improvements)
-- [Configuration & Validation](#configuration--validation)
-- [Testing & CI/CD](#testing--cicd)
-- [Documentation Gaps](#documentation-gaps)
-
----
-
 ## Code Simplification Opportunities
 
 ### 1. Modularize Deploy Script (2140 lines → ~500 lines per module)
