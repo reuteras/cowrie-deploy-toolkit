@@ -1305,10 +1305,10 @@ docker run --rm -i \
     mkdir -p /var/lib/cowrie/tty \
              /var/lib/cowrie/downloads \
              /var/log/cowrie &&
-    # Set ownership BEFORE creating database
-    chown -R 999:999 /var &&
-    # Create database as cowrie user (su to UID 999)
-    su -s /bin/sh -c "curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db" $(adduser -D -u 999 cowrie && echo cowrie)
+    # Create database
+    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db &&
+    # Set ownership
+    chown -R 999:999 /var
   '
 
 # Copy cowrie.cfg into etc volume
