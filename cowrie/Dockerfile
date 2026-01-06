@@ -114,7 +114,7 @@ RUN if [ -d "${COWRIE_HOME}/custom-core/commands" ] && [ -n "$(find ${COWRIE_HOM
 RUN rm -rf ${COWRIE_HOME}/custom-core
 
 # Generate build metadata JSON file
-RUN python3 -c "import json; import sys; from datetime import datetime, timezone; \
+RUN ${COWRIE_HOME}/cowrie-env/bin/python3 -c "import json; import sys; from datetime import datetime, timezone; \
 sys.path.insert(0, '${COWRIE_HOME}/cowrie-git/src'); \
 import cowrie._version; \
 metadata = {'build_date': datetime.now(timezone.utc).isoformat(), \
