@@ -271,11 +271,13 @@ create_temp_dir() {
 
 # Clean up all tracked temporary files
 cleanup_temp_files() {
-    for file in "${TEMP_FILES[@]}"; do
-        if [ -e "$file" ]; then
-            rm -rf "$file" 2>/dev/null || true
-        fi
-    done
+    if [ ${#TEMP_FILES[@]} -gt 0 ]; then
+        for file in "${TEMP_FILES[@]}"; do
+            if [ -e "$file" ]; then
+                rm -rf "$file" 2>/dev/null || true
+            fi
+        done
+    fi
     TEMP_FILES=()
 }
 
