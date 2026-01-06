@@ -238,21 +238,25 @@ See [api/README.md](api/README.md) for full documentation.
 
 ### Dashboard Modes
 
-**Local Mode** (Default):
-- Direct file access via volume mounts
-- Same as v2.0 behavior
+**IMPORTANT**: In v2.1, ALL dashboard modes use the API layer for data access. "Local mode" means "use local API endpoint", NOT "direct file access to SQLite".
+
+**Local Mode**:
+- Uses local API endpoint (`http://cowrie-api:8000`)
+- Dashboard and API run on same server
+- Data access via API (ensures consistent SQLite query performance)
 - Best for single-host deployments
 
 **Remote Mode**:
-- Connects to single API endpoint
-- All data via HTTP/HTTPS
-- Best for single remote honeypot
+- Connects to single remote API endpoint via Tailscale
+- All data via HTTPS (e.g., `https://cowrie-hp-1.tail9e5e41.ts.net`)
+- Best for single remote honeypot with separate dashboard server
 
 **Multi Mode** (Advanced):
-- Aggregates from multiple honeypots
-- Parallel querying with graceful degradation
-- Supports different types (SSH, web, VPN)
-- Best for enterprise deployments
+- Aggregates from multiple honeypots via their APIs
+- Parallel querying with graceful degradation (2 workers)
+- Response caching (30s stats, 15s sessions)
+- Supports different types (SSH, web, VPN - extensible)
+- Best for enterprise deployments with 2+ honeypots
 
 ### Configuration Examples
 
@@ -394,6 +398,41 @@ Access via: `https://<tailscale_name>.<tailscale_domain>`
 ```
 
 Database: `/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/iplock.db`
+
+### IP-Lock Implementation Details
+
+**Authentication Flow:**
+1. Cowrie reads `cowrie.cfg.dist` first (default configuration)
+2. Then overlays settings from `cowrie.cfg` (your custom config)
+3. This is **correct behavior** - both files are meant to be read
+
+**Custom Auth Module:**
+- Located in `cowrie-core/auth.py` (version controlled)
+- Compiled into Docker image during build via `cowrie/Dockerfile`
+- **CRITICAL**: `cowrie/.dockerignore` must allow `!cowrie-core/` directory
+- Without this, the auth module won't be included in the image
+
+**Database Schema:**
+```sql
+CREATE TABLE ip_locks (
+    src_ip TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    login_count INTEGER DEFAULT 1,
+    last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE auth_attempts (
+    src_ip TEXT NOT NULL,
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    success BOOLEAN NOT NULL,
+    is_locked BOOLEAN DEFAULT FALSE,
+    lock_matched BOOLEAN DEFAULT NULL,
+    attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
 ## Enhanced Realism Features
 
@@ -568,11 +607,104 @@ ssh -p 2222 root@<SERVER_IP> 'cd /opt/cowrie && docker compose restart'
 
 **Note**: Replace `<SERVER_IP>` with `<TAILSCALE_IP>` if `block_public_ssh = true`.
 
+## Automated Updates
+
+**Honeypots automatically update daily via systemd timer.**
+
+### Update Mechanism
+
+**Systemd Service** (`cowrie-update.service` + `cowrie-update.timer`):
+- Runs daily at 3:00 AM (+random 0-30min delay to avoid simultaneous updates)
+- Calls `/opt/cowrie/scripts/update-agent.sh --auto`
+- Automatically restarts on failure (max 3 attempts)
+
+**Update Process** (5 phases):
+1. **Snapshot**: Creates rollback snapshot in `/opt/cowrie/.rollback/`
+2. **Git Pull**: Updates scripts/web/api code (`git pull origin/main`)
+3. **Cowrie Container**: Pulls latest image and recreates
+4. **Web Container**: Pulls latest image and recreates (with health check)
+5. **API Container**: Pulls latest image and recreates (with health check)
+
+**Rollback Support:**
+- Automatic rollback on failure (any phase)
+- Keeps last 5 snapshots
+- Manual rollback: `ssh root@honeypot 'cd /opt/cowrie && ./scripts/update-agent.sh --rollback'`
+
+**What's Included in Snapshots:**
+- ✅ Git commit hash (`git rev-parse HEAD`)
+- ✅ Docker image IDs and container states
+- ✅ VERSION.json (version tracking)
+
+**What's NOT Included:**
+- ❌ Docker volumes (`cowrie-var`, `cowrie-etc`)
+- ❌ Runtime data (logs, downloads, databases)
+- ❌ Configuration files (`cowrie.cfg`, `userdb.txt`)
+
+**Manual Update Commands:**
+
+```bash
+# Update all honeypots
+./update-honeypots.sh --all
+
+# Update specific honeypot
+./update-honeypots.sh --name cowrie-hp-1
+
+# Update code only (git pull + docker pull)
+./update-honeypots.sh --name cowrie-hp-1 --code
+
+# Update filesystem artifacts (fs.pickle, identity, contents)
+./update-honeypots.sh --name cowrie-hp-1 --filesystem
+
+# Check update status
+./update-honeypots.sh --name cowrie-hp-1 --status
+
+# Force rollback
+ssh -p 2222 root@<SERVER_IP> 'cd /opt/cowrie && ./scripts/update-agent.sh --rollback'
+```
+
+**Update Logs:**
+
+```bash
+# View last update
+ssh -p 2222 root@<SERVER_IP> 'journalctl -u cowrie-update.service -n 100'
+
+# View timer status
+ssh -p 2222 root@<SERVER_IP> 'systemctl status cowrie-update.timer'
+
+# View VERSION.json
+ssh -p 2222 root@<SERVER_IP> 'cat /opt/cowrie/VERSION.json'
+```
+
+## MaxMind GeoIP Database Management
+
+**Local Caching** (prevents repeated downloads):
+- Downloads stored in `.maxmind-cache/` on local machine
+- Reused across multiple deployments
+- Reduces MaxMind API calls (limited to 10 downloads per license key)
+
+**Auto-Update on Honeypot:**
+- `geoipupdate` installed and configured
+- Runs weekly via cron (Tuesdays 4 AM)
+- Updates `/var/lib/GeoIP/GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb`
+
+**Manual Download:**
+
+```bash
+# Download to local cache (if needed)
+./scripts/download-maxmind-local.sh
+
+# Force re-upload to honeypot
+scp -P 2222 .maxmind-cache/*.mmdb root@<SERVER_IP>:/var/lib/GeoIP/
+```
+
 ## Cleanup
 
 ```bash
 # Delete honeypot server
 hcloud server delete <SERVER_ID>
+
+# Clean local caches
+rm -rf .maxmind-cache/ output_*/
 ```
 
 ## Development Notes
@@ -582,6 +714,90 @@ hcloud server delete <SERVER_ID>
 - Docker containers with security hardening (no-new-privileges, read-only, cap_drop ALL)
 - Automatic security updates (3 AM reboot window)
 - All Python dependencies managed with [uv](https://github.com/astral-sh/uv)
+- Pre-built Docker images from `ghcr.io/reuteras/*` (not built locally)
+
+## Known Limitations & Considerations
+
+### Configuration Validation
+- ⚠️ **No dry-run mode**: Errors discovered during deployment (can fail mid-deployment)
+- ⚠️ **Minimal TOML validation**: Missing required fields caught late in process
+- ⚠️ **No schema validation**: Consider adding JSON Schema validation for `master-config.toml`
+- ✅ **Workaround**: Use `scripts/get-honeypot-config.py --list` to validate config before deployment
+
+### Update Rollback Limitations
+- ⚠️ **Volumes not snapshotted**: `cowrie-var` and `cowrie-etc` volumes not included in rollback
+- ⚠️ **Database schema migrations**: Could break on rollback if schema changed
+- ⚠️ **No automated integration tests**: Updates deployed without pre-validation
+- ✅ **Mitigation**: Snapshots kept for 5 versions, manual rollback possible
+
+### Resource Constraints
+- ⚠️ **No disk space checks**: Could fail mid-deployment if disk full
+- ⚠️ **File descriptor limits**: Multi-source dashboard limited to 2 workers to prevent FD exhaustion
+- ⚠️ **Connection pooling**: API connections pool-blocked (`pool_block=True`) to prevent resource exhaustion
+- ✅ **Best practice**: Monitor disk usage on honeypots (logs, downloads can grow)
+
+### Network & Connectivity
+- ⚠️ **No retry logic**: Docker pulls, git clones, SCP uploads fail on transient network errors
+- ⚠️ **Assumes stable internet**: Long deployments (5-10 min) could fail on connection loss
+- ⚠️ **Concurrent deployments**: No locking for `--all` deployments (could conflict on Hetzner API rate limits)
+- ✅ **Workaround**: Deploy honeypots sequentially, not in parallel
+
+### Tailscale Device Management
+- ⚠️ **Manual cleanup required**: Old devices accumulate if not using Tailscale API auto-cleanup
+- ⚠️ **Separate API key needed**: Requires `device:delete` scope for auto-cleanup
+- ⚠️ **Device naming**: Without cleanup, creates `device-1`, `device-2` suffixes
+- ✅ **Best practice**: Configure Tailscale API cleanup or manually delete old devices
+
+### Secret Management
+- ⚠️ **1Password integration untested**: `op read` commands in config not validated
+- ⚠️ **Silent failures**: Empty secret values silently accepted
+- ⚠️ **Plaintext in config**: Secrets stored in `master-config.toml` (not encrypted)
+- ✅ **Best practice**: Use `op://vault/item/field` syntax, validate with `op read` before deployment
+
+### OS Version Compatibility
+- ⚠️ **No automated testing**: Compatibility matrix not maintained
+- ⚠️ **Warning only**: Allows deployment with >2 version gap (could fail at runtime)
+- ✅ **Tested combinations**: debian-11 → debian-11, debian-11 → debian-13 (recommended)
+
+### Multi-Host Dashboard Performance
+- ⚠️ **Response time degradation**: 3+ sources can slow dashboard (parallel queries limited to 2 workers)
+- ⚠️ **Cache stale data**: 30s cache for stats, 15s for sessions (not real-time)
+- ⚠️ **Graceful degradation**: Offline sources silently skipped (no alerts)
+- ✅ **Best practice**: Use 2-4 sources max, monitor API response times
+
+## Troubleshooting
+
+### Common Issues
+
+**1. Authentication fails with "auth_class not found"**
+- **Cause**: `cowrie/.dockerignore` excludes `cowrie-core/` directory
+- **Fix**: Ensure `!cowrie-core/` is in `.dockerignore`, rebuild image
+- **Verify**: `docker exec cowrie grep "class IPUserDB" /cowrie/cowrie-git/src/cowrie/core/auth.py`
+
+**2. Dashboard shows no data in multi-mode**
+- **Cause**: API not exposed via Tailscale, or Tailscale Serve not configured
+- **Fix**: Check `api_expose_via_tailscale = true` and verify `tailscale serve status`
+- **Verify**: `curl https://cowrie-hp-1.tail9e5e41.ts.net/api/v1/health`
+
+**3. Updates fail with "git pull failed"**
+- **Cause**: Local modifications in `/opt/cowrie/` conflict with git pull
+- **Fix**: SSH to honeypot, run `git status` and `git reset --hard origin/main`
+- **Prevent**: Don't manually edit files in `/opt/cowrie/` (use git workflow)
+
+**4. Reporting emails not sent**
+- **Cause**: Postfix not configured, or SMTP credentials invalid
+- **Fix**: Test with `uv run scripts/daily-report.py --test`, check Postfix logs
+- **Verify**: `journalctl -u postfix -n 50`
+
+**5. YARA scanner not running**
+- **Cause**: Systemd service failed, or `/opt/cowrie/var/` directory missing
+- **Fix**: Check `systemctl status yara-scanner`, restart with `systemctl restart yara-scanner`
+- **Verify**: `journalctl -u yara-scanner -n 50`
+
+**6. Container logs show "Permission denied" for volumes**
+- **Cause**: Volume ownership not set to UID 999 (cowrie user)
+- **Fix**: Run `docker run --rm -v cowrie-var:/var alpine chown -R 999:999 /var`
+- **Verify**: `docker run --rm -v cowrie-var:/var alpine ls -la /var`
 
 ## Additional Documentation
 

@@ -26,9 +26,10 @@ Deploy realistic [Cowrie](https://github.com/cowrie/cowrie) SSH honeypots on Het
 
 **Multi-Host Architecture:**
 - FastAPI layer for remote access to Cowrie data
-- Dashboard modes: local (direct files), remote (single API), multi (aggregate multiple honeypots)
+- Dashboard modes: local (local API), remote (single API), multi (aggregate multiple honeypots)
 - Tailscale VPN now REQUIRED for secure management
 - Centralized monitoring from multiple honeypots
+- **IMPORTANT**: All dashboard modes use API for data access (no direct file access)
 
 **Enhanced Dashboard:**
 - Aggregate data from multiple honeypots
@@ -65,186 +66,150 @@ Edit with your API keys, email settings, and Tailscale credentials. Supports com
 
 Deploys server with Cowrie on port 22. Real SSH moved to port 2222. Automatically sets up reporting, web dashboard, and Tailscale VPN.
 
-### Multi-Honeypot Deployment
+### Multi-Honeypot Deployment (v2.1+)
 
-Deploy multiple honeypots with centralized dashboard using one repository.
+Deploy multiple honeypots with centralized dashboard using the `[[honeypots]]` array in `master-config.toml`.
+
+#### Configuration
+
+Edit `master-config.toml`:
+
+```toml
+# ====================================================================
+# SHARED CONFIGURATION (applies to all honeypots)
+# ====================================================================
+
+[shared.tailscale]
+authkey = "tskey-auth-..."  # Get from https://login.tailscale.com/admin/settings/keys
+tailscale_domain = "tail9e5e41.ts.net"  # Your tailnet domain
+block_public_ssh = true  # Recommended: only allow SSH via Tailscale
+
+[shared.deployment]
+generation_image = "debian-11"    # OS used for filesystem snapshot
+deployment_image = "debian-13"    # OS for actual deployment (can differ)
+server_type = "cx22"              # Hetzner server type
+location = "hel1"                 # Hetzner location
+
+[shared.honeypot]
+enable_reporting = true
+maxmind_account_id = "YOUR_ID"
+maxmind_license_key = "YOUR_KEY"
+
+[shared.reporting]
+virustotal_api_key = "YOUR_KEY"
+email_from = "honeypot@domain.com"
+email_to = "admin@domain.com"
+
+[shared.email]
+smtp_host = "smtp.tem.scw.cloud"
+smtp_port = 587
+smtp_user = "USERNAME"
+smtp_password = "PASSWORD"
+smtp_tls = true
+
+# ====================================================================
+# HONEYPOT ARRAY (define each honeypot)
+# ====================================================================
+
+# Honeypot 1: SSH honeypot with API, dashboard with multi-source
+[[honeypots]]
+name = "cowrie-hp-1"
+hostname = "dmz-web-01"
+location = "hel1"  # Optional: override shared location
+api_enabled = true
+api_expose_via_tailscale = true
+dashboard_enabled = true
+dashboard_mode = "multi"  # Aggregate from multiple sources
+dashboard_sources = ["cowrie-hp-1", "cowrie-hp-2"]  # Smart detection: local for self, remote for others
+
+# Honeypot 2: SSH honeypot with API only
+[[honeypots]]
+name = "cowrie-hp-2"
+hostname = "dmz-db-01"
+location = "nbg1"  # Different datacenter
+api_enabled = true
+api_expose_via_tailscale = true
+dashboard_enabled = false  # No dashboard on this one
+```
 
 #### Deployment Workflow
 
-**1. Create config files for each honeypot**
+**1. Generate filesystem (once)**
 
 ```bash
-# Copy example config
-cp example-config.toml master-config-hp1.toml
-cp example-config.toml master-config-hp2.toml
-cp example-config.toml master-config-dashboard.toml
-```
-
-**2. Configure honeypot 1**
-
-Edit `master-config-hp1.toml`:
-
-```toml
-[deployment]
-honeypot_hostname = "dmz-web-01"
-
-[tailscale]
-authkey = "tskey-auth-..."
-tailscale_name = "cowrie-hp-1"
-tailscale_domain = "tail9e5e41.ts.net"
-
-[api]
-enabled = true
-expose_via_tailscale = true
-tailscale_api_hostname = "cowrie-hp-1"
-
-[web_dashboard]
-enabled = false  # No local dashboard
-```
-
-**3. Configure honeypot 2**
-
-Edit `master-config-hp2.toml`:
-
-```toml
-[deployment]
-honeypot_hostname = "dmz-db-01"
-
-[tailscale]
-authkey = "tskey-auth-..."
-tailscale_name = "cowrie-hp-2"
-tailscale_domain = "tail9e5e41.ts.net"
-
-[api]
-enabled = true
-expose_via_tailscale = true
-tailscale_api_hostname = "cowrie-hp-2"
-
-[web_dashboard]
-enabled = false  # No local dashboard
-```
-
-**4. Configure centralized dashboard**
-
-Edit `master-config-dashboard.toml`:
-
-```toml
-[tailscale]
-authkey = "tskey-auth-..."
-tailscale_name = "cowrie-dashboard"
-tailscale_domain = "tail9e5e41.ts.net"
-
-[api]
-enabled = false  # Dashboard doesn't need API
-
-[web_dashboard]
-enabled = true
-mode = "multi"
-
-[[web_dashboard.sources]]
-name = "honeypot-ssh-1"
-type = "cowrie-ssh"
-api_base_url = "https://cowrie-hp-1.tail9e5e41.ts.net"
-enabled = true
-
-[[web_dashboard.sources]]
-name = "honeypot-ssh-2"
-type = "cowrie-ssh"
-api_base_url = "https://cowrie-hp-2.tail9e5e41.ts.net"
-enabled = true
-```
-
-**5. Generate filesystem (once)**
-
-```bash
-# Use any config or default
 ./generate_cowrie_fs_from_hetzner.sh
 # Output: ./output_20251226_143210
 ```
 
-**6. Deploy honeypots**
+**2. Deploy specific honeypot**
 
 ```bash
 # Deploy honeypot 1
-cp master-config-hp1.toml master-config.toml
-./deploy_cowrie_honeypot.sh ./output_20251226_143210
+./deploy_cowrie_honeypot.sh ./output_20251226_143210 --name cowrie-hp-1
 
 # Deploy honeypot 2
-cp master-config-hp2.toml master-config.toml
-./deploy_cowrie_honeypot.sh ./output_20251226_143210
-
-# Deploy dashboard server
-cp master-config-dashboard.toml master-config.toml
-./deploy_cowrie_honeypot.sh ./output_20251226_143210
+./deploy_cowrie_honeypot.sh ./output_20251226_143210 --name cowrie-hp-2
 ```
 
-**7. Access centralized dashboard**
-
-```text
-https://cowrie-dashboard.tail9e5e41.ts.net
-```
-
-Dashboard shows aggregated data from both honeypots with source filtering.
-
-#### Alternative: Helper Script
-
-Create `deploy-multi.sh`:
+**3. Or deploy all honeypots at once**
 
 ```bash
-#!/bin/bash
-set -euo pipefail
-
-OUTPUT_DIR="${1:-}"
-if [ -z "$OUTPUT_DIR" ]; then
-    echo "Usage: $0 <output_directory>"
-    exit 1
-fi
-
-# Deploy honeypot 1
-echo "Deploying honeypot 1..."
-cp master-config-hp1.toml master-config.toml
-./deploy_cowrie_honeypot.sh "$OUTPUT_DIR"
-
-# Deploy honeypot 2
-echo "Deploying honeypot 2..."
-cp master-config-hp2.toml master-config.toml
-./deploy_cowrie_honeypot.sh "$OUTPUT_DIR"
-
-# Deploy dashboard
-echo "Deploying dashboard..."
-cp master-config-dashboard.toml master-config.toml
-./deploy_cowrie_honeypot.sh "$OUTPUT_DIR"
-
-echo "Multi-honeypot deployment complete!"
+./deploy_cowrie_honeypot.sh ./output_20251226_143210 --all
 ```
 
-Then:
-
-```bash
-chmod +x deploy-multi.sh
-./generate_cowrie_fs_from_hetzner.sh
-./deploy-multi.sh ./output_20251226_143210
-```
-
-#### Repository Organization
-
-**Recommended structure:**
+**4. Access dashboard**
 
 ```text
-cowrie-deploy-toolkit/
-├── master-config-hp1.toml       # Honeypot 1 config
-├── master-config-hp2.toml       # Honeypot 2 config
-├── master-config-dashboard.toml # Dashboard config
-├── master-config.toml           # Active config (gitignored)
-├── .gitignore                   # Ignore master-config.toml
-└── deploy-multi.sh              # Optional helper script
+https://cowrie-hp-1.tail9e5e41.ts.net
 ```
 
-**Benefits:**
-- One repository for all deployments
-- Version control for configuration templates
-- Easy updates and maintenance
-- Shared scripts and improvements
+Dashboard on `cowrie-hp-1` shows aggregated data from both honeypots with source filtering.
+
+#### Alternative Pattern: Separate Dashboard Server
+
+```toml
+# Honeypot 1: API only
+[[honeypots]]
+name = "cowrie-hp-1"
+hostname = "dmz-web-01"
+api_enabled = true
+api_expose_via_tailscale = true
+dashboard_enabled = false
+
+# Honeypot 2: API only
+[[honeypots]]
+name = "cowrie-hp-2"
+hostname = "dmz-db-01"
+api_enabled = true
+api_expose_via_tailscale = true
+dashboard_enabled = false
+
+# Dashboard-only server (no honeypot)
+[[honeypots]]
+name = "cowrie-dashboard"
+hostname = "dashboard"
+api_enabled = false  # Dashboard doesn't run Cowrie
+dashboard_enabled = true
+dashboard_mode = "multi"
+dashboard_sources = ["cowrie-hp-1", "cowrie-hp-2"]
+```
+
+Then deploy:
+
+```bash
+./deploy_cowrie_honeypot.sh ./output_20251226_143210 --all
+```
+
+Access: `https://cowrie-dashboard.tail9e5e41.ts.net`
+
+#### Benefits
+
+- **Single config file**: All honeypots defined in one `master-config.toml`
+- **Shared settings**: Common configuration (Tailscale, reporting, email) applied to all
+- **Per-honeypot overrides**: Each honeypot can override shared settings (location, server type)
+- **Smart dashboard sources**: Automatically detects local vs remote sources
+- **Easy deployment**: `--all` flag deploys everything sequentially
+- **Version controlled**: Commit `master-config.toml` (with secrets in 1Password via `op read`)
 
 ## Requirements
 
