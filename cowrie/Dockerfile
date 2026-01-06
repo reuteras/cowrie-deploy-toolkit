@@ -52,13 +52,14 @@ ARG COWRIE_VERSION
 RUN git clone --depth 1 --branch ${COWRIE_VERSION} https://github.com/cowrie/cowrie.git cowrie-git && \
     echo "Cloned Cowrie version: $(cd cowrie-git && git describe --tags --always)"
 
-# Copy requirements first to use Docker caching better
+# Install Python dependencies and Cowrie itself
 RUN python3 -m venv cowrie-env && \
     . cowrie-env/bin/activate && \
     pip install -q --no-cache-dir --upgrade pip setuptools wheel && \
     pip install -q --no-cache-dir --upgrade cffi && \
     pip install -q --no-cache-dir --upgrade -r ${COWRIE_HOME}/cowrie-git/requirements.txt && \
-    pip install -q --no-cache-dir --upgrade -r ${COWRIE_HOME}/cowrie-git/requirements-output.txt
+    pip install -q --no-cache-dir --upgrade -r ${COWRIE_HOME}/cowrie-git/requirements-output.txt && \
+    pip install -q --no-cache-dir -e ${COWRIE_HOME}/cowrie-git
 
 # === CUSTOM MODIFICATIONS START ===
 
