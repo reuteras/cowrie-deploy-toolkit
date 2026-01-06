@@ -419,6 +419,7 @@ Should fail with "Subcommand not allowed" (no semicolons in valid commands)
 ## Summary
 
 ### Fixed Vulnerabilities
+
 | Severity | Type | File | Status |
 | -------- | ---- | ---- | ------ |
 | CRITICAL | Command Injection | `scripts/process-config.py` | ✅ FIXED |
@@ -427,6 +428,7 @@ Should fail with "Subcommand not allowed" (no semicolons in valid commands)
 | MEDIUM | Symlink Attack (Temp Files) | `deploy_cowrie_honeypot.sh` | ✅ FIXED |
 
 ### Recommendations for Future
+
 | Priority | Recommendation | Effort |
 | -------- | ------------- | ------ |
 | MEDIUM | API key authentication | Low (1-2 hours) |
