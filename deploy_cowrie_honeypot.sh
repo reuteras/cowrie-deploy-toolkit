@@ -836,12 +836,6 @@ set -e
 mkdir -p /opt/cowrie/share/cowrie/{contents,txtcmds}
 mkdir -p /opt/cowrie/identity
 mkdir -p /opt/cowrie/etc
-mkdir -p /opt/cowrie/var/lib/cowrie/downloads
-mkdir -p /opt/cowrie/var/log/cowrie
-
-# Set ownership to UID 999 (cowrie user in container) for writable directories
-chown -R 999:999 /opt/cowrie/var
-
 echo "[remote] Artifact directories created"
 EOF
 
