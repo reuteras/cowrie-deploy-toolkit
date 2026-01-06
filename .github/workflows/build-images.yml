@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           persist-credentials: false
 
@@ -44,7 +44,7 @@ jobs:
 
       - name: Extract metadata for Docker
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/cowrie-web
           tags: |
@@ -56,7 +56,7 @@ jobs:
 
       - name: Build and push Web dashboard image
         id: build-web
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v5
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
         with:
           context: ./web
           push: true
@@ -81,7 +81,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           persist-credentials: false
 
@@ -97,7 +97,7 @@ jobs:
 
       - name: Extract metadata for Docker
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/cowrie-api
           tags: |
@@ -109,7 +109,7 @@ jobs:
 
       - name: Build and push API image
         id: build-api
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v5
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
         with:
           context: ./api
           push: true
@@ -134,7 +134,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           persist-credentials: false
 
@@ -150,7 +150,7 @@ jobs:
 
       - name: Extract metadata for Docker
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/cowrie
           tags: |
@@ -162,7 +162,7 @@ jobs:
 
       - name: Build and push patched Cowrie image
         id: build-cowrie
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v5
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
         with:
           context: .
           file: ./cowrie/Dockerfile
