@@ -26,7 +26,7 @@ REPO_NAME="${REPO_NAME:-cowrie-deploy-toolkit}"
 # ============================================================
 
 echo_info "Checking required dependencies..."
-check_dependencies "hcloud" "jq" "nc" "tar" "ssh" "scp" "python3" "curl"
+check_dependencies "hcloud" "jq" "nc" "tar" "ssh" "scp" "python3" "curl" "uv"
 
 # ============================================================
 # ARGUMENT PARSING (Multi-Honeypot Support)
@@ -241,7 +241,7 @@ REAL_SSH_PORT="2222"        # Move real SSH to 2222
 ENABLE_REPORTING="false"
 ENABLE_WEB_DASHBOARD="false"
 
-# Tailscale configuration (REQUIRED in v2.1)
+# Tailscale configuration
 TAILSCALE_AUTHKEY=""
 TAILSCALE_USE_SSH="false"
 TAILSCALE_NAME="cowrie-honeypot"
@@ -387,7 +387,7 @@ DASHBOARD_SOURCES_JSON="[]"
 if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
     echo_info "Web dashboard is enabled (mode: $DASHBOARD_MODE)"
 
-    # Smart dashboard source detection (NEW in v2.1)
+    # Smart dashboard source detection
     if [ "$DASHBOARD_MODE" = "multi" ]; then
         echo_info "Building multi-source dashboard configuration..."
 
@@ -551,7 +551,6 @@ echo_info "Moving SSH to port $REAL_SSH_PORT..."
 
 # shellcheck disable=SC2087
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "root@$SERVER_IP" bash << EOF
-set -e
 # Change SSH port - remove any existing Port directives and add new one
 sed -i '/^#\?Port /d' /etc/ssh/sshd_config
 echo "Port $REAL_SSH_PORT" >> /etc/ssh/sshd_config
@@ -582,8 +581,6 @@ echo_info "Setting up Tailscale for secure management access..."
 
 # shellcheck disable=SC2087
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << TAILSCALEEOF
-set -e
-
 # Install Tailscale
 echo "[remote] Installing Tailscale..."
 curl -fsSL https://tailscale.com/install.sh | sh > /dev/null 2>&1
@@ -610,7 +607,6 @@ echo_info "Tailscale IP: $TAILSCALE_IP"
 echo_info "Installing Docker..."
 
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
-set -e
 DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
 DEBIAN_FRONTEND=noninteractive apt-get install -qq -y \
     ca-certificates \
@@ -653,8 +649,6 @@ echo_info "Docker installed."
 echo_info "Configuring automatic security updates..."
 
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
-set -e
-
 # Install unattended-upgrades for automatic security updates
 DEBIAN_FRONTEND=noninteractive apt-get install -qq -y unattended-upgrades apt-listchanges > /dev/null 2>&1
 
@@ -702,8 +696,6 @@ echo_info "Cloning cowrie-deploy-toolkit repository..."
 # This provides all version-controlled files: scripts, configs, docker files, etc.
 # shellcheck disable=SC2087
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << EOF
-set -e
-
 # Clone repository
 cd /opt
 if [ -d "cowrie" ]; then
@@ -726,8 +718,6 @@ echo_info "Repository cloned successfully"
 echo_info "Installing uv and Python dependencies..."
 
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'UVEOF'
-set -e
-
 # Install uv
 if ! command -v uv &> /dev/null; then
     echo "[remote] Installing uv..."
@@ -755,8 +745,6 @@ echo_info "Creating deployment artifact directories..."
 
 # Create directories for deployment-specific files (not in git)
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
-set -e
-
 # Create artifact directories (gitignored, for scp'd files)
 mkdir -p /opt/cowrie/share/cowrie/{contents,txtcmds}
 mkdir -p /opt/cowrie/identity
@@ -796,23 +784,18 @@ if [ -f "$IDENTITY_DIR/ps.txt" ]; then
     echo_info "Generating cmdoutput.json from ps.txt..."
 
     # Generate cmdoutput.json using the converter script
-    if command -v uv &> /dev/null; then
-        CMDOUTPUT_TMP=$(create_temp_file ".json")
-        uv run --quiet scripts/ps-to-cmdoutput.py "$IDENTITY_DIR/ps.txt" "$CMDOUTPUT_TMP"
+    CMDOUTPUT_TMP=$(create_temp_file ".json")
+    uv run --quiet scripts/ps-to-cmdoutput.py "$IDENTITY_DIR/ps.txt" "$CMDOUTPUT_TMP"
 
-        # Upload cmdoutput.json
-        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-            "$CMDOUTPUT_TMP" "root@$SERVER_IP:/opt/cowrie/share/cowrie/cmdoutput.json" > /dev/null
+    # Upload cmdoutput.json
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
+        "$CMDOUTPUT_TMP" "root@$SERVER_IP:/opt/cowrie/share/cowrie/cmdoutput.json" > /dev/null
 
-        # Set proper permissions (readable by Cowrie container)
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-            "chmod 644 /opt/cowrie/share/cowrie/cmdoutput.json"
+    # Set proper permissions (readable by Cowrie container)
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
+        "chmod 644 /opt/cowrie/share/cowrie/cmdoutput.json"
 
-        echo_info "fs.pickle and cmdoutput.json uploaded."
-    else
-        echo_warn " Warning: uv not found. Cannot generate cmdoutput.json."
-        exit 1
-    fi
+    echo_info "fs.pickle and cmdoutput.json uploaded."
 else
     echo_warn " Error ps.txt not found, exiting."
     exit 1
@@ -902,7 +885,7 @@ fi
 # STEP 6.5 — Upload Custom Cowrie Build Context
 # ============================================================
 
-echo_info "Uploading custom Cowrie build context..."
+echo_info "Uploading custom Cowrie context..."
 
 # Upload userdb.txt (if exists) else upload userdb.txt.default as fallback
 if [ -f "./cowrie/userdb.txt" ]; then
@@ -915,7 +898,6 @@ else
     echo_info "Default userdb.txt uploaded"
 fi
 
-# ============================================================
 # ============================================================
 # STEP 7 — Generate cowrie.cfg
 # ============================================================
@@ -1090,7 +1072,6 @@ logfile = var/log/cowrie/cowrie.log
 [output_sqlite]
 enabled = true
 db_file = var/lib/cowrie/cowrie.db
-
 EOFCFG
 
 # Add VirusTotal configuration if API key is available
@@ -1156,8 +1137,6 @@ echo_info "Configuration uploaded."
 echo_info "Create docker-compose.yml..."
 
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
-set -e
-
 # Create docker-compose.yml to pull pre-built images
 cat > /opt/cowrie/docker-compose.yml << 'DOCKEREOF'
 services:
@@ -1168,8 +1147,9 @@ services:
     ports:
       - "22:2222"
     volumes:
-      - cowrie-etc:/cowrie/cowrie-git/etc
       - cowrie-var:/cowrie/cowrie-git/var
+      - /opt/cowrie/etc/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - /opt/cowrie/etc/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
       - /opt/cowrie/share:/cowrie/cowrie-git/share:ro
       - /opt/cowrie/share/cowrie/cmdoutput.json:/cowrie/cowrie-git/src/cowrie/data/cmdoutput.json:ro
       - /opt/cowrie/share/cowrie/txtcmds:/cowrie/cowrie-git/src/cowrie/data/txtcmds:ro
@@ -1183,10 +1163,9 @@ services:
       - no-new-privileges:true
 
 volumes:
-  cowrie-etc:
-    name: cowrie-etc
   cowrie-var:
     name: cowrie-var
+    external: true
 DOCKEREOF
 
 echo "[remote] Pulling pre-built Cowrie image from GitHub Container Registry..."
@@ -1199,76 +1178,35 @@ fi
 echo "[remote] Extracting metadata.json from pulled image..."
 docker run --rm --entrypoint python3 ghcr.io/reuteras/cowrie:latest -c "print(open('/cowrie/cowrie-git/metadata.json').read(), end='')" > /opt/cowrie/metadata.json
 
-echo "[remote] Initializing Cowrie volumes with custom configuration..."
-
 # Create directory structure and SQLite database with correct ownership
-echo "[remote] Creating directory structure and SQLite database..."
-if ! docker run --rm -i \
+echo "[remote] Creating directory structure and SQLite database in cowrie-var..."
+docker run --rm -i \
   -v cowrie-var:/var \
   alpine sh -c '
     # Install packages
-    apk add --no-cache sqlite curl &&
+    apk add --no-cache sqlite curl > /dev/null 2>&1 &&
     # Create directories with correct ownership immediately
     mkdir -p /var/lib/cowrie/tty \
              /var/lib/cowrie/downloads \
              /var/log/cowrie &&
     # Create database
-    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db || true
-  ' ; then
-  echo "[remote] ERROR: Failed to create directories and cowrie.db"
-  exit 1
-fi
+    curl -s https://raw.githubusercontent.com/cowrie/cowrie/refs/heads/main/docs/sql/sqlite3.sql | sqlite3 /var/lib/cowrie/cowrie.db &&
+    chown -R 999:999 /var/lib/cowrie /var/log/cowrie &&
+    echo [remote] Created cowrie.db
+  '
+EOF
 
-# Copy cowrie.cfg into etc volume
-echo "[remote] Copying cowrie.cfg to volume..."
-if ! docker run --rm \
-  -v cowrie-etc:/dest \
-  -v /opt/cowrie/etc/cowrie.cfg:/src/cowrie.cfg:ro \
-  alpine cp /src/cowrie.cfg /dest/ 2>&1; then
-  echo "[remote] ERROR: Failed to copy cowrie.cfg to volume"
-  exit 1
-fi
-
-# Copy userdb.txt into etc volume
-echo "[remote] Copying userdb.txt to volume..."
-if ! docker run --rm \
-  -v cowrie-etc:/dest \
-  -v /opt/cowrie/etc/userdb.txt:/src/userdb.txt:ro \
-  alpine cp /src/userdb.txt /dest/ 2>&1; then
-  echo "[remote] ERROR: Failed to copy userdb.txt to volume"
-  exit 1
-fi
-
-# Verify and fix ownership on config volume (var volume already set above)
-# Ensure cowrie-etc volume has correct ownership for config files
-echo "[remote] Setting config volume ownership..."
-if ! docker run --rm \
-  -v cowrie-etc:/etc \
-  -v cowrie-var:/var \
-  alpine sh -c '
-    # Set ownership to cowrie user (UID 999)
-    chown -R 999:999 /etc /var/lib/cowrie /var/log/cowrie
-  ' 2>&1; then
-  echo "[remote] ERROR: Failed to set config ownership"
-  exit 1
-fi
-
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'EOF'
 # Start Cowrie with custom configuration
 echo "[remote] Starting Cowrie with custom configuration..."
 cd /opt/cowrie
-if ! docker compose up -d 2>&1; then
-  echo "[remote] ERROR: Failed to start Cowrie with custom configuration"
-  echo "[remote] Checking container status..."
-  docker compose ps
-  docker compose logs --tail=50
-  exit 1
-fi
+docker compose up -d 2>&1
 
 # Wait for container to start
 sleep 5
 
 # Show status
-docker compose ps > /dev/null || exit 1
+docker compose ps
 EOF
 
 echo_info "Cowrie container started."
@@ -1283,7 +1221,7 @@ sleep 5
 # Check container status instead of making a test connection
 # (nc test creates noise in logs)
 if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-    "cd /opt/cowrie && docker compose ps | grep -q 'Up'" ; then
+    "cd /opt/cowrie && docker compose ps | grep -q 'cowrie:latest'" ; then
     echo_info "Honeypot container is running!"
 else
     echo_warn " Warning: Honeypot container may not be running correctly"
@@ -1329,8 +1267,6 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
         # Set up automatic updates on server (weekly)
         # shellcheck disable=SC2087
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << MAXMINDEOF
-set -e
-
 # Install geoipupdate for automatic updates
 DEBIAN_FRONTEND=noninteractive apt-get update -qq > /dev/null
 DEBIAN_FRONTEND=noninteractive apt-get install -qq -y geoipupdate > /dev/null
@@ -1383,8 +1319,6 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     if [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASSWORD" ]; then
         # shellcheck disable=SC2087
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << POSTFIXEOF
-set -e
-
 # Install Postfix
 DEBIAN_FRONTEND=noninteractive apt-get install -y postfix mailutils libsasl2-modules > /dev/null 2>&1
 
@@ -1441,8 +1375,6 @@ POSTFIXEOF
         if [ -n "$EMAIL_TO" ] && [ -n "$EMAIL_FROM" ]; then
             # shellcheck disable=SC2087
             ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << TESTEMAILEOF
-set -e
-
 # Get server IP (portable across Linux/BSD)
 SERVER_IP=\$(ip addr show | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print \$2}' | cut -d/ -f1 || echo "unavailable")
 
@@ -1521,8 +1453,6 @@ fi
 
 echo_info "Setting up automatic update timer..."
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'UPDATETIMEREOF'
-set -e
-
 # Install systemd service
 cat > /etc/systemd/system/cowrie-update.service << 'SERVICE'
 [Unit]
@@ -1577,6 +1507,74 @@ UPDATETIMEREOF
 
 echo_info "Automatic update timer configured successfully"
 
+
+# ============================================================
+# STEP 13.o — Set up Cowrie API first
+# ============================================================
+
+if [ "$ENABLE_API" = "true" ]; then
+    echo_info "Setting up Cowrie API for multi-host dashboard deployment..."
+
+    # API service files and docker-compose.api.yml already from git (STEP 6)
+    # Deploy API container
+    echo_info "Building and starting Cowrie API container..."
+    # shellcheck disable=SC2087
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << APIEOF
+cd /opt/cowrie
+
+# Debug: Show values that will be used for replacement
+echo "[remote] SERVER_IP: $SERVER_IP"
+echo "[remote] HONEYPOT_HOSTNAME: $HONEYPOT_HOSTNAME"
+
+# Replace placeholders in docker-compose.api.yml with actual values
+sed -i "s|SERVER_IP_PLACEHOLDER|$SERVER_IP|g" /opt/cowrie/docker-compose.api.yml
+sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$HONEYPOT_HOSTNAME|g" /opt/cowrie/docker-compose.api.yml
+sed -i "s|ghcr.io/reuteras/cowrie-api:latest|ghcr.io/${REPO_OWNER}/cowrie-api:latest|g" /opt/cowrie/docker-compose.api.yml
+
+# No need to make names unique - only one honeypot per server
+# docker-compose.api.yml shares volumes/networks with docker-compose.yml
+
+# Debug: Verify replacement worked
+echo "[remote] Verifying environment variable replacement..."
+grep -E "SERVER_IP=|HONEYPOT_HOSTNAME=" /opt/cowrie/docker-compose.api.yml | grep -v PLACEHOLDER || echo "[remote] WARNING: Replacement may have failed"
+
+# Pull API image
+if ! docker compose -f docker-compose.api.yml pull cowrie-api 2>&1; then
+    echo "[remote] ERROR: Failed to pull API image"
+    exit 1
+fi
+echo "[remote] API image pulled successfully"
+
+# Expose via Tailscale if configured
+# IMPORTANT: Don't expose API via Tailscale if dashboard is running on this server
+# because dashboard has its own /api/* endpoints that would conflict
+if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" != "true" ] && command -v tailscale &> /dev/null; then
+    echo "[remote] Configuring Tailscale Serve for API..."
+    echo "[remote] (Dashboard not running on this server, safe to expose API)"
+
+    # Configure Tailscale Serve for API on port 443
+    tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1
+
+    # Add @reboot cron job to ensure Tailscale Serve persists after reboot
+    # SECURITY: Use mktemp for unpredictable filename (prevents symlink attacks)
+    CRON_TMP=\$(mktemp)
+    # Remove old cron entry
+    (crontab -l 2>/dev/null | grep -v "tailscale serve.*8000") > "\$CRON_TMP" || true
+    # Add new cron entry
+    echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1" >> "\$CRON_TMP"
+    crontab "\$CRON_TMP"
+    rm -f "\$CRON_TMP"
+
+    echo "[remote] API available at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
+elif [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
+    echo "[remote] Skipping Tailscale Serve for API (dashboard running on this server)"
+    echo "[remote] Dashboard will access API via http://cowrie-api:8000 internally"
+fi
+APIEOF
+
+else
+    echo_info "Cowrie API disabled, skipping setup"
+fi
 # ============================================================
 # STEP 13 — Set up web dashboard (if enabled)
 # ============================================================
@@ -1592,18 +1590,8 @@ if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
     # Set up web dashboard on server
     # shellcheck disable=SC2087
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << WEBEOF
-set -e
-
 # Source common functions (for create_temp_file)
 source /opt/cowrie/scripts/common.sh
-
-# Create TTY log directory with correct permissions (if volume exists)
-if [ -d /var/lib/docker/volumes/cowrie-var/_data ]; then
-    mkdir -p /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty
-    chown -R 999:999 /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/tty
-else
-    echo "[remote] Cowrie volume not yet created, will be created by docker compose"
-fi
 
 # Ensure GeoIP directory exists (web dashboard needs it even if reporting is disabled)
 mkdir -p /var/lib/GeoIP
@@ -1619,8 +1607,10 @@ services:
     ports:
       - "22:2222"
     volumes:
-      - cowrie-etc:/cowrie/cowrie-git/etc
       - cowrie-var:/cowrie/cowrie-git/var
+      - /opt/cowrie/etc/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - /opt/cowrie/etc/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
+      - /opt/cowrie/share:/cowrie/cowrie-git/share:ro
       - /opt/cowrie/share:/cowrie/cowrie-git/share:ro
       - /opt/cowrie/share/cowrie/cmdoutput.json:/cowrie/cowrie-git/src/cowrie/data/cmdoutput.json:ro
       - /opt/cowrie/share/cowrie/txtcmds:/cowrie/cowrie-git/src/cowrie/data/txtcmds:ro
@@ -1642,7 +1632,9 @@ services:
       - "127.0.0.1:5000:5000"
     volumes:
       - cowrie-var:/cowrie-data:ro
-      - cowrie-etc:/cowrie-etc:ro
+      - /opt/cowrie/etc/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - /opt/cowrie/etc/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
+      - /opt/cowrie/share:/cowrie/cowrie-git/share:ro
       - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
       - /var/lib/GeoIP:/geoip:ro
       - /opt/cowrie/var:/yara-cache:ro
@@ -1677,10 +1669,9 @@ services:
       - /tmp:size=10M,mode=1777
 
 volumes:
-  cowrie-etc:
-    name: cowrie-etc
   cowrie-var:
     name: cowrie-var
+    external: true
 
 networks:
   cowrie-internal:
@@ -1711,20 +1702,14 @@ SOURCES_CONTENT=\$(jq -c '.' "\$DASHBOARD_SOURCES_TMP" 2>/dev/null || cat "\$DAS
 awk -v sources="\$SOURCES_CONTENT" '{gsub(/DASHBOARD_SOURCES_PLACEHOLDER/, sources)}1' /opt/cowrie/docker-compose.yml > /opt/cowrie/docker-compose.yml.tmp
 mv /opt/cowrie/docker-compose.yml.tmp /opt/cowrie/docker-compose.yml
 
-# No need to make names unique - only one honeypot per server
-# docker-compose.yml and docker-compose.api.yml will share the same volumes/networks
-
 # Pull and start web service
 cd /opt/cowrie
 echo "[remote] Pulling web dashboard image from GitHub Container Registry..."
 DOCKER_PULL_WEB_LOG=\$(mktemp /tmp/cowrie.XXXXXXXXXX.log)
-if ! docker compose pull cowrie-web 2>&1 | tee "\$DOCKER_PULL_WEB_LOG"; then
+if ! docker compose pull > /dev/null 2>&1 ; then
   echo "[remote] ERROR: Failed to pull web dashboard image"
-  cat "\$DOCKER_PULL_WEB_LOG"
-  rm -f "\$DOCKER_PULL_WEB_LOG"
   exit 1
 fi
-rm -f "\$DOCKER_PULL_WEB_LOG"
 
 echo "[remote] Starting services..."
 # Clean up any existing containers (proper order: compose down first, then force remove)
@@ -1743,23 +1728,20 @@ docker rm -f cowrie cowrie-web cowrie-api 2>/dev/null || true
 # Include API compose file if API is enabled to avoid network conflicts
 if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
   echo "[remote] API is enabled, including docker-compose.api.yml"
-  if ! docker compose -f docker-compose.yml -f docker-compose.api.yml up -d --quiet-pull 2>&1; then
+  if ! docker compose -f docker-compose.yml -f docker-compose.api.yml up -d 2>&1; then
     echo "[remote] ERROR: Failed to start services. Checking status..."
     docker compose -f docker-compose.yml -f docker-compose.api.yml ps
     docker compose -f docker-compose.yml -f docker-compose.api.yml logs --tail=50
     exit 1
   fi
 else
-  if ! docker compose up -d --quiet-pull 2>&1; then
+  if ! docker compose up -d 2>&1; then
     echo "[remote] ERROR: Failed to start services. Checking status..."
     docker compose ps
     docker compose logs --tail=50
     exit 1
   fi
 fi
-
-echo "[remote] Web dashboard deployed on localhost:5000"
-echo "[remote] Access via SSH tunnel: ssh -p $REAL_SSH_PORT -L 5000:localhost:5000 root@$SERVER_IP"
 
 # Configure Tailscale Serve if Tailscale is enabled
 if command -v tailscale &> /dev/null; then
@@ -1806,107 +1788,9 @@ if command -v tailscale &> /dev/null; then
 fi
 WEBEOF
 
-    echo_info "Web dashboard configured successfully"
-    # Tailscale is always configured in v2.1, use configured name and domain
-    echo_info "Web dashboard available at: https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
+    echo_info "Web dashboard configured successfully and available at: https://${TAILSCALE_NAME}.${TAILSCALE_DOMAIN}"
 else
     echo_info "Web dashboard disabled, skipping setup"
-fi
-
-# ============================================================
-# STEP 13.5 — Set up Cowrie API (NEW in v2.1)
-# ============================================================
-
-if [ "$ENABLE_API" = "true" ]; then
-    echo_info "Setting up Cowrie API for multi-host dashboard deployment..."
-
-    # API service files and docker-compose.api.yml already from git (STEP 6)
-    # Deploy API container
-    echo_info "Building and starting Cowrie API container..."
-    # shellcheck disable=SC2087
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << APIEOF
-set -e
-cd /opt/cowrie
-
-# Debug: Show values that will be used for replacement
-echo "[remote] SERVER_IP: $SERVER_IP"
-echo "[remote] HONEYPOT_HOSTNAME: $HONEYPOT_HOSTNAME"
-
-# Replace placeholders in docker-compose.api.yml with actual values
-sed -i "s|SERVER_IP_PLACEHOLDER|$SERVER_IP|g" /opt/cowrie/docker-compose.api.yml
-sed -i "s|HONEYPOT_HOSTNAME_PLACEHOLDER|$HONEYPOT_HOSTNAME|g" /opt/cowrie/docker-compose.api.yml
-sed -i "s|ghcr.io/reuteras/cowrie-api:latest|ghcr.io/${REPO_OWNER}/cowrie-api:latest|g" /opt/cowrie/docker-compose.api.yml
-
-# No need to make names unique - only one honeypot per server
-# docker-compose.api.yml shares volumes/networks with docker-compose.yml
-
-# Debug: Verify replacement worked
-echo "[remote] Verifying environment variable replacement..."
-grep -E "SERVER_IP=|HONEYPOT_HOSTNAME=" /opt/cowrie/docker-compose.api.yml | grep -v PLACEHOLDER || echo "[remote] WARNING: Replacement may have failed"
-
-# API port is always exposed on localhost (127.0.0.1:8000)
-# This is safe and required for Tailscale Serve to proxy the API
-echo "[remote] API will be accessible on localhost:8000 for Tailscale Serve"
-
-# Build and start API with the main compose file
-echo "[remote] Building Cowrie API container (this may take a minute)..."
-# Pull API image (no longer building locally)
-if ! docker compose -f docker-compose.yml -f docker-compose.api.yml pull cowrie-api 2>&1; then
-    echo "[remote] ERROR: Failed to pull API image"
-    exit 1
-fi
-echo "[remote] API image pulled successfully"
-
-echo "[remote] Starting Cowrie API service..."
-docker compose -f docker-compose.yml -f docker-compose.api.yml up -d cowrie-api 2>&1
-
-# Check if container is actually running (ignore cleanup warnings)
-if ! docker compose -f docker-compose.yml -f docker-compose.api.yml ps cowrie-api | grep -q "Up"; then
-  echo "[remote] ERROR: Failed to start API service"
-  docker compose -f docker-compose.yml -f docker-compose.api.yml ps
-  docker compose -f docker-compose.yml -f docker-compose.api.yml logs cowrie-api --tail=50
-  exit 1
-fi
-
-echo "[remote] Cowrie API deployed on internal network"
-
-# Expose via Tailscale if configured
-# IMPORTANT: Don't expose API via Tailscale if dashboard is running on this server
-# because dashboard has its own /api/* endpoints that would conflict
-if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" != "true" ] && command -v tailscale &> /dev/null; then
-    echo "[remote] Configuring Tailscale Serve for API..."
-    echo "[remote] (Dashboard not running on this server, safe to expose API)"
-
-    # Configure Tailscale Serve for API on port 443
-    tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1
-
-    # Add @reboot cron job to ensure Tailscale Serve persists after reboot
-    # SECURITY: Use mktemp for unpredictable filename (prevents symlink attacks)
-    CRON_TMP=\$(mktemp)
-    # Remove old cron entry
-    (crontab -l 2>/dev/null | grep -v "tailscale serve.*8000") > "\$CRON_TMP" || true
-    # Add new cron entry
-    echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1" >> "\$CRON_TMP"
-    crontab "\$CRON_TMP"
-    rm -f "\$CRON_TMP"
-
-    echo "[remote] API available at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
-elif [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
-    echo "[remote] Skipping Tailscale Serve for API (dashboard running on this server)"
-    echo "[remote] Dashboard will access API via localhost:8000 internally"
-    echo "[remote] External clients should access API at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}/api/v1/*"
-    echo "[remote] (routed through dashboard - NOT YET IMPLEMENTED)"
-fi
-APIEOF
-
-    echo_info "Cowrie API configured successfully"
-    if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ]; then
-        echo_info "API available at: https://${API_TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
-    else
-        echo_info "API accessible within Docker network at: http://cowrie-api:8000"
-    fi
-else
-    echo_info "Cowrie API disabled, skipping setup"
 fi
 
 # ============================================================
@@ -1920,7 +1804,6 @@ echo_info "Setting up Cowrie Event Indexer Daemon..."
 
 # Install and start event indexer daemon
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'INDEXEREOF'
-set -e
 
 # Make script executable
 chmod +x /opt/cowrie/scripts/event-indexer.py
@@ -1981,7 +1864,6 @@ echo_info "Automatic Docker updates configured"
 
 echo_info "Creating VERSION.json tracking file..."
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'VERSIONEOF'
-set -e
 cd /opt/cowrie
 export PATH="$HOME/.local/bin:$PATH"
 
