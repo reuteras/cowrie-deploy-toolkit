@@ -62,7 +62,7 @@ app.include_router(downloads.router, prefix="/api/v1", tags=["downloads"])
 app.include_router(stats.router, prefix="/api/v1", tags=["statistics"])
 app.include_router(system.router, tags=["system"])  # No prefix - Tailscale strips /api
 app.include_router(threat.router, prefix="/api/v1", tags=["threat-intel"])
-app.include_router(canary.router, prefix="/api/v1", tags=["canary"])
+app.include_router(canary.router, tags=["canary"])  # No prefix - handles both direct and /api/v1 paths
 
 
 @app.exception_handler(Exception)

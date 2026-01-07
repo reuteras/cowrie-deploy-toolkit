@@ -116,6 +116,7 @@ class CacheDB:
         """Initialize database schema."""
         # Create parent directories if they don't exist
         from pathlib import Path
+
         db_path_obj = Path(self.db_path)
         db_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
@@ -202,6 +203,7 @@ class CanaryWebhookDB:
         """Initialize database schema."""
         # Create parent directories if they don't exist
         from pathlib import Path
+
         db_path_obj = Path(self.db_path)
         db_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1616,7 +1618,22 @@ def api_system_info():
 @app.route("/api/canary-tokens")
 def api_canary_tokens():
     """API endpoint for Canary Token information."""
-    # Paths where Canary Tokens are placed (relative to honeyfs)
+    # In v2.1, when using API-based data access (local/remote mode),
+    # proxy the request to the cowrie-api instead of reading filesystem directly
+    dashboard_mode = CONFIG.get("dashboard_mode", "local")
+
+    if dashboard_mode in ["local", "remote"] and datasource:
+        # Use API-based access
+        try:
+            response = datasource.session.get(f"{datasource.api_base_url}/canary-tokens")
+            response.raise_for_status()
+            return jsonify(response.json())
+        except Exception as e:
+            print(f"[!] Error fetching canary tokens from API: {e}")
+            # Fallback to direct filesystem access
+            pass
+
+    # Fallback: Direct filesystem access (legacy behavior)
     honeyfs_path = CONFIG.get("honeyfs_path", "/cowrie-data/share/cowrie/contents")
 
     tokens = []
