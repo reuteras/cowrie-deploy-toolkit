@@ -114,6 +114,11 @@ class CacheDB:
 
     def _init_db(self):
         """Initialize database schema."""
+        # Create parent directories if they don't exist
+        from pathlib import Path
+        db_path_obj = Path(self.db_path)
+        db_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
         conn = sqlite3.connect(self.db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS vt_cache (
@@ -195,6 +200,11 @@ class CanaryWebhookDB:
 
     def _init_db(self):
         """Initialize database schema."""
+        # Create parent directories if they don't exist
+        from pathlib import Path
+        db_path_obj = Path(self.db_path)
+        db_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
         conn = sqlite3.connect(self.db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS canary_webhooks (
