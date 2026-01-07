@@ -1558,6 +1558,7 @@ echo "[remote] API image pulled successfully"
 # Expose via Tailscale if configured
 # IMPORTANT: Don't expose API via Tailscale if dashboard is running on this server
 # because dashboard has its own /api/* endpoints that would conflict
+# Tailscale Serve configuration is handled in the dashboard setup section
 if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" != "true" ] && command -v tailscale &> /dev/null; then
     echo "[remote] Configuring Tailscale Serve for API..."
     echo "[remote] (Dashboard not running on this server, safe to expose API)"
@@ -1579,6 +1580,14 @@ if [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" != "tru
 elif [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ] && [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
     echo "[remote] Skipping Tailscale Serve for API (dashboard running on this server)"
     echo "[remote] Dashboard will access API via http://cowrie-api:8000 internally"
+
+    # Clean up any existing API Tailscale Serve configuration
+    # SECURITY: Use mktemp for unpredictable filename (prevents symlink attacks)
+    CRON_TMP=\$(mktemp)
+    # Remove old cron entries for API tailscale serve
+    (crontab -l 2>/dev/null | grep -v "tailscale serve.*8000") > "\$CRON_TMP" || true
+    crontab "\$CRON_TMP"
+    rm -f "\$CRON_TMP"
 fi
 APIEOF
 
@@ -1757,44 +1766,51 @@ fi
 if command -v tailscale &> /dev/null; then
     echo "[remote] Configuring Tailscale Serve for web dashboard..."
 
-    # Check if API will also be exposed via Tailscale (requires path-based routing)
-    if [ "$ENABLE_API" = "true" ] && [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ]; then
-        echo "[remote] API will also be exposed - using path-based routing"
-        echo "[remote] Dashboard: / -> port 5000, API: /api -> port 8000"
+    # IMPORTANT: Never set up API routing when dashboard is enabled on same server
+    # Dashboard has its own /api/* endpoints that conflict with API routing
+    if [ "$ENABLE_WEB_DASHBOARD" = "true" ]; then
+        echo "[remote] Dashboard enabled - using direct port mapping (no API routing)"
+        echo "[remote] Dashboard: / -> port 5000"
 
-        # Configure dashboard on root path
+        # Reset any existing Tailscale Serve configuration
+        tailscale serve reset > /dev/null 2>&1
+
+        # Configure dashboard on root path only
         tailscale serve --https=443 --bg localhost:5000 > /dev/null 2>&1
-
-        # Configure API on /api path
-        tailscale serve --https=443 --set-path=/api --bg localhost:8000 > /dev/null 2>&1
-
-        # Add @reboot cron jobs (path-based routing for both dashboard and API)
-        # Sleep 30 to ensure Tailscale is ready (35 for API to ensure dashboard is up first)
-        # SECURITY: Use mktemp for unpredictable filename (prevents symlink attacks)
-        CRON_TMP=\$(mktemp)
-        # Remove old cron entries for these services
-        (crontab -l 2>/dev/null | grep -v "tailscale serve.*5000" | grep -v "tailscale serve.*8000") > "\$CRON_TMP" || true
-        # Add new cron entries
-        echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:5000 > /dev/null 2>&1" >> "\$CRON_TMP"
-        echo "@reboot sleep 35 && /usr/bin/tailscale serve --https=443 --set-path=/api --bg localhost:8000 > /dev/null 2>&1" >> "\$CRON_TMP"
-        crontab "\$CRON_TMP"
-        rm -f "\$CRON_TMP"
-    else
-        echo "[remote] Dashboard only - using direct port mapping"
-        tailscale serve --bg --https=443 5000 > /dev/null 2>&1
 
         # Add @reboot cron job (direct port mapping)
         # SECURITY: Use mktemp for unpredictable filename (prevents symlink attacks)
         CRON_TMP=\$(mktemp)
-        # Remove old cron entry
-        (crontab -l 2>/dev/null | grep -v "tailscale serve.*5000") > "\$CRON_TMP" || true
+        # Remove old cron entries for tailscale serve
+        (crontab -l 2>/dev/null | grep -v "tailscale serve") > "\$CRON_TMP" || true
         # Add new cron entry
-        echo "@reboot sleep 30 && /usr/bin/tailscale serve --bg --https=443 5000 > /dev/null 2>&1" >> "\$CRON_TMP"
+        echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:5000 > /dev/null 2>&1" >> "\$CRON_TMP"
         crontab "\$CRON_TMP"
         rm -f "\$CRON_TMP"
+    else
+        # Dashboard not enabled - check if API should be exposed
+        if [ "$ENABLE_API" = "true" ] && [ "$API_EXPOSE_VIA_TAILSCALE" = "true" ]; then
+            echo "[remote] API will be exposed - using direct port mapping"
+            echo "[remote] API: / -> port 8000"
+
+            # Configure API on root path
+            tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1
+
+            # Add @reboot cron job (direct port mapping)
+            # SECURITY: Use mktemp for unpredictable filename (prevents symlink attacks)
+            CRON_TMP=\$(mktemp)
+            # Remove old cron entries for tailscale serve
+            (crontab -l 2>/dev/null | grep -v "tailscale serve") > "\$CRON_TMP" || true
+            # Add new cron entry
+            echo "@reboot sleep 30 && /usr/bin/tailscale serve --https=443 --bg localhost:8000 > /dev/null 2>&1" >> "\$CRON_TMP"
+            crontab "\$CRON_TMP"
+            rm -f "\$CRON_TMP"
+        else
+            echo "[remote] Neither dashboard nor API will be exposed via Tailscale"
+        fi
     fi
 
-    echo "[remote] Web dashboard available at: https://\$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
+    echo "[remote] Service available at: https://\$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
 fi
 WEBEOF
 
