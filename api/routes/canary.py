@@ -4,7 +4,6 @@ Canary token endpoints
 Provides information about canary token files placed in the honeypot filesystem
 """
 
-import os
 from pathlib import Path
 
 from fastapi import APIRouter
