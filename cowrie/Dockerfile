@@ -38,11 +38,14 @@ RUN export DEBIAN_FRONTEND=noninteractive; \
       libffi-dev \
       libsnappy-dev \
       libssl-dev \
+      locales \
       python3 \
       python3-dev \
       python3-pip \
       python3-venv \
       rustc && \
+    sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen en_US.UTF-8 && \
     rm -rf /var/lib/apt/lists/*
 
 USER ${COWRIE_USER}
@@ -52,7 +55,9 @@ WORKDIR ${COWRIE_HOME}
 ARG COWRIE_VERSION
 # hadolint ignore=DL3003
 RUN git clone --depth 1 --branch ${COWRIE_VERSION} https://github.com/cowrie/cowrie.git cowrie-git && \
-    echo "Cloned Cowrie version: $(cd cowrie-git && git describe --tags --always)"
+    cd cowrie-git && \
+    git fetch --tags --depth 1 && \
+    echo "Cloned Cowrie version: $(git describe --tags --always)"
 
 # Install Python dependencies and Cowrie itself
 # hadolint ignore=DL3013

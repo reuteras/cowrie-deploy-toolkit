@@ -289,3 +289,94 @@ class IPUserDB:
 
         conn.commit()
         conn.close()
+
+
+class UserDB:
+    """
+    By Walter de Jong <walter@sara.nl>
+    Original Cowrie auth class for fallback/compatibility
+    """
+
+    def __init__(self) -> None:
+        self.userdb: dict[
+            tuple[Pattern[bytes] | bytes, Pattern[bytes] | bytes], bool
+        ] = OrderedDict()
+        self.load()
+
+    def load(self) -> None:
+        """
+        load the user db
+        """
+
+        dblines: list[str]
+        try:
+            with open(
+                "{}/userdb.txt".format(CowrieConfig.get("honeypot", "etc_path")),
+                encoding="ascii",
+            ) as db:
+                dblines = db.readlines()
+        except (OSError, configparser.Error):
+            log.msg("Could not read etc/userdb.txt, default database activated")
+            dblines = _USERDB_DEFAULTS
+
+        for user in dblines:
+            if not user.startswith("#"):
+                try:
+                    login = user.split(":")[0].encode("utf8")
+                    password = user.split(":")[2].strip().encode("utf8")
+                except IndexError:
+                    continue
+                else:
+                    self.adduser(login, password)
+
+    def checklogin(
+        self, thelogin: bytes, thepasswd: bytes, src_ip: str = "0.0.0.0"
+    ) -> bool:
+        for credentials, policy in self.userdb.items():
+            login: bytes | Pattern[bytes]
+            passwd: bytes | Pattern[bytes]
+            login, passwd = credentials
+
+            if self.match_rule(login, thelogin):
+                if self.match_rule(passwd, thepasswd):
+                    return policy
+
+        return False
+
+    def match_rule(self, rule: bytes | Pattern[bytes], data: bytes) -> bool | bytes:
+        if isinstance(rule, bytes):
+            return rule in [b"*", data]
+        return bool(rule.search(data))
+
+    def re_or_bytes(self, rule: bytes) -> Pattern[bytes] | bytes:
+        """
+        Convert a /.../ type rule to a regex, otherwise return the string as-is
+
+        @param login: rule
+        @type login: bytes
+        """
+        res = re.match(rb"/(.+)/(i)?$", rule)
+        if res:
+            return re.compile(res.group(1), re.IGNORECASE if res.group(2) else 0)
+
+        return rule
+
+    def adduser(self, login: bytes, passwd: bytes) -> None:
+        """
+        All arguments are bytes
+
+        @param login: user id
+        @type login: bytes
+        @param passwd: password
+        @type passwd: bytes
+        """
+        user = self.re_or_bytes(login)
+
+        if passwd[0] == ord("!"):
+            policy = False
+            passwd = passwd[1:]
+        else:
+            policy = True
+
+        p = self.re_or_bytes(passwd)
+        self.userdb[(user, p)] = policy

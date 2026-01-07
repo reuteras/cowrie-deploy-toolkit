@@ -3,6 +3,8 @@
 
 # Allow custom plugins directory (even if empty)
 !cowrie-plugins/
+!cowrie-plugins/**
 
 # Allow custom core modules (auth, commands, etc.)
 !cowrie-core/
+!cowrie-core/**
