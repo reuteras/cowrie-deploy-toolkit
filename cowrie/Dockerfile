@@ -128,7 +128,7 @@ RUN rm -rf ${COWRIE_HOME}/custom-core
 
 # Generate build metadata JSON file
 # hadolint ignore=DL3003
-RUN version=$(cd ${COWRIE_HOME}/cowrie-git && git describe --tags --always 2>/dev/null) && \
+RUN version=$(cd ${COWRIE_HOME}/cowrie-git && git describe --tags --always 2>&1) && \
     python3 -c "import json; from datetime import datetime, timezone; \
 metadata = { \
     'build_date': datetime.now(timezone.utc).isoformat(), \
