@@ -749,6 +749,8 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERRO
 mkdir -p /opt/cowrie/share/cowrie/{contents,txtcmds}
 mkdir -p /opt/cowrie/identity
 mkdir -p /opt/cowrie/etc
+mkdir -p /opt/cowrie/var
+chmod 777 /opt/cowrie/var
 echo "[remote] Artifact directories created"
 EOF
 
