@@ -13,6 +13,7 @@ class Config:
     COWRIE_LOG_PATH: str = os.getenv("COWRIE_LOG_PATH", "/cowrie-data/log/cowrie/cowrie.json")
     COWRIE_TTY_PATH: str = os.getenv("COWRIE_TTY_PATH", "/cowrie-data/lib/cowrie/tty")
     COWRIE_DOWNLOADS_PATH: str = os.getenv("COWRIE_DOWNLOADS_PATH", "/cowrie-data/lib/cowrie/downloads")
+    COWRIE_SHARE_PATH: str = os.getenv("COWRIE_SHARE_PATH", "/cowrie-data/share/cowrie")
 
     # GeoIP databases
     GEOIP_CITY_DB: str = os.getenv("GEOIP_CITY_DB", "/geoip/GeoLite2-City.mmdb")

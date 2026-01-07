@@ -16,7 +16,7 @@ from config import config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from routes import downloads, health, sessions, stats, system, threat
+from routes import canary, downloads, health, sessions, stats, system, threat
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, config.LOG_LEVEL), format="[%(asctime)s] %(levelname)s - %(message)s")
@@ -62,6 +62,7 @@ app.include_router(downloads.router, prefix="/api/v1", tags=["downloads"])
 app.include_router(stats.router, prefix="/api/v1", tags=["statistics"])
 app.include_router(system.router, tags=["system"])  # No prefix - Tailscale strips /api
 app.include_router(threat.router, prefix="/api/v1", tags=["threat-intel"])
+app.include_router(canary.router, prefix="/api/v1", tags=["canary"])
 
 
 @app.exception_handler(Exception)
