@@ -36,6 +36,7 @@ class IPUserDB:
         self.load()
         self.db_path = CowrieConfig.get("honeypot", "userdb_path")
         self.min_len = int(CowrieConfig.get("honeypot", "minimum_password_len"))
+        log.msg(f"IPUserDB initialized with database path: {self.db_path}")
         self._init_database()
 
     def load(self) -> None:
@@ -69,6 +70,11 @@ class IPUserDB:
 
         if Path(self.db_path).is_file():
             return
+
+        # Create parent directories if they don't exist
+        db_path_obj = Path(self.db_path)
+        db_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        log.msg(f"Creating IPUserDB database at: {self.db_path}")
 
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
