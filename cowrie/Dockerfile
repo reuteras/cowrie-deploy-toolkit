@@ -54,9 +54,9 @@ WORKDIR ${COWRIE_HOME}
 # Clone official Cowrie repository
 ARG COWRIE_VERSION
 # hadolint ignore=DL3003
-RUN git clone --depth 1 --branch ${COWRIE_VERSION} https://github.com/cowrie/cowrie.git cowrie-git && \
+RUN git clone --branch ${COWRIE_VERSION} https://github.com/cowrie/cowrie.git cowrie-git && \
     cd cowrie-git && \
-    git fetch --tags --depth 1 && \
+    git fetch --tags && \
     echo "Cloned Cowrie version: $(git describe --tags --always)"
 
 # Install Python dependencies and Cowrie itself
@@ -129,7 +129,6 @@ RUN rm -rf ${COWRIE_HOME}/custom-core
 # Generate build metadata JSON file
 # hadolint ignore=DL3003
 RUN git config --global --add safe.directory ${COWRIE_HOME}/cowrie-git
-RUN cd ${COWRIE_HOME}/cowrie-git && git describe --tags --always
 RUN version=$(cd ${COWRIE_HOME}/cowrie-git && git describe --tags --always 2>&1) && \
     python3 -c "import json; from datetime import datetime, timezone; \
 metadata = { \
