@@ -60,7 +60,7 @@ app.include_router(health.router, tags=["health"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(downloads.router, prefix="/api/v1", tags=["downloads"])
 app.include_router(stats.router, prefix="/api/v1", tags=["statistics"])
-app.include_router(system.router, prefix="/api/v1", tags=["system"])
+app.include_router(system.router, tags=["system"])  # No prefix - Tailscale strips /api
 app.include_router(threat.router, prefix="/api/v1", tags=["threat-intel"])
 
 

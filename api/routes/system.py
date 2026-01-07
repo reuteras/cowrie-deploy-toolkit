@@ -11,6 +11,7 @@ router = APIRouter()
 
 
 @router.get("/system-info")
+@router.get("/api/v1/system-info")  # Also register with full path for internal API calls
 async def get_system_info():
     """Get honeypot system information"""
     info = {
