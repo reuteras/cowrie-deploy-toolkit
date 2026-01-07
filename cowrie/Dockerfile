@@ -24,6 +24,7 @@ RUN groupadd -r ${COWRIE_GROUP} && \
     useradd -r -d ${COWRIE_HOME} -m -g ${COWRIE_GROUP} ${COWRIE_USER}
 
 # Set up Debian prereqs (including git for cloning Cowrie)
+# hadolint ignore=DL3008
 RUN export DEBIAN_FRONTEND=noninteractive; \
     apt-get -qq update && \
     apt-get -qq install -y \
@@ -49,10 +50,12 @@ WORKDIR ${COWRIE_HOME}
 
 # Clone official Cowrie repository
 ARG COWRIE_VERSION
+# hadolint ignore=DL3003
 RUN git clone --depth 1 --branch ${COWRIE_VERSION} https://github.com/cowrie/cowrie.git cowrie-git && \
     echo "Cloned Cowrie version: $(cd cowrie-git && git describe --tags --always)"
 
 # Install Python dependencies and Cowrie itself
+# hadolint ignore=DL3013
 RUN python3 -m venv cowrie-env && \
     . cowrie-env/bin/activate && \
     pip install -q --no-cache-dir --upgrade pip setuptools wheel && \
@@ -70,6 +73,9 @@ USER root
 COPY --chown=${COWRIE_USER}:${COWRIE_GROUP} cowrie-plugins ${COWRIE_HOME}/custom-plugins
 COPY --chown=${COWRIE_USER}:${COWRIE_GROUP} cowrie-core ${COWRIE_HOME}/custom-core
 
+# Set shell options for subsequent RUN commands
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # Install custom plugins (if any exist)
 RUN if [ -d "${COWRIE_HOME}/custom-plugins" ] && [ -n "$(find ${COWRIE_HOME}/custom-plugins -maxdepth 1 -name '*.py' -print -quit 2>/dev/null)" ]; then \
         cp -v ${COWRIE_HOME}/custom-plugins/*.py ${COWRIE_HOME}/cowrie-git/src/cowrie/output/ && \
@@ -81,8 +87,9 @@ RUN if [ -d "${COWRIE_HOME}/custom-plugins" ] && [ -n "$(find ${COWRIE_HOME}/cus
     fi
 
 # Install custom core files (excluding special directories)
+# hadolint ignore=SC2231
 RUN if [ -d "${COWRIE_HOME}/custom-core" ]; then \
-        for file in ${COWRIE_HOME}/custom-core/*.py; do \
+        for file in "${COWRIE_HOME}"/custom-core/*.py; do \
             [ -f "$file" ] || continue; \
             basename=$(basename "$file" .py); \
             case "$basename" in \
@@ -115,6 +122,7 @@ RUN if [ -d "${COWRIE_HOME}/custom-core/commands" ] && [ -n "$(find ${COWRIE_HOM
 RUN rm -rf ${COWRIE_HOME}/custom-core
 
 # Generate build metadata JSON file
+# hadolint ignore=DL3003
 RUN version=$(cd ${COWRIE_HOME}/cowrie-git && git describe --tags --always 2>/dev/null || echo "unknown") && \
     python3 -c "import json; from datetime import datetime, timezone; \
 metadata = { \
@@ -138,6 +146,7 @@ USER ${COWRIE_USER}
 
 # === CUSTOM MODIFICATIONS END ===
 
+# hadolint ignore=DL3007
 FROM gcr.io/distroless/python3-debian12:latest AS runtime
 
 LABEL org.opencontainers.image.authors="Michel Oosterhof <michel@oosterhof.net>"
