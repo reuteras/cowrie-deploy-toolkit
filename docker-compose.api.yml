@@ -15,13 +15,13 @@ services:
       - /opt/cowrie/identity:/identity:ro
       - /var/lib/GeoIP:/geoip:ro
     environment:
-       # Cowrie data paths
-       - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
-       - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
-       - COWRIE_DOWNLOADS_PATH=/cowrie-data/lib/cowrie/downloads
-       - COWRIE_SHARE_PATH=/cowrie-data/share/cowrie
-       - COWRIE_METADATA_PATH=/cowrie-metadata/metadata.json
-       - IDENTITY_PATH=/identity
+      # Cowrie data paths
+      - COWRIE_LOG_PATH=/cowrie-data/log/cowrie/cowrie.json
+      - COWRIE_TTY_PATH=/cowrie-data/lib/cowrie/tty
+      - COWRIE_DOWNLOADS_PATH=/cowrie-data/lib/cowrie/downloads
+      - COWRIE_SHARE_PATH=/cowrie-data/share/cowrie
+      - COWRIE_METADATA_PATH=/cowrie-metadata/metadata.json
+      - IDENTITY_PATH=/identity
 
       # System information
       - SERVER_IP=SERVER_IP_PLACEHOLDER
