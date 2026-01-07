@@ -898,6 +898,10 @@ else
     echo_info "Default userdb.txt uploaded"
 fi
 
+# Set correct permissions for userdb.txt (readable by all)
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" \
+    "root@$SERVER_IP" "chmod 644 /opt/cowrie/etc/userdb.txt"
+
 # ============================================================
 # STEP 7 — Generate cowrie.cfg
 # ============================================================
@@ -1125,6 +1129,10 @@ fi
 # Upload cowrie.cfg
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
     "$COWRIE_CFG_TMP" "root@$SERVER_IP:/opt/cowrie/etc/cowrie.cfg" > /dev/null
+
+# Set correct permissions for cowrie.cfg (readable by all)
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" \
+    "root@$SERVER_IP" "chmod 644 /opt/cowrie/etc/cowrie.cfg"
 
 rm -f "$COWRIE_CFG_TMP"
 
