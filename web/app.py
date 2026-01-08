@@ -1862,7 +1862,7 @@ def system_info():
 
 @app.route("/downloads")
 def downloads():
-    """Downloaded files listing page."""
+    """Downloaded files listing page - returns HTML immediately, data loaded via AJAX."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -1870,6 +1870,22 @@ def downloads():
     available_sources = []
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
+
+    # Return page immediately with loading state - data loaded via AJAX
+    return render_template(
+        "downloads.html",
+        hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
+        config=CONFIG,
+    )
+
+
+@app.route("/api/downloads-data")
+def downloads_data():
+    """API endpoint for downloads data - called via AJAX from downloads page."""
+    hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
 
     # Extract downloads from sessions (they include database metadata)
     # Limit to 5000 most recent sessions per source for performance
@@ -1935,14 +1951,10 @@ def downloads():
 
     downloads_list = sorted(unique_downloads.values(), key=lambda x: x.get("timestamp", ""), reverse=True)
 
-    return render_template(
-        "downloads.html",
-        downloads=downloads_list,
-        hours=hours,
-        source_filter=source_filter,
-        available_sources=available_sources,
-        config=CONFIG,
-    )
+    return jsonify({
+        "downloads": downloads_list,
+        "count": len(downloads_list)
+    })
 
 
 @app.route("/download/<shasum>.zip")
