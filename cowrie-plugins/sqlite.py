@@ -1,13 +1,13 @@
 from __future__ import annotations
+
 import sqlite3
 from typing import Any
 
+import cowrie.core.output
+from cowrie.core.config import CowrieConfig
 from twisted.enterprise import adbapi
 from twisted.internet import defer
 from twisted.python import log
-
-import cowrie.core.output
-from cowrie.core.config import CowrieConfig
 
 
 class Output(cowrie.core.output.Output):
@@ -30,9 +30,7 @@ class Output(cowrie.core.output.Output):
         """
         sqliteFilename = CowrieConfig.get("output_sqlite", "db_file")
         try:
-            self.db = adbapi.ConnectionPool(
-                "sqlite3", database=sqliteFilename, check_same_thread=False
-            )
+            self.db = adbapi.ConnectionPool("sqlite3", database=sqliteFilename, check_same_thread=False)
         except sqlite3.OperationalError as e:
             log.msg(e)
 
@@ -58,29 +56,23 @@ class Output(cowrie.core.output.Output):
     @defer.inlineCallbacks
     def write(self, event):
         if event["eventid"] == "cowrie.session.connect":
-            r = yield self.db.runQuery(
-                "SELECT `id` FROM `sensors` WHERE `ip` = ?", (self.sensor,)
-            )
+            r = yield self.db.runQuery("SELECT `id` FROM `sensors` WHERE `ip` = ?", (self.sensor,))
 
             if r and r[0][0]:
                 sensorid = r[0][0]
             else:
-                yield self.db.runQuery(
-                    "INSERT INTO `sensors` (`ip`) VALUES (?)", (self.sensor,)
-                )
+                yield self.db.runQuery("INSERT INTO `sensors` (`ip`) VALUES (?)", (self.sensor,))
 
                 r = yield self.db.runQuery("SELECT LAST_INSERT_ROWID()")
                 sensorid = int(r[0][0])
             self.simpleQuery(
-                "INSERT INTO `sessions` (`id`, `starttime`, `sensor`, `ip`) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO `sessions` (`id`, `starttime`, `sensor`, `ip`) VALUES (?, ?, ?, ?)",
                 (event["session"], event["timestamp"], sensorid, event["src_ip"]),
             )
 
         elif event["eventid"] == "cowrie.login.success":
             self.simpleQuery(
-                "INSERT INTO `auth` (`session`, `success`, `username`, `password`, `timestamp`) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO `auth` (`session`, `success`, `username`, `password`, `timestamp`) VALUES (?, ?, ?, ?, ?)",
                 (
                     event["session"],
                     1,
@@ -92,8 +84,7 @@ class Output(cowrie.core.output.Output):
 
         elif event["eventid"] == "cowrie.login.failed":
             self.simpleQuery(
-                "INSERT INTO `auth` (`session`, `success`, `username`, `password`, `timestamp`) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO `auth` (`session`, `success`, `username`, `password`, `timestamp`) VALUES (?, ?, ?, ?, ?)",
                 (
                     event["session"],
                     0,
@@ -105,15 +96,13 @@ class Output(cowrie.core.output.Output):
 
         elif event["eventid"] == "cowrie.command.input":
             self.simpleQuery(
-                "INSERT INTO `input` (`session`, `timestamp`, `success`, `input`) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO `input` (`session`, `timestamp`, `success`, `input`) VALUES (?, ?, ?, ?)",
                 (event["session"], event["timestamp"], 1, event["input"]),
             )
 
         elif event["eventid"] == "cowrie.command.failed":
             self.simpleQuery(
-                "INSERT INTO `input` (`session`, `timestamp`, `success`, `input`) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO `input` (`session`, `timestamp`, `success`, `input`) VALUES (?, ?, ?, ?)",
                 (event["session"], event["timestamp"], 0, event["input"]),
             )
 
@@ -127,35 +116,31 @@ class Output(cowrie.core.output.Output):
             # PATCH: Use .get() with defaults to handle missing fields gracefully
             # Some download events (e.g., SFTP uploads) may not have all fields
             self.simpleQuery(
-                "INSERT INTO `downloads` (`session`, `timestamp`, `url`, `outfile`, `shasum`) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO `downloads` (`session`, `timestamp`, `url`, `outfile`, `shasum`) VALUES (?, ?, ?, ?, ?)",
                 (
                     event["session"],
                     event["timestamp"],
                     event.get("url", ""),  # Default to empty string
                     event.get("outfile"),  # Default to None (SQLite NULL)
-                    event.get("shasum"),   # Default to None (SQLite NULL)
+                    event.get("shasum"),  # Default to None (SQLite NULL)
                 ),
             )
 
         elif event["eventid"] == "cowrie.session.file_download.failed":
             # PATCH: Use .get() for consistency
             self.simpleQuery(
-                "INSERT INTO `downloads` (`session`, `timestamp`, `url`, `outfile`, `shasum`) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO `downloads` (`session`, `timestamp`, `url`, `outfile`, `shasum`) VALUES (?, ?, ?, ?, ?)",
                 (
                     event["session"],
                     event["timestamp"],
                     event.get("url", ""),  # Default to empty string
                     None,  # Failed download = no outfile
-                    None   # Failed download = no shasum
+                    None,  # Failed download = no shasum
                 ),
             )
 
         elif event["eventid"] == "cowrie.client.version":
-            r = yield self.db.runQuery(
-                "SELECT `id` FROM `clients` WHERE `version` = ?", (event["version"],)
-            )
+            r = yield self.db.runQuery("SELECT `id` FROM `clients` WHERE `version` = ?", (event["version"],))
 
             if r and r[0][0]:
                 clientid = int(r[0][0])
@@ -192,15 +177,13 @@ class Output(cowrie.core.output.Output):
 
         elif event["eventid"] == "cowrie.client.fingerprint":
             self.simpleQuery(
-                "INSERT INTO `keyfingerprints` (`session`, `username`, `fingerprint`) "
-                "VALUES (?, ?, ?)",
+                "INSERT INTO `keyfingerprints` (`session`, `username`, `fingerprint`) VALUES (?, ?, ?)",
                 (event["session"], event["username"], event["fingerprint"]),
             )
 
         elif event["eventid"] == "cowrie.direct-tcpip.request":
             self.simpleQuery(
-                "INSERT INTO `ipforwards` (`session`, `timestamp`, `dst_ip`, `dst_port`) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO `ipforwards` (`session`, `timestamp`, `dst_ip`, `dst_port`) VALUES (?, ?, ?, ?)",
                 (
                     event["session"],
                     event["timestamp"],
