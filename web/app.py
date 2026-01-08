@@ -2382,7 +2382,6 @@ def api_download_content(shasum: str):
 def commands():
     """Commands listing page. Returns HTML immediately, data loaded via AJAX."""
     hours = request.args.get("hours", 168, type=int)
-    unique_only = request.args.get("unique", "")
     source_filter = request.args.get("source", "")
 
     # Get available sources for multi-honeypot mode
@@ -2390,23 +2389,10 @@ def commands():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    all_commands = session_parser.get_all_commands(hours=hours, source_filter=source_filter)
-
-    # Filter to unique commands if requested
-    if unique_only == "1":
-        seen_commands = set()
-        unique_commands = []
-        for cmd in all_commands:
-            if cmd["command"] not in seen_commands:
-                seen_commands.add(cmd["command"])
-                unique_commands.append(cmd)
-        all_commands = unique_commands
-
+    # Return page immediately with loading state - data loaded via AJAX
     return render_template(
         "commands.html",
-        commands=all_commands,
         hours=hours,
-        unique=unique_only,
         source_filter=source_filter,
         available_sources=available_sources,
         config=CONFIG,
