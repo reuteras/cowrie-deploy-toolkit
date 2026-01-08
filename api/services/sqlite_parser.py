@@ -241,7 +241,7 @@ class SQLiteStatsParser:
             )
             totals["unique_download_hashes"] = [row["shasum"] for row in cursor.fetchall()]
 
-            # Top IPs with GeoIP enrichment
+            # All IPs with GeoIP enrichment (no limit for /ips page)
             cursor.execute(
                 """
                 SELECT
@@ -255,7 +255,6 @@ class SQLiteStatsParser:
                 WHERE s.starttime >= ?
                 GROUP BY s.ip
                 ORDER BY count DESC
-                LIMIT 10
                 """,
                 (cutoff_str,),
             )
