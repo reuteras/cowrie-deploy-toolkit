@@ -21,6 +21,7 @@ class Config:
 
     # Cache databases
     YARA_CACHE_DB: str = os.getenv("YARA_CACHE_DB", "/opt-cowrie-data/yara-cache.db")
+    VT_CACHE_DB: str = os.getenv("VT_CACHE_DB", "/tmp/vt-cache.db")
     CANARY_WEBHOOKS_DB: str = os.getenv("CANARY_WEBHOOKS_DB", "/opt-cowrie-data/canary-webhooks.db")
     IPLOCK_DB: str = os.getenv("IPLOCK_DB", "/cowrie-data/lib/cowrie/iplock.db")
 

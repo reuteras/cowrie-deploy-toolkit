@@ -717,7 +717,7 @@ class SessionParser:
                     vt_result = vt_scanner.scan_file(shasum)
                     if vt_result:
                         vt_data = vt_result
-                elif "cache_db" in globals():
+                elif cache_db:
                     vt_data = cache_db.get_vt_result(shasum)
 
                 if vt_data:
@@ -1025,10 +1025,12 @@ print("[+] GeoIP databases loaded successfully")
 session_parser = SessionParser(CONFIG["log_path"], geoip_instance=global_geoip)
 tty_parser = TTYLogParser(CONFIG["tty_path"])
 
+# Initialize VT cache database (always needed for reading cached results)
+cache_db = CacheDB(CONFIG["cache_db_path"])
+
 # Initialize VirusTotal scanner if API key is provided
 vt_scanner = None
 if CONFIG["virustotal_api_key"]:
-    cache_db = CacheDB(CONFIG["cache_db_path"])
     vt_scanner = VirusTotalScanner(CONFIG["virustotal_api_key"], cache_db)
 
 # Initialize YARA cache (reads results from yara-scanner-daemon)
@@ -1882,7 +1884,7 @@ def downloads_data():
         dl["exists"] = os.path.exists(file_path)
 
         # Get VT and YARA data from cache
-        vt_data = cache_db.get_vt_result(shasum) if "cache_db" in globals() else None
+        vt_data = cache_db.get_vt_result(shasum) if cache_db else None
         if vt_data:
             dl["vt_detections"] = vt_data.get("detections", 0)
             dl["vt_total"] = vt_data.get("total", 0)
@@ -1893,7 +1895,15 @@ def downloads_data():
             dl["yara_matches"] = yara_data.get("matches", [])
             dl["file_type"] = yara_data.get("file_type")
             dl["file_category"] = yara_data.get("file_category")
-            dl["size"] = yara_data.get("size")
+
+        # Set file size from filesystem if file exists
+        if dl["exists"]:
+            try:
+                dl["size"] = os.path.getsize(file_path)
+            except OSError:
+                dl["size"] = 0
+        else:
+            dl["size"] = 0
 
     # Sort by timestamp (most recent first)
     sorted_downloads = sorted(unique_downloads.values(), key=lambda x: x.get("timestamp") or "", reverse=True)

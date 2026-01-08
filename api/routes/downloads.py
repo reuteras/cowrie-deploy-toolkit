@@ -11,6 +11,7 @@ from pathlib import Path
 from config import config
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
+from services.cache import CacheDB, YARACache
 
 router = APIRouter()
 
@@ -78,33 +79,55 @@ def get_safe_download_path(sha256: str) -> Path:
 @router.get("/downloads")
 async def get_downloads(limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0)):
     """
-    Get list of downloaded files
+    Get list of downloaded files with VT and YARA metadata
 
-    Returns list of files with SHA256 hashes and metadata
+    Returns list of files with SHA256 hashes and enriched metadata
     """
     downloads_path = Path(config.COWRIE_DOWNLOADS_PATH)
 
     if not downloads_path.exists():
         return {"total": 0, "downloads": []}
 
+    # Initialize cache readers
+    vt_cache = CacheDB(config.VT_CACHE_DB)
+    yara_cache = YARACache(config.YARA_CACHE_DB)
+
     # Get all files
     files = []
     for filepath in downloads_path.iterdir():
         if filepath.is_file():
+            sha256 = filepath.name
             stat = filepath.stat()
-            files.append(
-                {
-                    "sha256": filepath.name,
-                    "size": stat.st_size,
-                    "first_seen": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                    "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                }
-            )
+
+            file_info = {
+                "sha256": sha256,
+                "size": stat.st_size,
+                "first_seen": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "exists": True,
+            }
+
+            # Add VT data
+            vt_data = vt_cache.get_vt_result(sha256)
+            if vt_data:
+                file_info["vt_detections"] = vt_data.get("detections", 0)
+                file_info["vt_total"] = vt_data.get("total_engines", 0)
+                file_info["vt_threat_label"] = vt_data.get("threat_label")
+
+            # Add YARA data
+            yara_data = yara_cache.get_result(sha256)
+            if yara_data:
+                file_info["yara_matches"] = yara_data.get("matches", [])
+                file_info["file_type"] = yara_data.get("file_type")
+                file_info["file_category"] = yara_data.get("file_category")
+                file_info["is_previewable"] = yara_data.get("is_previewable", False)
+
+            files.append(file_info)
 
     # Sort by first seen (newest first)
     files.sort(key=lambda x: x["first_seen"], reverse=True)
 
-    # Pagination
+    # Paginate
     total = len(files)
     paginated = files[offset : offset + limit]
 
