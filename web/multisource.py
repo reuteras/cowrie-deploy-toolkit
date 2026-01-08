@@ -524,13 +524,19 @@ class MultiSourceDataSource:
         # Query sources in parallel with reduced concurrency
         max_workers = min(len(available_sources), MAX_WORKERS)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_source = {
+            # Query both stats and downloads data
+            future_to_source_stats = {
                 executor.submit(source.datasource.get_stats, hours=hours): source
                 for source in available_sources.values()
             }
+            future_to_source_downloads = {
+                executor.submit(source.datasource.get_downloads, hours=hours, limit=50, offset=0): source
+                for source in available_sources.values()
+            }
 
-            for future in concurrent.futures.as_completed(future_to_source):
-                source = future_to_source[future]
+            # Process stats results
+            for future in concurrent.futures.as_completed(future_to_source_stats):
+                source = future_to_source_stats[future]
                 try:
                     stats = future.result(timeout=30)
                     self.backoff.record_success(source.name)  # Reset backoff on success
@@ -660,6 +666,26 @@ class MultiSourceDataSource:
                     print(f"[MultiSource] Error fetching stats from '{source.name}': {e}")
                     aggregated["source_errors"][source.name] = str(e)
                     self.backoff.record_failure(source.name)  # Record failure for backoff
+
+            # Process downloads results
+            for future in concurrent.futures.as_completed(future_to_source_downloads):
+                source = future_to_source_downloads[future]
+                try:
+                    downloads_data = future.result(timeout=30)
+                    self.backoff.record_success(source.name)  # Reset backoff on success
+
+                    # Merge top malicious downloads
+                    for dl in downloads_data.get("downloads", []):
+                        # Only include downloads with VT data (malicious ones)
+                        if dl.get("vt_detections", 0) > 0:
+                            # Add source tag to track which source this download came from
+                            dl_copy = dl.copy()
+                            dl_copy["_source"] = source.name
+                            aggregated["top_malicious_downloads"].append(dl_copy)
+
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching downloads from '{source.name}': {e}")
+                    # Don't add to source_errors again if already added from stats failure
 
         # Convert sets to lists and sort
         aggregated["unique_ips"] = len(aggregated["unique_ips"])
