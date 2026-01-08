@@ -1266,7 +1266,8 @@ def attack_map_page():
     source_filter = request.args.get("source", "")
 
     # Get sessions with source filter
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
+    # Limit to 5000 most recent sessions per source for performance (map plotting)
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
 
     # Get available sources for multi-honeypot mode
     available_sources = []
@@ -1376,7 +1377,8 @@ def sessions():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
+    # Fetch sessions with limit for performance (allows filtering on ~10k most recent)
+    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=10000)
 
     # Sort by start time (most recent first)
     sorted_sessions = sorted(all_sessions.values(), key=lambda x: x["start_time"] or "", reverse=True)
@@ -1540,7 +1542,8 @@ def api_sessions():
     hours = request.args.get("hours", 168, type=int)
     limit = request.args.get("limit", 100, type=int)
 
-    all_sessions = session_parser.parse_all(hours=hours)
+    # Fetch up to 1000 sessions (more than requested limit for sorting)
+    all_sessions = session_parser.parse_all(hours=hours, max_sessions=1000)
     sorted_sessions = sorted(all_sessions.values(), key=lambda x: x["start_time"] or "", reverse=True)[:limit]
 
     return jsonify(sorted_sessions)
@@ -1869,8 +1872,12 @@ def downloads():
         available_sources = list(session_parser.sources.keys())
 
     # Extract downloads from sessions (they include database metadata)
-    # parse_all() now uses pagination to fetch ALL sessions (no limits)
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter if source_filter else None)
+    # Limit to 5000 most recent sessions per source for performance
+    all_sessions = session_parser.parse_all(
+        hours=hours,
+        source_filter=source_filter if source_filter else None,
+        max_sessions=5000
+    )
 
     # Collect all downloads from sessions
     all_downloads = []
@@ -2146,6 +2153,7 @@ def ip_list():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
+    # Get stats (IPs now returned without API limit after PR #116)
     stats = session_parser.get_stats(hours=hours, source_filter=source_filter)
 
     # Get filter parameters
@@ -2189,7 +2197,8 @@ def countries():
         available_sources = list(session_parser.sources.keys())
 
     # Get all countries (not just top 10)
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
+    # Limit to 5000 most recent sessions per source for performance
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
     country_counter = Counter()
     for session in sessions.values():
         if session.get("src_ip"):
@@ -2220,7 +2229,8 @@ def credentials():
         available_sources = list(session_parser.sources.keys())
 
     # Get all credentials (not just top 10)
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
+    # Limit to 5000 most recent sessions per source for performance
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
     credential_counter = Counter()
     successful_credentials = set()
     for session in sessions.values():
@@ -2255,7 +2265,8 @@ def clients():
         available_sources = list(session_parser.sources.keys())
 
     # Get all client versions (not just top 10)
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
+    # Limit to 5000 most recent sessions per source for performance
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
     client_version_counter = Counter()
     for session in sessions.values():
         if session.get("client_version"):
@@ -2285,7 +2296,8 @@ def asns():
         available_sources = list(session_parser.sources.keys())
 
     # Get all ASNs (not just top 10)
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
+    # Limit to 5000 most recent sessions per source for performance
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
     asn_counter = Counter()
     asn_details = {}
     for session in sessions.values():
