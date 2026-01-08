@@ -291,6 +291,7 @@ class DataSource:
                 "sessions_with_commands": totals.get("sessions_with_commands", 0),
                 "total_downloads": totals.get("downloads", 0),
                 "unique_downloads": totals.get("unique_downloads", 0),
+                "unique_download_hashes": totals.get("unique_download_hashes", []),  # NEW: for proper deduplication
                 "ip_list": ip_list,
                 "ip_locations": api_data.get("ip_locations", []),  # Now enriched by API
                 "top_countries": api_data.get("top_countries", []),  # Now enriched by API

@@ -478,15 +478,29 @@ class MultiSourceDataSource:
                         ip_info_copy["source"] = source.name
                         aggregated["ip_list"].append(ip_info_copy)
 
-                    # Merge unique downloads (handle both set and int formats)
-                    unique_dl = stats.get("unique_downloads", 0)
-                    if isinstance(unique_dl, set):
-                        aggregated["unique_downloads"].update(unique_dl)
-                    elif isinstance(unique_dl, int):
-                        # Add to the set as a counter (can't get actual hashes from count)
-                        # This is a limitation - we track total count, not actual unique hashes
-                        for i in range(unique_dl):
-                            aggregated["unique_downloads"].add(f"{source.name}_{i}")
+                    # Merge unique downloads using SHA256 hashes for proper deduplication
+                    # First try to get the list of unique hashes (new format)
+                    unique_hashes = stats.get("unique_download_hashes", [])
+                    if unique_hashes:
+                        # New format: list of SHA256 hashes from API
+                        for sha256 in unique_hashes:
+                            aggregated["unique_downloads"].add(sha256)
+                    else:
+                        # Fallback: Try to get from totals dict (API response format)
+                        totals_dict = stats.get("totals", {})
+                        unique_hashes = totals_dict.get("unique_download_hashes", [])
+                        if unique_hashes:
+                            for sha256 in unique_hashes:
+                                aggregated["unique_downloads"].add(sha256)
+                        else:
+                            # Legacy fallback: count-based (can't deduplicate properly)
+                            unique_dl = stats.get("unique_downloads", 0)
+                            if isinstance(unique_dl, set):
+                                aggregated["unique_downloads"].update(unique_dl)
+                            elif isinstance(unique_dl, int):
+                                # Best effort: create placeholders (imperfect deduplication)
+                                for i in range(unique_dl):
+                                    aggregated["unique_downloads"].add(f"{source.name}_{i}")
 
                     # Merge top lists - handle both dict format from API and tuple format from local
                     for item in stats.get("top_countries", []):
@@ -721,6 +735,73 @@ class MultiSourceDataSource:
         # TODO: Query sources for threat intel events
         # For now, return empty to avoid errors
         return {}
+
+    def get_downloads(self, hours: int = 168) -> list:
+        """
+        Get aggregated downloads from all sources.
+
+        Args:
+            hours: Time range in hours
+
+        Returns:
+            List of unique downloads with metadata from all sources
+        """
+        print(f"[MultiSource] get_downloads called: hours={hours}")
+
+        all_downloads = []
+        unique_downloads = {}
+        source_errors = {}
+
+        # Query downloads from all sources in parallel
+        max_workers = min(len(self.sources), MAX_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(source.datasource.get_downloads, hours=hours, limit=1000, offset=0): source
+                for source in self.sources.values()
+                if self.backoff.should_retry(source.name)
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    result = future.result(timeout=30)
+                    self.backoff.record_success(source.name)
+                    downloads = result.get("downloads", [])
+                    print(f"[MultiSource] Fetched {len(downloads)} downloads from '{source.name}'")
+
+                    # Deduplicate by SHA256 across sources
+                    for dl in downloads:
+                        shasum = dl.get("shasum") or dl.get("sha256")
+                        if not shasum:
+                            continue
+
+                        # Tag with source info
+                        dl["_source"] = source.name
+                        dl["_source_type"] = source.type
+
+                        if shasum not in unique_downloads:
+                            unique_downloads[shasum] = dl
+                            unique_downloads[shasum]["count"] = 1
+                            unique_downloads[shasum]["sources"] = [source.name]
+                        else:
+                            # Increment count and track sources
+                            unique_downloads[shasum]["count"] += 1
+                            if source.name not in unique_downloads[shasum].get("sources", []):
+                                unique_downloads[shasum]["sources"].append(source.name)
+
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching downloads from '{source.name}': {e}")
+                    import traceback
+
+                    traceback.print_exc()
+                    source_errors[source.name] = str(e)
+                    self.backoff.record_failure(source.name)
+
+        # Sort by timestamp (most recent first)
+        downloads_list = sorted(unique_downloads.values(), key=lambda x: x.get("timestamp", x.get("first_seen", "")), reverse=True)
+
+        print(f"[MultiSource] get_downloads returning {len(downloads_list)} unique downloads")
+        return downloads_list
 
 
 def create_multisource_from_config(config_sources: list) -> Optional[MultiSourceDataSource]:

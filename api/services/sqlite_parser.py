@@ -229,6 +229,18 @@ class SQLiteStatsParser:
             )
             totals["unique_downloads"] = cursor.fetchone()["unique_downloads"]
 
+            # Get list of unique SHA256 hashes for deduplication across sources
+            cursor.execute(
+                """
+                SELECT DISTINCT shasum
+                FROM downloads
+                WHERE timestamp >= ? AND shasum IS NOT NULL
+                ORDER BY shasum
+                """,
+                (cutoff_str,),
+            )
+            totals["unique_download_hashes"] = [row["shasum"] for row in cursor.fetchall()]
+
             # Top IPs with GeoIP enrichment
             cursor.execute(
                 """
