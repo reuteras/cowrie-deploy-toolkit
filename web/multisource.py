@@ -15,8 +15,8 @@ from cache import ExponentialBackoff, ResponseCache
 from datasource import DataSource
 
 # Configuration from environment variables
-CACHE_TTL_STATS = int(os.getenv("MULTISOURCE_CACHE_TTL_STATS", "30"))  # 30 seconds for stats
-CACHE_TTL_SESSIONS = int(os.getenv("MULTISOURCE_CACHE_TTL_SESSIONS", "15"))  # 15 seconds for sessions
+CACHE_TTL_STATS = int(os.getenv("MULTISOURCE_CACHE_TTL_STATS", "300"))  # 5 minutes for stats
+CACHE_TTL_SESSIONS = int(os.getenv("MULTISOURCE_CACHE_TTL_SESSIONS", "180"))  # 3 minutes for sessions
 MAX_WORKERS = int(os.getenv("MULTISOURCE_MAX_WORKERS", "2"))  # Reduced from 5 to 2
 BACKOFF_BASE_DELAY = float(os.getenv("MULTISOURCE_BACKOFF_BASE_DELAY", "2.0"))  # 2 seconds
 BACKOFF_MAX_DELAY = float(os.getenv("MULTISOURCE_BACKOFF_MAX_DELAY", "60.0"))  # 60 seconds
@@ -257,22 +257,24 @@ class MultiSourceDataSource:
 
         return result
 
-    def get_all_sessions_from_source(self, source, hours: int) -> list:
+    def get_all_sessions_from_source(self, source, hours: int, max_sessions: Optional[int] = None) -> list:
         """
         Get ALL sessions from a single source using pagination.
 
         Args:
             source: HoneypotSource instance
             hours: Time range in hours
+            max_sessions: Maximum number of sessions to fetch (None = unlimited)
 
         Returns:
-            List of all sessions from this source
+            List of all sessions from this source (up to max_sessions)
         """
         all_sessions = []
         offset = 0
         page_size = 1000
 
-        print(f"[MultiSource] Fetching all sessions from '{source.name}' (hours={hours})")
+        limit_str = f"max={max_sessions}" if max_sessions else "unlimited"
+        print(f"[MultiSource] Fetching sessions from '{source.name}' (hours={hours}, {limit_str})")
 
         while True:
             try:
@@ -292,6 +294,12 @@ class MultiSourceDataSource:
                 all_sessions.extend(sessions)
                 print(f"[MultiSource] '{source.name}': fetched {len(sessions)} sessions (offset={offset}, total={len(all_sessions)})")
 
+                # Check if we've reached the limit
+                if max_sessions and len(all_sessions) >= max_sessions:
+                    all_sessions = all_sessions[:max_sessions]  # Trim to exact limit
+                    print(f"[MultiSource] '{source.name}': reached max_sessions limit ({max_sessions})")
+                    break
+
                 # If we got fewer results than page size, we're done
                 if len(sessions) < page_size:
                     break
@@ -305,15 +313,16 @@ class MultiSourceDataSource:
         print(f"[MultiSource] '{source.name}': finished with {len(all_sessions)} total sessions")
         return all_sessions
 
-    def parse_all(self, hours: int = 168, source_filter: Optional[str] = None) -> dict:
+    def parse_all(self, hours: int = 168, source_filter: Optional[str] = None, max_sessions: Optional[int] = None) -> dict:
         """
         Get all sessions as a dict keyed by session ID (compatibility method).
 
-        Uses pagination to fetch ALL sessions from the time period, no limits.
+        Uses pagination to fetch sessions from the time period.
 
         Args:
             hours: Time range in hours
             source_filter: Filter by specific source name (None = all sources)
+            max_sessions: Maximum number of sessions to fetch per source (None = unlimited)
 
         Returns:
             Dict of sessions keyed by session ID
@@ -330,11 +339,11 @@ class MultiSourceDataSource:
 
         all_sessions_list = []
 
-        # Fetch ALL sessions from each source using pagination
+        # Fetch sessions from each source using pagination
         max_workers = min(len(available_sources), MAX_WORKERS)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_source = {
-                executor.submit(self.get_all_sessions_from_source, source, hours): source
+                executor.submit(self.get_all_sessions_from_source, source, hours, max_sessions): source
                 for source in available_sources.values()
             }
 
