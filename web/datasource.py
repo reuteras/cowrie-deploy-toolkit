@@ -89,7 +89,8 @@ class DataSource:
         """Get sessions from local files (uses existing SessionParser)."""
         from app import session_parser
 
-        # Parse all sessions
+        # For local mode, we need to parse_all to get the full dataset
+        # This is unavoidable since we're parsing JSON files
         all_sessions = session_parser.parse_all(hours=hours)
         sessions_list = list(all_sessions.values())
 
@@ -110,7 +111,7 @@ class DataSource:
         return {"total": total, "sessions": paginated}
 
     def _get_sessions_remote(self, hours, limit, offset, src_ip, username, start_time, end_time) -> dict:
-        """Get sessions from remote API."""
+        """Get sessions from remote API with pagination."""
         from datetime import datetime, timedelta, timezone
 
         # Convert hours to start_time/end_time if not already provided
@@ -146,6 +147,50 @@ class DataSource:
         except requests.RequestException as e:
             print(f"[!] Error fetching sessions from API: {e}")
             return {"total": 0, "sessions": []}
+
+    def get_all_sessions(self, hours: int = 168, src_ip: Optional[str] = None, username: Optional[str] = None) -> list:
+        """
+        Get ALL sessions for a time period using pagination.
+
+        Fetches sessions iteratively until all are retrieved.
+        No hardcoded limits - keeps fetching until no more results.
+
+        Args:
+            hours: Time range in hours
+            src_ip: Filter by source IP (optional)
+            username: Filter by username (optional)
+
+        Returns:
+            List of all sessions (not paginated)
+        """
+        all_sessions = []
+        offset = 0
+        page_size = 1000  # Fetch in chunks of 1000
+
+        print(f"[DataSource] Fetching all sessions for {hours} hours using pagination (page_size={page_size})")
+
+        while True:
+            result = self.get_sessions(
+                hours=hours,
+                limit=page_size,
+                offset=offset,
+                src_ip=src_ip,
+                username=username
+            )
+
+            sessions = result.get("sessions", [])
+            all_sessions.extend(sessions)
+
+            print(f"[DataSource] Fetched {len(sessions)} sessions (offset={offset}, total so far={len(all_sessions)})")
+
+            # If we got fewer results than the page size, we've reached the end
+            if len(sessions) < page_size:
+                break
+
+            offset += page_size
+
+        print(f"[DataSource] Finished fetching: {len(all_sessions)} total sessions")
+        return all_sessions
 
     def get_session(self, session_id: str) -> Optional[dict]:
         """

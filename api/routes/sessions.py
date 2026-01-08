@@ -15,7 +15,7 @@ router = APIRouter()
 
 @router.get("/sessions")
 async def get_sessions(
-    limit: int = Query(100, ge=1, le=50000, description="Maximum number of sessions to return"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of sessions to return"),
     offset: int = Query(0, ge=0, description="Number of sessions to skip"),
     src_ip: Optional[str] = Query(None, description="Filter by source IP"),
     username: Optional[str] = Query(None, description="Filter by username"),
