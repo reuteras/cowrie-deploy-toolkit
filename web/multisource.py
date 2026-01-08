@@ -674,14 +674,12 @@ class MultiSourceDataSource:
                     downloads_data = future.result(timeout=30)
                     self.backoff.record_success(source.name)  # Reset backoff on success
 
-                    # Merge top malicious downloads
+                    # Merge top downloads (both malicious and clean, but unique by SHA256)
                     for dl in downloads_data.get("downloads", []):
-                        # Only include downloads with VT data (malicious ones)
-                        if dl.get("vt_detections", 0) > 0:
-                            # Add source tag to track which source this download came from
-                            dl_copy = dl.copy()
-                            dl_copy["_source"] = source.name
-                            aggregated["top_malicious_downloads"].append(dl_copy)
+                        # Add source tag to track which source this download came from
+                        dl_copy = dl.copy()
+                        dl_copy["_source"] = source.name
+                        aggregated["top_malicious_downloads"].append(dl_copy)
 
                 except Exception as e:
                     print(f"[MultiSource] Error fetching downloads from '{source.name}': {e}")

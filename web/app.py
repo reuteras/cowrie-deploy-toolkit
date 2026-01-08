@@ -1888,7 +1888,7 @@ def downloads_data():
             dl["vt_total"] = vt_data.get("total", 0)
             dl["vt_threat_label"] = vt_data.get("threat_label")
 
-        yara_data = yara_cache.get(shasum)
+        yara_data = yara_cache.get_result(shasum)
         if yara_data:
             dl["yara_matches"] = yara_data.get("matches", [])
             dl["file_type"] = yara_data.get("file_type")
