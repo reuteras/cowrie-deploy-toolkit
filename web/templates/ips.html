@@ -3,13 +3,19 @@
 {% block title %}IP Addresses - Cowrie Honeypot{% endblock %}
 
 {% block content %}
+<style>
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+.loading-state { text-align: center; padding: 60px 20px; color: #666; }
+</style>
+
 <div class="ips-page">
     <div class="page-header">
         <h1>Attacking IP Addresses</h1>
         <div class="time-filter">
             {% if available_sources %}
             <label>Source:</label>
-            <select id="source-filter" onchange="updateFilters()">
+            <select id="source-filter" onchange="reloadPage()">
                 <option value="" {% if not source_filter %}selected{% endif %}>All Honeypots</option>
                 {% for source_name in available_sources %}
                 <option value="{{ source_name }}" {% if source_filter == source_name %}selected{% endif %}>{{ source_name }}</option>
@@ -17,7 +23,7 @@
             </select>
             {% endif %}
             <label>Time range:</label>
-            <select id="hours-filter" onchange="updateFilters()">
+            <select id="hours-filter" onchange="reloadPage()">
                 <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
                 <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
                 <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
@@ -26,49 +32,26 @@
         </div>
     </div>
 
-    <script>
-    function updateFilters() {
-        const source = document.getElementById('source-filter') ? document.getElementById('source-filter').value : '';
-        const hours = document.getElementById('hours-filter').value;
-        let url = '?hours=' + hours;
-        if (source) {
-            url += '&source=' + encodeURIComponent(source);
-        }
-        window.location.href = url;
-    }
-    </script>
-
     <!-- Filters -->
-    {% if asn_filter or country_filter or city_filter %}
-    <div class="filter-badges" style="margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap;">
-        <span style="font-weight: 600; color: var(--text-primary);">Active Filters:</span>
-        {% if country_filter %}
-        <span class="badge badge-info" style="display: inline-flex; align-items: center; gap: 5px;">
-            Country: {{ country_filter }}
-            <a href="{{ url_for('ip_list', hours=hours, asn=asn_filter, city=city_filter) }}" style="color: inherit; text-decoration: none; margin-left: 3px;">✕</a>
-        </span>
-        {% endif %}
-        {% if city_filter %}
-        <span class="badge badge-info" style="display: inline-flex; align-items: center; gap: 5px;">
-            City: {{ city_filter }}
-            <a href="{{ url_for('ip_list', hours=hours, asn=asn_filter, country=country_filter) }}" style="color: inherit; text-decoration: none; margin-left: 3px;">✕</a>
-        </span>
-        {% endif %}
-        {% if asn_filter %}
-        <span class="badge badge-info" style="display: inline-flex; align-items: center; gap: 5px;">
-            ASN: {{ asn_filter }}
-            <a href="{{ url_for('ip_list', hours=hours, country=country_filter, city=city_filter) }}" style="color: inherit; text-decoration: none; margin-left: 3px;">✕</a>
-        </span>
-        {% endif %}
-        <a href="{{ url_for('ip_list', hours=hours) }}" class="badge" style="background: var(--danger); color: white; text-decoration: none;">Clear All Filters</a>
-    </div>
-    {% endif %}
+    <div id="filter-badges" class="filter-badges" style="margin: 15px 0; display: none; flex-direction: column; gap: 10px;"></div>
 
-    <div class="ips-info">
-        <p>{{ ips | length }} unique IP addresses</p>
+    <div id="ips-info" class="ips-info" style="display: none;">
+        <p><span id="ips-count">0</span> unique IP addresses</p>
     </div>
 
-    <table class="data-table ips-table sortable">
+    <div id="loading-state" class="loading-state">
+        <div class="spinner"></div>
+        <p style="font-size: 16px; font-weight: 500;">Loading IP addresses...</p>
+        <p style="font-size: 12px;">This may take a few seconds</p>
+    </div>
+
+    <div id="error-state" class="loading-state" style="display:none; color: #d32f2f;">
+        <p style="font-size: 16px; font-weight: 500;">⚠️ Failed to load IP addresses</p>
+        <p style="font-size: 12px;" id="error-message"></p>
+        <button onclick="loadIPs()" style="margin-top: 15px; padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button>
+    </div>
+
+    <table id="data-table" class="data-table ips-table sortable" style="display:none;">
         <thead>
             <tr>
                 <th>IP Address</th>
@@ -82,69 +65,168 @@
                 <th>Last Seen</th>
             </tr>
         </thead>
-        <tbody>
-            {% for ip_data in ips %}
-            <tr>
-                <td>
-                    <a href="{{ url_for('sessions', ip=ip_data.ip, hours=hours) }}" class="ip-link">
-                        <code>{{ ip_data.ip }}</code>
-                    </a>
-                </td>
-                <td>
-                    {% if ip_data.geo and ip_data.geo.country %}
-                    <a href="{{ url_for('ip_list', country=ip_data.geo.country, city=city_filter, asn=asn_filter, hours=hours) }}" title="Filter by country">{{ ip_data.geo.country }}</a>
-                    {% else %}
-                    Unknown
-                    {% endif %}
-                </td>
-                <td>
-                    {% if ip_data.geo and ip_data.geo.city %}
-                    <a href="{{ url_for('ip_list', city=ip_data.geo.city, country=country_filter or ip_data.geo.country, asn=asn_filter, hours=hours) }}" title="Filter by city">{{ ip_data.geo.city }}</a>
-                    {% else %}
-                    Unknown
-                    {% endif %}
-                </td>
-                <td>
-                    {% if ip_data.geo and ip_data.geo.asn %}
-                    <a href="{{ url_for('ip_list', asn='AS' + ip_data.geo.asn|string, country=country_filter, city=city_filter, hours=hours) }}" title="Filter by ASN"><code>AS{{ ip_data.geo.asn }}</code></a>
-                    {% else %}
-                    <span class="text-muted">-</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if ip_data.geo and ip_data.geo.asn_org %}
-                    {{ ip_data.geo.asn_org }}
-                    {% else %}
-                    <span class="text-muted">-</span>
-                    {% endif %}
-                </td>
-                <td>
-                    <a href="{{ url_for('sessions', ip=ip_data.ip, hours=hours) }}" class="badge badge-success">
-                        {{ ip_data.count }}
-                    </a>
-                </td>
-                <td>
-                    {% if ip_data.successful_logins > 0 %}
-                    <span class="badge badge-danger" title="Successful breaches">{{ ip_data.successful_logins }}</span>
-                    {% else %}
-                    <span class="text-muted">0</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if ip_data.failed_logins > 0 %}
-                    <span class="badge badge-warning">{{ ip_data.failed_logins }}</span>
-                    {% else %}
-                    <span class="text-muted">0</span>
-                    {% endif %}
-                </td>
-                <td>{{ ip_data.last_seen | format_timestamp if ip_data.last_seen else 'N/A' }}</td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="9" class="no-data">No IP addresses recorded</td>
-            </tr>
-            {% endfor %}
-        </tbody>
+        <tbody id="table-body"></tbody>
     </table>
 </div>
+
+<script>
+function reloadPage() {
+    const source = document.getElementById('source-filter') ? document.getElementById('source-filter').value : '';
+    const hours = document.getElementById('hours-filter').value;
+    let url = '?hours=' + hours;
+    if (source) url += '&source=' + encodeURIComponent(source);
+    window.location.href = url;
+}
+
+function formatTimestamp(ts) {
+    if (!ts) return 'N/A';
+    try {
+        const date = new Date(ts);
+        return date.toLocaleString();
+    } catch (e) {
+        return ts;
+    }
+}
+
+function loadIPs() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hours = urlParams.get('hours') || '{{ hours }}';
+    const source = urlParams.get('source') || '{{ source_filter }}';
+    const country = urlParams.get('country') || '{{ country_filter }}';
+    const city = urlParams.get('city') || '{{ city_filter }}';
+    const asn = urlParams.get('asn') || '{{ asn_filter }}';
+
+    document.getElementById('loading-state').style.display = 'block';
+    document.getElementById('error-state').style.display = 'none';
+    document.getElementById('data-table').style.display = 'none';
+    document.getElementById('ips-info').style.display = 'none';
+    document.getElementById('filter-badges').style.display = 'none';
+
+    let apiUrl = '/api/ips-data?hours=' + hours;
+    if (source) apiUrl += '&source=' + encodeURIComponent(source);
+    if (country) apiUrl += '&country=' + encodeURIComponent(country);
+    if (city) apiUrl += '&city=' + encodeURIComponent(city);
+    if (asn) apiUrl += '&asn=' + encodeURIComponent(asn);
+
+    fetch(apiUrl)
+        .then(response => {
+            if (!response.ok) throw new Error('Server returned ' + response.status);
+            return response.json();
+        })
+        .then(data => {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('ips-info').style.display = 'block';
+            document.getElementById('data-table').style.display = 'table';
+
+            document.getElementById('ips-count').textContent = data.total || 0;
+
+            // Handle filter badges
+            const filterBadgesDiv = document.getElementById('filter-badges');
+            if (data.filters && (data.filters.country || data.filters.city || data.filters.asn)) {
+                filterBadgesDiv.style.display = 'flex';
+                filterBadgesDiv.innerHTML = '<span style="font-weight: 600; color: var(--text-primary);">Active Filters:</span>';
+
+                if (data.filters.country) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge badge-info';
+                    badge.style.display = 'inline-flex';
+                    badge.style.alignItems = 'center';
+                    badge.style.gap = '5px';
+                    badge.innerHTML = 'Country: ' + data.filters.country +
+                        ' <a href="?hours=' + hours + '&asn=' + encodeURIComponent(data.filters.asn || '') +
+                        '&city=' + encodeURIComponent(data.filters.city || '') +
+                        '" style="color: inherit; text-decoration: none; margin-left: 3px;">✕</a>';
+                    filterBadgesDiv.appendChild(badge);
+                }
+
+                if (data.filters.city) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge badge-info';
+                    badge.style.display = 'inline-flex';
+                    badge.style.alignItems = 'center';
+                    badge.style.gap = '5px';
+                    badge.innerHTML = 'City: ' + data.filters.city +
+                        ' <a href="?hours=' + hours + '&asn=' + encodeURIComponent(data.filters.asn || '') +
+                        '&country=' + encodeURIComponent(data.filters.country || '') +
+                        '" style="color: inherit; text-decoration: none; margin-left: 3px;">✕</a>';
+                    filterBadgesDiv.appendChild(badge);
+                }
+
+                if (data.filters.asn) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge badge-info';
+                    badge.style.display = 'inline-flex';
+                    badge.style.alignItems = 'center';
+                    badge.style.gap = '5px';
+                    badge.innerHTML = 'ASN: ' + data.filters.asn +
+                        ' <a href="?hours=' + hours + '&country=' + encodeURIComponent(data.filters.country || '') +
+                        '&city=' + encodeURIComponent(data.filters.city || '') +
+                        '" style="color: inherit; text-decoration: none; margin-left: 3px;">✕</a>';
+                    filterBadgesDiv.appendChild(badge);
+                }
+
+                const clearBtn = document.createElement('a');
+                clearBtn.className = 'badge';
+                clearBtn.style.background = 'var(--danger)';
+                clearBtn.style.color = 'white';
+                clearBtn.style.textDecoration = 'none';
+                clearBtn.href = '?hours=' + hours;
+                clearBtn.textContent = 'Clear All Filters';
+                filterBadgesDiv.appendChild(clearBtn);
+            }
+
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            if (!data.ips || data.ips.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="no-data">No IP addresses recorded</td></tr>';
+                return;
+            }
+
+            data.ips.forEach(ip => {
+                const row = document.createElement('tr');
+
+                const ipLink = '<a href="/sessions?ip=' + encodeURIComponent(ip.ip) + '&hours=' + hours + '" class="ip-link"><code>' + ip.ip + '</code></a>';
+                const countryLink = (ip.geo && ip.geo.country) ?
+                    '<a href="?country=' + encodeURIComponent(ip.geo.country) + '&city=' + encodeURIComponent(city || '') + '&asn=' + encodeURIComponent(asn || '') + '&hours=' + hours + '" title="Filter by country">' + ip.geo.country + '</a>' :
+                    'Unknown';
+                const cityLink = (ip.geo && ip.geo.city) ?
+                    '<a href="?city=' + encodeURIComponent(ip.geo.city) + '&country=' + encodeURIComponent(country || ip.geo.country || '') + '&asn=' + encodeURIComponent(asn || '') + '&hours=' + hours + '" title="Filter by city">' + ip.geo.city + '</a>' :
+                    'Unknown';
+                const asnLink = (ip.geo && ip.geo.asn) ?
+                    '<a href="?asn=AS' + ip.geo.asn + '&country=' + encodeURIComponent(country || '') + '&city=' + encodeURIComponent(city || '') + '&hours=' + hours + '" title="Filter by ASN"><code>AS' + ip.geo.asn + '</code></a>' :
+                    '<span class="text-muted">-</span>';
+                const asnOrg = (ip.geo && ip.geo.asn_org) ? ip.geo.asn_org : '<span class="text-muted">-</span>';
+                const sessionsLink = '<a href="/sessions?ip=' + encodeURIComponent(ip.ip) + '&hours=' + hours + '" class="badge badge-success">' + (ip.count || 0) + '</a>';
+                const successfulLogins = ip.successful_logins > 0 ?
+                    '<span class="badge badge-danger" title="Successful breaches">' + ip.successful_logins + '</span>' :
+                    '<span class="text-muted">0</span>';
+                const failedLogins = ip.failed_logins > 0 ?
+                    '<span class="badge badge-warning">' + ip.failed_logins + '</span>' :
+                    '<span class="text-muted">0</span>';
+                const lastSeen = formatTimestamp(ip.last_seen);
+
+                row.innerHTML =
+                    '<td>' + ipLink + '</td>' +
+                    '<td>' + countryLink + '</td>' +
+                    '<td>' + cityLink + '</td>' +
+                    '<td>' + asnLink + '</td>' +
+                    '<td>' + asnOrg + '</td>' +
+                    '<td>' + sessionsLink + '</td>' +
+                    '<td>' + successfulLogins + '</td>' +
+                    '<td>' + failedLogins + '</td>' +
+                    '<td>' + lastSeen + '</td>';
+
+                tbody.appendChild(row);
+            });
+        })
+        .catch(error => {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('error-state').style.display = 'block';
+            document.getElementById('error-message').textContent = error.message;
+        });
+}
+
+document.addEventListener('DOMContentLoaded', loadIPs);
+</script>
 {% endblock %}

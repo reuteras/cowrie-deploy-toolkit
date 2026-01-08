@@ -3,56 +3,74 @@
 {% block title %}Sessions - Cowrie Honeypot{% endblock %}
 
 {% block content %}
+<style>
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+.loading-state { text-align: center; padding: 60px 20px; color: #666; }
+</style>
+
 <div class="sessions-page">
     <div class="page-header">
         <h1>SSH Sessions</h1>
         <div class="filters">
-            <form method="get" class="filter-form">
+            <div class="filter-form">
                 {% if available_sources %}
-                <select name="source" onchange="this.form.submit()">
+                <select id="source-filter" onchange="reloadPage()">
                     <option value="" {% if not source_filter %}selected{% endif %}>All Honeypots</option>
                     {% for source_name in available_sources %}
                     <option value="{{ source_name }}" {% if source_filter == source_name %}selected{% endif %}>{{ source_name }}</option>
                     {% endfor %}
                 </select>
                 {% endif %}
-                <select name="hours" onchange="this.form.submit()">
+                <select id="hours-filter" onchange="reloadPage()">
                     <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
                     <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
                     <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
                     <option value="720" {% if hours == 720 %}selected{% endif %}>Last 30 days</option>
                 </select>
-                <input type="text" name="ip" placeholder="Filter by IP" value="{{ ip_filter }}">
-                <input type="text" name="country" placeholder="Filter by Country" value="{{ country_filter }}">
-                <input type="text" name="credentials" placeholder="Filter by Credentials (user:pass)" value="{{ credentials_filter }}">
+                <input type="text" id="ip-filter" placeholder="Filter by IP" value="{{ ip_filter }}" onkeypress="handleEnterKey(event)">
+                <input type="text" id="country-filter" placeholder="Filter by Country" value="{{ country_filter }}" onkeypress="handleEnterKey(event)">
+                <input type="text" id="credentials-filter" placeholder="Filter by Credentials (user:pass)" value="{{ credentials_filter }}" onkeypress="handleEnterKey(event)">
                 <label>
-                    <input type="checkbox" name="has_commands" value="1"
+                    <input type="checkbox" id="has-commands-filter" value="1"
                            {% if has_commands == '1' %}checked{% endif %}
-                           onchange="this.form.submit()">
+                           onchange="reloadPage()">
                     Has commands
                 </label>
                 <label>
-                    <input type="checkbox" name="has_tty" value="1"
+                    <input type="checkbox" id="has-tty-filter" value="1"
                            {% if has_tty == '1' %}checked{% endif %}
-                           onchange="this.form.submit()">
+                           onchange="reloadPage()">
                     Has TTY recording
                 </label>
                 <label>
-                    <input type="checkbox" name="successful_login" value="1"
+                    <input type="checkbox" id="successful-login-filter" value="1"
                            {% if successful_login == '1' %}checked{% endif %}
-                           onchange="this.form.submit()">
+                           onchange="reloadPage()">
                     Successful login
                 </label>
-                <button type="submit">Filter</button>
-            </form>
+                <button type="button" onclick="reloadPage()">Filter</button>
+            </div>
         </div>
     </div>
 
-    <div class="results-info">
-        Showing {{ sessions | length }} of {{ total }} sessions
+    <div id="results-info" class="results-info" style="display: none;">
+        Showing <span id="showing-count">0</span> of <span id="total-count">0</span> sessions
     </div>
 
-    <table class="data-table sessions-table sortable">
+    <div id="loading-state" class="loading-state">
+        <div class="spinner"></div>
+        <p style="font-size: 16px; font-weight: 500;">Loading sessions...</p>
+        <p style="font-size: 12px;">This may take a few seconds</p>
+    </div>
+
+    <div id="error-state" class="loading-state" style="display:none; color: #d32f2f;">
+        <p style="font-size: 16px; font-weight: 500;">⚠️ Failed to load sessions</p>
+        <p style="font-size: 12px;" id="error-message"></p>
+        <button onclick="loadSessions()" style="margin-top: 15px; padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button>
+    </div>
+
+    <table id="data-table" class="data-table sessions-table sortable" style="display:none;">
         <thead>
             <tr>
                 <th>Session ID</th>
@@ -66,78 +84,191 @@
                 <th>Actions</th>
             </tr>
         </thead>
-        <tbody>
-            {% for session in sessions %}
-            <tr class="{% if session.login_success %}success-login{% endif %}">
-                <td>
-                    <a href="{{ url_for('session_detail', session_id=session.id) }}">
-                        {{ session.id | truncate_hash }}
-                    </a>
-                </td>
-                <td>
-                    {% if session._source %}
-                    <span class="badge badge-info">{{ session._source }}</span>
-                    {% else %}
-                    <span class="badge">local</span>
-                    {% endif %}
-                </td>
-                <td>
-                    <a href="?ip={{ session.src_ip }}&hours={{ hours }}">{{ session.src_ip }}</a>
-                </td>
-                <td>
-                    {% if session.geo and session.geo.country %}
-                    <a href="?country={{ session.geo.country }}&hours={{ hours }}">{{ session.geo.country }}</a>
-                    {% else %}
-                    Unknown
-                    {% endif %}
-                </td>
-                <td>{{ session.start_time | format_timestamp }}</td>
-                <td>{{ session.duration | format_duration }}</td>
-                <td>
-                    {% if session.username %}
-                    <a href="?credentials={{ session.username }}:{{ session.password or '***' }}&hours={{ hours }}">
-                        <code>{{ session.username }}:{{ session.password or '***' }}</code>
-                    </a>
-                    {% else %}
-                    <span class="no-data">N/A</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {{ session.commands | length }}
-                    {% if session.downloads %}
-                    <span class="badge badge-warning" title="Downloaded {{ session.downloads | length }} file(s)">
-                        {{ session.downloads | length }}
-                    </span>
-                    {% endif %}
-                </td>
-                <td class="actions">
-                    <a href="{{ url_for('session_detail', session_id=session.id) }}" class="btn btn-sm">View</a>
-                    {% if session.tty_log %}
-                    <a href="{{ url_for('session_playback', session_id=session.id) }}" class="btn btn-sm btn-primary">Play</a>
-                    {% endif %}
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="9" class="no-data">No sessions found</td>
-            </tr>
-            {% endfor %}
-        </tbody>
+        <tbody id="table-body"></tbody>
     </table>
 
     <!-- Pagination -->
-    {% if total > per_page %}
-    <div class="pagination">
-        {% if page > 1 %}
-        <a href="?page={{ page - 1 }}&hours={{ hours }}&ip={{ ip_filter }}&has_commands={{ has_commands }}&has_tty={{ has_tty }}" class="btn">&laquo; Previous</a>
-        {% endif %}
-
-        <span class="page-info">Page {{ page }} of {{ (total // per_page) + (1 if total % per_page else 0) }}</span>
-
-        {% if page * per_page < total %}
-        <a href="?page={{ page + 1 }}&hours={{ hours }}&ip={{ ip_filter }}&has_commands={{ has_commands }}&has_tty={{ has_tty }}" class="btn">Next &raquo;</a>
-        {% endif %}
-    </div>
-    {% endif %}
+    <div id="pagination" class="pagination" style="display:none;"></div>
 </div>
+
+<script>
+function reloadPage() {
+    const source = document.getElementById('source-filter') ? document.getElementById('source-filter').value : '';
+    const hours = document.getElementById('hours-filter').value;
+    const ip = document.getElementById('ip-filter').value;
+    const country = document.getElementById('country-filter').value;
+    const credentials = document.getElementById('credentials-filter').value;
+    const hasCommands = document.getElementById('has-commands-filter').checked ? '1' : '';
+    const hasTty = document.getElementById('has-tty-filter').checked ? '1' : '';
+    const successfulLogin = document.getElementById('successful-login-filter').checked ? '1' : '';
+
+    let url = '?hours=' + hours;
+    if (source) url += '&source=' + encodeURIComponent(source);
+    if (ip) url += '&ip=' + encodeURIComponent(ip);
+    if (country) url += '&country=' + encodeURIComponent(country);
+    if (credentials) url += '&credentials=' + encodeURIComponent(credentials);
+    if (hasCommands) url += '&has_commands=' + hasCommands;
+    if (hasTty) url += '&has_tty=' + hasTty;
+    if (successfulLogin) url += '&successful_login=' + successfulLogin;
+
+    window.location.href = url;
+}
+
+function handleEnterKey(event) {
+    if (event.key === 'Enter') {
+        reloadPage();
+    }
+}
+
+function formatTimestamp(ts) {
+    if (!ts) return 'N/A';
+    try {
+        const date = new Date(ts);
+        return date.toLocaleString();
+    } catch (e) {
+        return ts;
+    }
+}
+
+function formatDuration(seconds) {
+    if (!seconds && seconds !== 0) return 'N/A';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins > 0) {
+        return mins + 'm ' + secs + 's';
+    }
+    return secs + 's';
+}
+
+function truncateHash(hash) {
+    if (!hash) return 'N/A';
+    if (hash.length <= 12) return hash;
+    return hash.substring(0, 12) + '...';
+}
+
+function loadSessions(page = 1) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hours = urlParams.get('hours') || '{{ hours }}';
+    const source = urlParams.get('source') || '{{ source_filter }}';
+    const ip = urlParams.get('ip') || '{{ ip_filter }}';
+    const country = urlParams.get('country') || '{{ country_filter }}';
+    const credentials = urlParams.get('credentials') || '{{ credentials_filter }}';
+    const hasCommands = urlParams.get('has_commands') || '{{ has_commands }}';
+    const hasTty = urlParams.get('has_tty') || '{{ has_tty }}';
+    const successfulLogin = urlParams.get('successful_login') || '{{ successful_login }}';
+
+    document.getElementById('loading-state').style.display = 'block';
+    document.getElementById('error-state').style.display = 'none';
+    document.getElementById('data-table').style.display = 'none';
+    document.getElementById('results-info').style.display = 'none';
+    document.getElementById('pagination').style.display = 'none';
+
+    let apiUrl = '/api/sessions-data?page=' + page + '&hours=' + hours;
+    if (source) apiUrl += '&source=' + encodeURIComponent(source);
+    if (ip) apiUrl += '&ip=' + encodeURIComponent(ip);
+    if (country) apiUrl += '&country=' + encodeURIComponent(country);
+    if (credentials) apiUrl += '&credentials=' + encodeURIComponent(credentials);
+    if (hasCommands) apiUrl += '&has_commands=' + hasCommands;
+    if (hasTty) apiUrl += '&has_tty=' + hasTty;
+    if (successfulLogin) apiUrl += '&successful_login=' + successfulLogin;
+
+    fetch(apiUrl)
+        .then(response => {
+            if (!response.ok) throw new Error('Server returned ' + response.status);
+            return response.json();
+        })
+        .then(data => {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('results-info').style.display = 'block';
+            document.getElementById('data-table').style.display = 'table';
+
+            document.getElementById('showing-count').textContent = data.sessions ? data.sessions.length : 0;
+            document.getElementById('total-count').textContent = data.total || 0;
+
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            if (!data.sessions || data.sessions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="no-data">No sessions found</td></tr>';
+                return;
+            }
+
+            data.sessions.forEach(session => {
+                const row = document.createElement('tr');
+                if (session.login_success) {
+                    row.className = 'success-login';
+                }
+
+                const sessionLink = '<a href="/session/' + session.id + '">' + truncateHash(session.id) + '</a>';
+                const sourceBadge = session._source ?
+                    '<span class="badge badge-info">' + session._source + '</span>' :
+                    '<span class="badge">local</span>';
+                const ipLink = '<a href="?ip=' + encodeURIComponent(session.src_ip) + '&hours=' + hours + '">' + session.src_ip + '</a>';
+                const countryLink = (session.geo && session.geo.country) ?
+                    '<a href="?country=' + encodeURIComponent(session.geo.country) + '&hours=' + hours + '">' + session.geo.country + '</a>' :
+                    'Unknown';
+                const startTime = formatTimestamp(session.start_time);
+                const duration = formatDuration(session.duration);
+                const credentialsCell = session.username ?
+                    '<a href="?credentials=' + encodeURIComponent(session.username + ':' + (session.password || '***')) + '&hours=' + hours + '"><code>' + session.username + ':' + (session.password || '***') + '</code></a>' :
+                    '<span class="no-data">N/A</span>';
+                const commandsCount = (session.commands ? session.commands.length : 0) +
+                    (session.downloads && session.downloads.length > 0 ?
+                        ' <span class="badge badge-warning" title="Downloaded ' + session.downloads.length + ' file(s)">' + session.downloads.length + '</span>' : '');
+                const actionsCell = '<a href="/session/' + session.id + '" class="btn btn-sm">View</a>' +
+                    (session.tty_log ? ' <a href="/playback/' + session.id + '" class="btn btn-sm btn-primary">Play</a>' : '');
+
+                row.innerHTML =
+                    '<td>' + sessionLink + '</td>' +
+                    '<td>' + sourceBadge + '</td>' +
+                    '<td>' + ipLink + '</td>' +
+                    '<td>' + countryLink + '</td>' +
+                    '<td>' + startTime + '</td>' +
+                    '<td>' + duration + '</td>' +
+                    '<td>' + credentialsCell + '</td>' +
+                    '<td>' + commandsCount + '</td>' +
+                    '<td class="actions">' + actionsCell + '</td>';
+
+                tbody.appendChild(row);
+            });
+
+            // Handle pagination
+            if (data.total > data.per_page) {
+                const paginationDiv = document.getElementById('pagination');
+                paginationDiv.style.display = 'block';
+                paginationDiv.innerHTML = '';
+
+                const totalPages = Math.ceil(data.total / data.per_page);
+
+                if (data.page > 1) {
+                    const prevBtn = document.createElement('button');
+                    prevBtn.className = 'btn';
+                    prevBtn.innerHTML = '&laquo; Previous';
+                    prevBtn.onclick = () => loadSessions(data.page - 1);
+                    paginationDiv.appendChild(prevBtn);
+                }
+
+                const pageInfo = document.createElement('span');
+                pageInfo.className = 'page-info';
+                pageInfo.textContent = 'Page ' + data.page + ' of ' + totalPages;
+                paginationDiv.appendChild(pageInfo);
+
+                if (data.page < totalPages) {
+                    const nextBtn = document.createElement('button');
+                    nextBtn.className = 'btn';
+                    nextBtn.innerHTML = 'Next &raquo;';
+                    nextBtn.onclick = () => loadSessions(data.page + 1);
+                    paginationDiv.appendChild(nextBtn);
+                }
+            }
+        })
+        .catch(error => {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('error-state').style.display = 'block';
+            document.getElementById('error-message').textContent = error.message;
+        });
+}
+
+document.addEventListener('DOMContentLoaded', () => loadSessions());
+</script>
 {% endblock %}
