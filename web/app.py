@@ -711,33 +711,39 @@ class SessionParser:
                     dl["file_category"] = yara_result.get("file_category")
                     dl["yara_matches"] = yara_result.get("matches", [])
 
-                # Get VirusTotal score
+                # Get VirusTotal score from cache or live scan
+                vt_data = None
                 if vt_scanner:
                     vt_result = vt_scanner.scan_file(shasum)
                     if vt_result:
-                        vt_total_scanned += 1
-                        detections = vt_result["detections"]
-                        total_eng = vt_result["total_engines"]
+                        vt_data = vt_result
+                elif "cache_db" in globals():
+                    vt_data = cache_db.get_vt_result(shasum)
 
-                        dl["vt_detections"] = detections
-                        dl["vt_total"] = total_eng
-                        dl["vt_link"] = vt_result["link"]
-                        dl["vt_threat_label"] = vt_result.get("threat_label", "")
+                if vt_data:
+                    vt_total_scanned += 1
+                    detections = vt_data.get("detections", 0)
+                    total_eng = vt_data.get("total_engines", 0)
 
-                        # Aggregate stats
-                        vt_total_detections += detections
-                        vt_total_engines += total_eng
+                    dl["vt_detections"] = detections
+                    dl["vt_total"] = total_eng
+                    dl["vt_link"] = vt_data.get("link", "")
+                    dl["vt_threat_label"] = vt_data.get("threat_label", "")
 
-                        # Track all scanned files (including clean files with 0 detections)
-                        all_scanned_files[shasum] = dl
+                    # Aggregate stats
+                    vt_total_detections += detections
+                    vt_total_engines += total_eng
 
-                        if detections > 0:
-                            vt_total_malicious += 1
+                    # Track all scanned files (including clean files with 0 detections)
+                    all_scanned_files[shasum] = dl
 
-                            # Track threat families
-                            threat_label = vt_result.get("threat_label", "")
-                            if threat_label:
-                                vt_threat_families.add(threat_label)
+                    if detections > 0:
+                        vt_total_malicious += 1
+
+                        # Track threat families
+                        threat_label = vt_data.get("threat_label", "")
+                        if threat_label:
+                            vt_threat_families.add(threat_label)
 
         # Calculate VirusTotal statistics
         vt_stats = {
