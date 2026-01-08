@@ -1868,57 +1868,28 @@ def downloads():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter)
+    # Use proper download aggregation method
+    if hasattr(session_parser, "get_downloads"):
+        # Multi-source mode - use aggregated downloads
+        print(f"[Dashboard] Using multi-source get_downloads (hours={hours})")
+        downloads_list = session_parser.get_downloads(hours=hours)
 
-    # Collect all downloads
-    all_downloads = []
-    for session in all_sessions.values():
-        for download in session["downloads"]:
-            download["session_id"] = session["id"]
-            download["src_ip"] = session["src_ip"]
-            all_downloads.append(download)
+        # Apply source filter if specified
+        if source_filter:
+            downloads_list = [dl for dl in downloads_list if dl.get("_source") == source_filter]
+    else:
+        # Single-source mode - use DataSource method
+        print(f"[Dashboard] Using single-source datasource.get_downloads (hours={hours})")
+        # Use the global datasource (which is automatically created for single-source mode)
+        from datasource import DataSource
 
-    # Deduplicate by shasum
-    unique_downloads = {}
-    for dl in all_downloads:
-        shasum = dl["shasum"]
-        if shasum not in unique_downloads:
-            unique_downloads[shasum] = dl
-            unique_downloads[shasum]["count"] = 1
-        else:
-            unique_downloads[shasum]["count"] += 1
+        # Get the mode from CONFIG
+        mode = CONFIG.get("dashboard_mode", "local")
+        api_base_url = CONFIG.get("dashboard_api_url", "http://cowrie-api:8000")
 
-    # Check which files exist on disk and get VT/YARA scores
-    download_path = CONFIG["download_path"]
-    for shasum, dl in unique_downloads.items():
-        file_path = os.path.join(download_path, shasum)
-        dl["exists"] = os.path.exists(file_path)
-        if dl["exists"]:
-            dl["size"] = os.path.getsize(file_path)
-        else:
-            dl["size"] = 0
-
-        # Get YARA matches and file type from cache
-        yara_result = yara_cache.get_result(shasum)
-        if yara_result:
-            if yara_result.get("matches"):
-                dl["yara_matches"] = yara_result["matches"]
-            if yara_result.get("file_type"):
-                dl["file_type"] = yara_result["file_type"]
-                dl["file_mime"] = yara_result.get("file_mime")
-                dl["file_category"] = yara_result.get("file_category")
-                dl["is_previewable"] = yara_result.get("is_previewable", False)
-
-        # Get VirusTotal score if scanner is available
-        if vt_scanner and shasum:
-            vt_result = vt_scanner.scan_file(shasum)
-            if vt_result:
-                dl["vt_detections"] = vt_result["detections"]
-                dl["vt_total"] = vt_result["total_engines"]
-                dl["vt_link"] = vt_result["link"]
-                dl["vt_threat_label"] = vt_result.get("threat_label", "")
-
-    downloads_list = sorted(unique_downloads.values(), key=lambda x: x["timestamp"], reverse=True)
+        datasource = DataSource(mode=mode, api_base_url=api_base_url if mode == "remote" else "http://cowrie-api:8000")
+        result = datasource.get_downloads(hours=hours, limit=1000, offset=0)
+        downloads_list = result.get("downloads", [])
 
     return render_template(
         "downloads.html",
