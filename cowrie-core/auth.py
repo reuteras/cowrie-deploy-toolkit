@@ -303,9 +303,7 @@ class UserDB:
     """
 
     def __init__(self) -> None:
-        self.userdb: dict[
-            tuple[Pattern[bytes] | bytes, Pattern[bytes] | bytes], bool
-        ] = OrderedDict()
+        self.userdb: dict[tuple[Pattern[bytes] | bytes, Pattern[bytes] | bytes], bool] = OrderedDict()
         self.load()
 
     def load(self) -> None:
@@ -334,9 +332,7 @@ class UserDB:
                 else:
                     self.adduser(login, password)
 
-    def checklogin(
-        self, thelogin: bytes, thepasswd: bytes, src_ip: str = "0.0.0.0"
-    ) -> bool:
+    def checklogin(self, thelogin: bytes, thepasswd: bytes, src_ip: str = "0.0.0.0") -> bool:
         for credentials, policy in self.userdb.items():
             login: bytes | Pattern[bytes]
             passwd: bytes | Pattern[bytes]
