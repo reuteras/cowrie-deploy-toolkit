@@ -257,12 +257,59 @@ class MultiSourceDataSource:
 
         return result
 
+    def get_all_sessions_from_source(self, source, hours: int) -> list:
+        """
+        Get ALL sessions from a single source using pagination.
+
+        Args:
+            source: HoneypotSource instance
+            hours: Time range in hours
+
+        Returns:
+            List of all sessions from this source
+        """
+        all_sessions = []
+        offset = 0
+        page_size = 1000
+
+        print(f"[MultiSource] Fetching all sessions from '{source.name}' (hours={hours})")
+
+        while True:
+            try:
+                result = source.datasource.get_sessions(
+                    hours=hours,
+                    limit=page_size,
+                    offset=offset
+                )
+
+                sessions = result.get("sessions", [])
+
+                # Tag sessions with source info
+                for session in sessions:
+                    session["_source"] = source.name
+                    session["_source_type"] = source.type
+
+                all_sessions.extend(sessions)
+                print(f"[MultiSource] '{source.name}': fetched {len(sessions)} sessions (offset={offset}, total={len(all_sessions)})")
+
+                # If we got fewer results than page size, we're done
+                if len(sessions) < page_size:
+                    break
+
+                offset += page_size
+
+            except Exception as e:
+                print(f"[MultiSource] Error fetching from '{source.name}' at offset {offset}: {e}")
+                break
+
+        print(f"[MultiSource] '{source.name}': finished with {len(all_sessions)} total sessions")
+        return all_sessions
+
     def parse_all(self, hours: int = 168, source_filter: Optional[str] = None) -> dict:
         """
         Get all sessions as a dict keyed by session ID (compatibility method).
 
-        This method maintains compatibility with routes that expect the old
-        SessionParser.parse_all() format (dict keyed by session ID).
+        Uses pagination to fetch ALL sessions from the time period, no limits.
 
         Args:
             hours: Time range in hours
@@ -271,24 +318,44 @@ class MultiSourceDataSource:
         Returns:
             Dict of sessions keyed by session ID
         """
-        # Use 1000 per source (API max limit)
-        # For multi-source, we'll get up to 1000 from each source
-        # and NOT apply the global limit truncation
-        per_source_limit = 1000
+        # Determine which sources to query
+        sources_to_query = self.sources
+        if source_filter and source_filter in self.sources:
+            sources_to_query = {source_filter: self.sources[source_filter]}
 
-        result = self.get_sessions(
-            hours=hours, limit=per_source_limit, offset=0, source_filter=source_filter, skip_global_limit=True
-        )
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
 
-        print(f"[MultiSource] parse_all: got {len(result.get('sessions', []))} sessions from get_sessions")
+        all_sessions_list = []
+
+        # Fetch ALL sessions from each source using pagination
+        max_workers = min(len(available_sources), MAX_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(self.get_all_sessions_from_source, source, hours): source
+                for source in available_sources.values()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    sessions = future.result(timeout=120)  # Longer timeout for pagination
+                    self.backoff.record_success(source.name)
+                    all_sessions_list.extend(sessions)
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching all sessions from '{source.name}': {e}")
+                    import traceback
+                    traceback.print_exc()
+                    self.backoff.record_failure(source.name)
+
+        print(f"[MultiSource] parse_all: got {len(all_sessions_list)} total sessions from all sources")
 
         # Convert list to dict keyed by session ID
         sessions_dict = {}
         skipped = 0
-        for session in result.get("sessions", []):
-            # Debug: Check what fields are in the first session
-            if len(sessions_dict) == 0 and session:
-                print(f"[MultiSource] Sample session keys: {list(session.keys())[:10]}")
+        for session in all_sessions_list:
 
             # Handle both 'id' and 'session_id' field names
             session_id = session.get("id") or session.get("session_id")

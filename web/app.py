@@ -1869,6 +1869,7 @@ def downloads():
         available_sources = list(session_parser.sources.keys())
 
     # Extract downloads from sessions (they include database metadata)
+    # parse_all() now uses pagination to fetch ALL sessions (no limits)
     all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter if source_filter else None)
 
     # Collect all downloads from sessions
