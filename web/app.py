@@ -1368,8 +1368,6 @@ def attack_map_page():
 def sessions():
     """Session listing page. Returns HTML immediately, data loaded via AJAX."""
     hours = request.args.get("hours", 168, type=int)
-    page = request.args.get("page", 1, type=int)
-    per_page = 50
     source_filter = request.args.get("source", "")
 
     # Get available sources for multi-honeypot mode
@@ -1377,66 +1375,20 @@ def sessions():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Fetch sessions with limit for performance (allows filtering on ~10k most recent)
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-
-    # Sort by start time (most recent first)
-    sorted_sessions = sorted(all_sessions.values(), key=lambda x: x["start_time"] or "", reverse=True)
-
-    # Filter options
-    ip_filter = request.args.get("ip", "")
-    country_filter = request.args.get("country", "")
-    credentials_filter = request.args.get("credentials", "")
-    client_version_filter = request.args.get("client_version", "")
-    command_filter = request.args.get("command", "")
-    has_commands = request.args.get("has_commands", "")
-    has_tty = request.args.get("has_tty", "")
-    successful_login = request.args.get("successful_login", "")
-
-    if ip_filter:
-        sorted_sessions = [s for s in sorted_sessions if s["src_ip"] == ip_filter]
-    if country_filter:
-        sorted_sessions = [s for s in sorted_sessions if s.get("geo", {}).get("country") == country_filter]
-    if credentials_filter:
-        sorted_sessions = [
-            s for s in sorted_sessions if f"{s.get('username', '')}:{s.get('password', '')}" == credentials_filter
-        ]
-    if client_version_filter:
-        sorted_sessions = [s for s in sorted_sessions if s.get("client_version") == client_version_filter]
-    if command_filter:
-        sorted_sessions = [
-            s for s in sorted_sessions if any(cmd["command"] == command_filter for cmd in s.get("commands", []))
-        ]
-    if has_commands == "1":
-        sorted_sessions = [s for s in sorted_sessions if s.get("commands")]
-    if has_tty == "1":
-        sorted_sessions = [s for s in sorted_sessions if s.get("tty_log")]
-    if successful_login == "1":
-        sorted_sessions = [s for s in sorted_sessions if s.get("login_success") is True]
-
-    # Paginate
-    total = len(sorted_sessions)
-    start = (page - 1) * per_page
-    end = start + per_page
-    paginated = sorted_sessions[start:end]
-
+    # Return page immediately with loading state - data loaded via AJAX
     return render_template(
         "sessions.html",
-        sessions=paginated,
-        page=page,
-        per_page=per_page,
-        total=total,
         hours=hours,
         source_filter=source_filter,
         available_sources=available_sources,
-        ip_filter=ip_filter,
-        country_filter=country_filter,
-        credentials_filter=credentials_filter,
-        client_version_filter=client_version_filter,
-        command_filter=command_filter,
-        has_commands=has_commands,
-        has_tty=has_tty,
-        successful_login=successful_login,
+        ip_filter=request.args.get("ip", ""),
+        country_filter=request.args.get("country", ""),
+        credentials_filter=request.args.get("credentials", ""),
+        client_version_filter=request.args.get("client_version", ""),
+        command_filter=request.args.get("command", ""),
+        has_commands=request.args.get("has_commands", ""),
+        has_tty=request.args.get("has_tty", ""),
+        successful_login=request.args.get("successful_login", ""),
         config=CONFIG,
     )
 
