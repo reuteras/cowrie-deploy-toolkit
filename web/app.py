@@ -1946,7 +1946,7 @@ def downloads_data():
         dl["exists"] = os.path.exists(file_path)
 
         # Get VT and YARA data from cache
-        vt_data = vt_cache.get(shasum)
+        vt_data = cache_db.get(shasum) if "cache_db" in globals() else None
         if vt_data:
             dl["vt_detections"] = vt_data.get("detections", 0)
             dl["vt_total"] = vt_data.get("total", 0)
