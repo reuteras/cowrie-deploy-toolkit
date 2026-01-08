@@ -278,11 +278,7 @@ class MultiSourceDataSource:
 
         while True:
             try:
-                result = source.datasource.get_sessions(
-                    hours=hours,
-                    limit=page_size,
-                    offset=offset
-                )
+                result = source.datasource.get_sessions(hours=hours, limit=page_size, offset=offset)
 
                 sessions = result.get("sessions", [])
 
@@ -292,7 +288,9 @@ class MultiSourceDataSource:
                     session["_source_type"] = source.type
 
                 all_sessions.extend(sessions)
-                print(f"[MultiSource] '{source.name}': fetched {len(sessions)} sessions (offset={offset}, total={len(all_sessions)})")
+                print(
+                    f"[MultiSource] '{source.name}': fetched {len(sessions)} sessions (offset={offset}, total={len(all_sessions)})"
+                )
 
                 # Check if we've reached the limit
                 if max_sessions and len(all_sessions) >= max_sessions:
@@ -313,7 +311,9 @@ class MultiSourceDataSource:
         print(f"[MultiSource] '{source.name}': finished with {len(all_sessions)} total sessions")
         return all_sessions
 
-    def parse_all(self, hours: int = 168, source_filter: Optional[str] = None, max_sessions: Optional[int] = None) -> dict:
+    def parse_all(
+        self, hours: int = 168, source_filter: Optional[str] = None, max_sessions: Optional[int] = None
+    ) -> dict:
         """
         Get all sessions as a dict keyed by session ID (compatibility method).
 
@@ -356,6 +356,7 @@ class MultiSourceDataSource:
                 except Exception as e:
                     print(f"[MultiSource] Error fetching all sessions from '{source.name}': {e}")
                     import traceback
+
                     traceback.print_exc()
                     self.backoff.record_failure(source.name)
 
@@ -365,7 +366,6 @@ class MultiSourceDataSource:
         sessions_dict = {}
         skipped = 0
         for session in all_sessions_list:
-
             # Handle both 'id' and 'session_id' field names
             session_id = session.get("id") or session.get("session_id")
             if session_id:

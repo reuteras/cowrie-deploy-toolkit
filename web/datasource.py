@@ -170,13 +170,7 @@ class DataSource:
         print(f"[DataSource] Fetching all sessions for {hours} hours using pagination (page_size={page_size})")
 
         while True:
-            result = self.get_sessions(
-                hours=hours,
-                limit=page_size,
-                offset=offset,
-                src_ip=src_ip,
-                username=username
-            )
+            result = self.get_sessions(hours=hours, limit=page_size, offset=offset, src_ip=src_ip, username=username)
 
             sessions = result.get("sessions", [])
             all_sessions.extend(sessions)

@@ -1953,9 +1953,8 @@ def ips_data():
     city_filter = request.args.get("city", "")
 
     # Get available sources for multi-honeypot mode
-    available_sources = []
     if hasattr(session_parser, "sources"):
-        available_sources = list(session_parser.sources.keys())
+        list(session_parser.sources.keys())
 
     # Fetch sessions with limit for performance
     all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
@@ -1971,7 +1970,7 @@ def ips_data():
         country = geo.get("country", "Unknown")
         city = geo.get("city", "Unknown")
         asn = geo.get("asn")
-        asn_org = geo.get("asn_org", "-")
+        geo.get("asn_org", "-")
 
         # Apply filters
         if asn_filter and str(asn) != asn_filter.replace("AS", ""):
