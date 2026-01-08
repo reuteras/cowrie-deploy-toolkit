@@ -3,13 +3,28 @@
 {% block title %}All ASNs - Cowrie Honeypot{% endblock %}
 
 {% block content %}
+<style>
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+.loading-state { text-align: center; padding: 60px 20px; color: #666; }
+</style>
+
 <div class="page">
     <div class="page-header">
-        <h1>All Attacking ASNs</h1>
+        <h1>All Autonomous Systems (ASNs)</h1>
         <div class="header-actions">
             <div class="time-filter">
+                {% if available_sources %}
+                <label>Source:</label>
+                <select id="source-filter" onchange="reloadPage()">
+                    <option value="" {% if not source_filter %}selected{% endif %}>All Honeypots</option>
+                    {% for source_name in available_sources %}
+                    <option value="{{ source_name }}" {% if source_filter == source_name %}selected{% endif %}>{{ source_name }}</option>
+                    {% endfor %}
+                </select>
+                {% endif %}
                 <label>Time range:</label>
-                <select onchange="window.location.href='?hours=' + this.value">
+                <select id="hours-filter" onchange="reloadPage()">
                     <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
                     <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
                     <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
@@ -20,37 +35,78 @@
         </div>
     </div>
 
-    <div class="info-box" style="margin: 20px 0;">
-        <p>{{ asns | length }} unique ASNs detected</p>
+    <div id="info-box" class="info-box" style="margin: 20px 0; display: none;">
+        <p><span id="count">0</span> autonomous systems detected</p>
     </div>
 
-    <table class="data-table sortable">
+    <div id="loading-state" class="loading-state">
+        <div class="spinner"></div>
+        <p style="font-size: 16px; font-weight: 500;">Loading ASNs...</p>
+    </div>
+
+    <div id="error-state" class="loading-state" style="display:none; color: #d32f2f;">
+        <p style="font-size: 16px; font-weight: 500;">⚠️ Failed to load</p>
+        <p style="font-size: 12px;" id="error-message"></p>
+        <button onclick="loadData()" style="margin-top: 15px; padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button>
+    </div>
+
+    <table id="data-table" class="data-table sortable" style="display:none;">
         <thead>
-            <tr>
-                <th>Rank</th>
-                <th>ASN</th>
-                <th>Organization</th>
-                <th>Sessions</th>
-                <th>Actions</th>
-            </tr>
+            <tr><th>Rank</th><th>ASN</th><th>Organization</th><th>Sessions</th><th>Actions</th></tr>
         </thead>
-        <tbody>
-            {% for asn_data in asns %}
-            <tr>
-                <td>{{ loop.index }}</td>
-                <td><code>{{ asn_data.asn }}</code></td>
-                <td>{{ asn_data.asn_org }}</td>
-                <td>{{ asn_data.count }}</td>
-                <td>
-                    <a href="{{ url_for('ip_list', asn=asn_data.asn, hours=hours) }}" class="btn btn-sm">View IPs</a>
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="5" class="no-data">No ASN data recorded</td>
-            </tr>
-            {% endfor %}
-        </tbody>
+        <tbody id="table-body"></tbody>
     </table>
 </div>
+
+<script>
+function reloadPage() {
+    const source = document.getElementById('source-filter') ? document.getElementById('source-filter').value : '';
+    const hours = document.getElementById('hours-filter').value;
+    let url = '?hours=' + hours;
+    if (source) url += '&source=' + encodeURIComponent(source);
+    window.location.href = url;
+}
+
+function loadData() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hours = urlParams.get('hours') || '{{ hours }}';
+    const source = urlParams.get('source') || '{{ source_filter }}';
+    document.getElementById('loading-state').style.display = 'block';
+    document.getElementById('error-state').style.display = 'none';
+    document.getElementById('data-table').style.display = 'none';
+    document.getElementById('info-box').style.display = 'none';
+    let apiUrl = '/api/asns-data?hours=' + hours;
+    if (source) apiUrl += '&source=' + encodeURIComponent(source);
+    fetch(apiUrl)
+        .then(response => { if (!response.ok) throw new Error('Server returned ' + response.status); return response.json(); })
+        .then(data => {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('info-box').style.display = 'block';
+            document.getElementById('data-table').style.display = 'table';
+            document.getElementById('count').textContent = data.total || 0;
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+            if (!data.asns || data.asns.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="no-data">No ASNs recorded</td></tr>';
+                return;
+            }
+            data.asns.forEach((item, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + (index + 1) + '</td>' +
+                    '<td><code>' + item.asn + '</code></td>' +
+                    '<td>' + item.asn_org + '</td>' +
+                    '<td>' + item.count + '</td>' +
+                    '<td><a href="/ips?asn=' + encodeURIComponent(item.asn) + '&hours=' + hours + '" class="btn btn-sm">View IPs</a></td>';
+                tbody.appendChild(row);
+            });
+        })
+        .catch(error => {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('error-state').style.display = 'block';
+            document.getElementById('error-message').textContent = error.message;
+        });
+}
+document.addEventListener('DOMContentLoaded', loadData);
+</script>
 {% endblock %}
