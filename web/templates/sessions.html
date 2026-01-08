@@ -146,7 +146,13 @@ function truncateHash(hash) {
     return hash.substring(0, 12) + '...';
 }
 
+let isLoading = false;
+
 function loadSessions(page = 1) {
+    // Prevent multiple concurrent requests
+    if (isLoading) return;
+    isLoading = true;
+
     const urlParams = new URLSearchParams(window.location.search);
     const hours = urlParams.get('hours') || '{{ hours }}';
     const source = urlParams.get('source') || '{{ source_filter }}';
@@ -266,6 +272,9 @@ function loadSessions(page = 1) {
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('error-state').style.display = 'block';
             document.getElementById('error-message').textContent = error.message;
+        })
+        .finally(() => {
+            isLoading = false;
         });
 }
 
