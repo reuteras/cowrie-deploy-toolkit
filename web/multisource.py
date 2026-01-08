@@ -511,6 +511,7 @@ class MultiSourceDataSource:
                 "avg_detection_rate": 0.0,
                 "total_threat_families": set(),
             },
+            "top_malicious_downloads": [],  # List of malicious downloads with VT data
             "source_stats": {},  # Per-source breakdown
             "source_errors": {},
         }
@@ -648,6 +649,13 @@ class MultiSourceDataSource:
                     aggregated["vt_stats"]["total_scanned"] += vt.get("total_scanned", 0)
                     aggregated["vt_stats"]["total_malicious"] += vt.get("total_malicious", 0)
 
+                    # Merge top malicious downloads
+                    for dl in stats.get("top_malicious_downloads", []):
+                        # Add source tag to track which source this download came from
+                        dl_copy = dl.copy()
+                        dl_copy["_source"] = source.name
+                        aggregated["top_malicious_downloads"].append(dl_copy)
+
                 except Exception as e:
                     print(f"[MultiSource] Error fetching stats from '{source.name}': {e}")
                     aggregated["source_errors"][source.name] = str(e)
@@ -694,6 +702,24 @@ class MultiSourceDataSource:
                     ip_dict[ip]["geo"] = new_geo
 
         aggregated["ip_list"] = sorted(ip_dict.values(), key=lambda x: x.get("count", 0), reverse=True)
+
+        # Deduplicate and sort top malicious downloads by SHA256 and VT detections
+        dl_dict = {}
+        for dl in aggregated["top_malicious_downloads"]:
+            shasum = dl.get("shasum")
+            if shasum:
+                if shasum not in dl_dict:
+                    dl_dict[shasum] = dl
+                else:
+                    # Keep the one with higher VT detections
+                    existing_detections = dl_dict[shasum].get("vt_detections", 0)
+                    new_detections = dl.get("vt_detections", 0)
+                    if new_detections > existing_detections:
+                        dl_dict[shasum] = dl
+
+        aggregated["top_malicious_downloads"] = sorted(
+            dl_dict.values(), key=lambda x: x.get("vt_detections", 0), reverse=True
+        )[:10]
 
         aggregated["top_countries"] = sorted(aggregated["top_countries"].items(), key=lambda x: x[1], reverse=True)[:10]
         aggregated["top_credentials"] = sorted(aggregated["top_credentials"].items(), key=lambda x: x[1], reverse=True)[
