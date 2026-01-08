@@ -257,7 +257,7 @@ class MultiSourceDataSource:
 
         return result
 
-    def parse_all(self, hours: int = 168, source_filter: Optional[str] = None) -> dict:
+    def parse_all(self, hours: int = 168, source_filter: Optional[str] = None, limit: int = 10000) -> dict:
         """
         Get all sessions as a dict keyed by session ID (compatibility method).
 
@@ -267,28 +267,24 @@ class MultiSourceDataSource:
         Args:
             hours: Time range in hours
             source_filter: Filter by specific source name (None = all sources)
+            limit: Maximum sessions per source (default 10000)
 
         Returns:
             Dict of sessions keyed by session ID
         """
-        # Use 1000 per source (API max limit)
-        # For multi-source, we'll get up to 1000 from each source
+        # Fetch sessions with configurable limit per source
+        # For multi-source, we'll get up to 'limit' from each source
         # and NOT apply the global limit truncation
-        per_source_limit = 1000
-
         result = self.get_sessions(
-            hours=hours, limit=per_source_limit, offset=0, source_filter=source_filter, skip_global_limit=True
+            hours=hours, limit=limit, offset=0, source_filter=source_filter, skip_global_limit=True
         )
 
-        print(f"[MultiSource] parse_all: got {len(result.get('sessions', []))} sessions from get_sessions")
+        print(f"[MultiSource] parse_all: got {len(result.get('sessions', []))} sessions (limit={limit} per source)")
 
         # Convert list to dict keyed by session ID
         sessions_dict = {}
         skipped = 0
         for session in result.get("sessions", []):
-            # Debug: Check what fields are in the first session
-            if len(sessions_dict) == 0 and session:
-                print(f"[MultiSource] Sample session keys: {list(session.keys())[:10]}")
 
             # Handle both 'id' and 'session_id' field names
             session_id = session.get("id") or session.get("session_id")
