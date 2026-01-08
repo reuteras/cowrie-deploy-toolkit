@@ -1366,7 +1366,7 @@ def attack_map_page():
 
 @app.route("/sessions")
 def sessions():
-    """Session listing page."""
+    """Session listing page."" - returns HTML immediately, data loaded via AJAX.""
     hours = request.args.get("hours", 168, type=int)
     page = request.args.get("page", 1, type=int)
     per_page = 50
@@ -1377,66 +1377,20 @@ def sessions():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Fetch sessions with limit for performance (allows filtering on ~10k most recent)
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=10000)
-
-    # Sort by start time (most recent first)
-    sorted_sessions = sorted(all_sessions.values(), key=lambda x: x["start_time"] or "", reverse=True)
-
-    # Filter options
-    ip_filter = request.args.get("ip", "")
-    country_filter = request.args.get("country", "")
-    credentials_filter = request.args.get("credentials", "")
-    client_version_filter = request.args.get("client_version", "")
-    command_filter = request.args.get("command", "")
-    has_commands = request.args.get("has_commands", "")
-    has_tty = request.args.get("has_tty", "")
-    successful_login = request.args.get("successful_login", "")
-
-    if ip_filter:
-        sorted_sessions = [s for s in sorted_sessions if s["src_ip"] == ip_filter]
-    if country_filter:
-        sorted_sessions = [s for s in sorted_sessions if s.get("geo", {}).get("country") == country_filter]
-    if credentials_filter:
-        sorted_sessions = [
-            s for s in sorted_sessions if f"{s.get('username', '')}:{s.get('password', '')}" == credentials_filter
-        ]
-    if client_version_filter:
-        sorted_sessions = [s for s in sorted_sessions if s.get("client_version") == client_version_filter]
-    if command_filter:
-        sorted_sessions = [
-            s for s in sorted_sessions if any(cmd["command"] == command_filter for cmd in s.get("commands", []))
-        ]
-    if has_commands == "1":
-        sorted_sessions = [s for s in sorted_sessions if s.get("commands")]
-    if has_tty == "1":
-        sorted_sessions = [s for s in sorted_sessions if s.get("tty_log")]
-    if successful_login == "1":
-        sorted_sessions = [s for s in sorted_sessions if s.get("login_success") is True]
-
-    # Paginate
-    total = len(sorted_sessions)
-    start = (page - 1) * per_page
-    end = start + per_page
-    paginated = sorted_sessions[start:end]
-
+    # Return page immediately with loading state - data loaded via AJAX
     return render_template(
         "sessions.html",
-        sessions=paginated,
-        page=page,
-        per_page=per_page,
-        total=total,
         hours=hours,
         source_filter=source_filter,
         available_sources=available_sources,
-        ip_filter=ip_filter,
-        country_filter=country_filter,
-        credentials_filter=credentials_filter,
-        client_version_filter=client_version_filter,
-        command_filter=command_filter,
-        has_commands=has_commands,
-        has_tty=has_tty,
-        successful_login=successful_login,
+        ip_filter=request.args.get("ip", ""),
+        country_filter=request.args.get("country", ""),
+        credentials_filter=request.args.get("credentials", ""),
+        client_version_filter=request.args.get("client_version", ""),
+        command_filter=request.args.get("command", ""),
+        has_commands=request.args.get("has_commands", ""),
+        has_tty=request.args.get("has_tty", ""),
+        successful_login=request.args.get("successful_login", ""),
         config=CONFIG,
     )
 
@@ -1957,6 +1911,228 @@ def downloads_data():
     })
 
 
+@app.route("/api/ips-data")
+def ips_data():
+    """API endpoint for IPs data - called via AJAX from IPs page."""
+    hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
+    asn_filter = request.args.get("asn", "")
+    country_filter = request.args.get("country", "")
+    city_filter = request.args.get("city", "")
+
+    # Get stats (IPs returned without API limit after PR #116)
+    stats = session_parser.get_stats(hours=hours, source_filter=source_filter)
+
+    # Apply filters
+    filtered_ips = stats["ip_list"]
+    if asn_filter:
+        filtered_ips = [
+            ip for ip in filtered_ips if ip.get("geo", {}).get("asn") and f"AS{ip['geo']['asn']}" == asn_filter
+        ]
+    if country_filter:
+        filtered_ips = [ip for ip in filtered_ips if ip.get("geo", {}).get("country") == country_filter]
+    if city_filter:
+        filtered_ips = [ip for ip in filtered_ips if ip.get("geo", {}).get("city") == city_filter]
+
+    return jsonify({
+        "ips": filtered_ips,
+        "count": len(filtered_ips)
+    })
+
+
+@app.route("/api/sessions-data")
+def sessions_data():
+    """API endpoint for sessions data - called via AJAX from sessions page."""
+    hours = request.args.get("hours", 168, type=int)
+    page = request.args.get("page", 1, type=int)
+    per_page = 50
+    source_filter = request.args.get("source", "")
+
+    # Fetch sessions with limit for performance
+    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=10000)
+
+    # Sort by start time (most recent first)
+    sorted_sessions = sorted(all_sessions.values(), key=lambda x: x["start_time"] or "", reverse=True)
+
+    # Apply filters
+    ip_filter = request.args.get("ip", "")
+    country_filter = request.args.get("country", "")
+    credentials_filter = request.args.get("credentials", "")
+    client_version_filter = request.args.get("client_version", "")
+    command_filter = request.args.get("command", "")
+    has_commands = request.args.get("has_commands", "")
+    has_tty = request.args.get("has_tty", "")
+    successful_login = request.args.get("successful_login", "")
+
+    if ip_filter:
+        sorted_sessions = [s for s in sorted_sessions if s["src_ip"] == ip_filter]
+    if country_filter:
+        sorted_sessions = [s for s in sorted_sessions if s.get("geo", {}).get("country") == country_filter]
+    if credentials_filter:
+        sorted_sessions = [
+            s for s in sorted_sessions if f"{s.get('username', '')}:{s.get('password', '')}" == credentials_filter
+        ]
+    if client_version_filter:
+        sorted_sessions = [s for s in sorted_sessions if s.get("client_version") == client_version_filter]
+    if command_filter:
+        sorted_sessions = [
+            s for s in sorted_sessions if any(cmd["command"] == command_filter for cmd in s.get("commands", []))
+        ]
+    if has_commands == "1":
+        sorted_sessions = [s for s in sorted_sessions if s.get("commands")]
+    if has_tty == "1":
+        sorted_sessions = [s for s in sorted_sessions if s.get("tty_log")]
+    if successful_login == "1":
+        sorted_sessions = [s for s in sorted_sessions if s.get("login_success") is True]
+
+    # Paginate
+    total = len(sorted_sessions)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated = sorted_sessions[start:end]
+
+    return jsonify({
+        "sessions": paginated,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": (total + per_page - 1) // per_page
+    })
+
+
+@app.route("/api/countries-data")
+def countries_data():
+    """API endpoint for countries data - called via AJAX from countries page."""
+    hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
+
+    # Get all countries
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
+    country_counter = Counter()
+    for session in sessions.values():
+        if session.get("src_ip"):
+            country = session.get("geo", {}).get("country", "Unknown")
+            country_counter[country] += 1
+
+    all_countries = country_counter.most_common()
+
+    return jsonify({
+        "countries": [{"country": c, "count": count} for c, count in all_countries],
+        "total": len(all_countries)
+    })
+
+
+@app.route("/api/credentials-data")
+def credentials_data():
+    """API endpoint for credentials data - called via AJAX from credentials page."""
+    hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
+
+    # Get all credentials
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
+    credential_counter = Counter()
+    successful_credentials = set()
+    for session in sessions.values():
+        if session["username"] and session["password"]:
+            cred = f"{session['username']}:{session['password']}"
+            credential_counter[cred] += 1
+            if session.get("login_success"):
+                successful_credentials.add(cred)
+
+    all_credentials = credential_counter.most_common()
+
+    return jsonify({
+        "credentials": [{"credential": c, "count": count} for c, count in all_credentials],
+        "successful": list(successful_credentials),
+        "total": len(all_credentials)
+    })
+
+
+@app.route("/api/clients-data")
+def clients_data():
+    """API endpoint for SSH clients data - called via AJAX from clients page."""
+    hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
+
+    # Get all client versions
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
+    client_version_counter = Counter()
+    for session in sessions.values():
+        if session.get("client_version"):
+            client_version_counter[session["client_version"]] += 1
+
+    all_clients = client_version_counter.most_common()
+
+    return jsonify({
+        "clients": [{"client": c, "count": count} for c, count in all_clients],
+        "total": len(all_clients)
+    })
+
+
+@app.route("/api/asns-data")
+def asns_data():
+    """API endpoint for ASNs data - called via AJAX from ASNs page."""
+    hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
+
+    # Get all ASNs
+    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
+    asn_counter = Counter()
+    asn_details = {}
+    for session in sessions.values():
+        if session.get("src_ip"):
+            asn = session.get("geo", {}).get("asn")
+            asn_org = session.get("geo", {}).get("asn_org")
+            if asn:
+                asn_key = f"AS{asn}"
+                asn_counter[asn_key] += 1
+                if asn_key not in asn_details:
+                    asn_details[asn_key] = {"asn_number": asn, "asn_org": asn_org or "Unknown Organization"}
+
+    # Build full ASNs list with details
+    all_asns = []
+    for asn_key, count in asn_counter.most_common():
+        details = asn_details.get(asn_key, {})
+        all_asns.append({
+            "asn": asn_key,
+            "asn_number": details.get("asn_number", 0),
+            "asn_org": details.get("asn_org", "Unknown"),
+            "count": count,
+        })
+
+    return jsonify({
+        "asns": all_asns,
+        "total": len(all_asns)
+    })
+
+
+@app.route("/api/commands-data")
+def commands_data():
+    """API endpoint for commands data - called via AJAX from commands page."""
+    hours = request.args.get("hours", 168, type=int)
+    unique_only = request.args.get("unique", "")
+    source_filter = request.args.get("source", "")
+
+    all_commands = session_parser.get_all_commands(hours=hours, source_filter=source_filter)
+
+    # Filter to unique commands if requested
+    if unique_only == "1":
+        seen_commands = set()
+        unique_commands = []
+        for cmd in all_commands:
+            if cmd["command"] not in seen_commands:
+                seen_commands.add(cmd["command"])
+                unique_commands.append(cmd)
+        all_commands = unique_commands
+
+    return jsonify({
+        "commands": all_commands,
+        "count": len(all_commands)
+    })
+
+
+
+
 @app.route("/download/<shasum>.zip")
 def download_zip(shasum: str):
     """Download a malware sample as a password-protected ZIP file.
@@ -2121,7 +2297,7 @@ def api_download_content(shasum: str):
 
 @app.route("/commands")
 def commands():
-    """Commands listing page."""
+    """Commands listing page - returns HTML immediately, data loaded via AJAX."""
     hours = request.args.get("hours", 168, type=int)
     unique_only = request.args.get("unique", "")
     source_filter = request.args.get("source", "")
@@ -2131,21 +2307,9 @@ def commands():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    all_commands = session_parser.get_all_commands(hours=hours, source_filter=source_filter)
-
-    # Filter to unique commands if requested
-    if unique_only == "1":
-        seen_commands = set()
-        unique_commands = []
-        for cmd in all_commands:
-            if cmd["command"] not in seen_commands:
-                seen_commands.add(cmd["command"])
-                unique_commands.append(cmd)
-        all_commands = unique_commands
-
+    # Return page immediately with loading state - data loaded via AJAX
     return render_template(
         "commands.html",
-        commands=all_commands,
         hours=hours,
         unique=unique_only,
         source_filter=source_filter,
@@ -2156,7 +2320,7 @@ def commands():
 
 @app.route("/ips")
 def ip_list():
-    """IP address listing page."""
+    """IP address listing page.""" - returns HTML immediately, data loaded via AJAX."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -2165,28 +2329,13 @@ def ip_list():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Get stats (IPs now returned without API limit after PR #116)
-    stats = session_parser.get_stats(hours=hours, source_filter=source_filter)
-
-    # Get filter parameters
     asn_filter = request.args.get("asn", "")
     country_filter = request.args.get("country", "")
     city_filter = request.args.get("city", "")
 
-    # Apply filters
-    filtered_ips = stats["ip_list"]
-    if asn_filter:
-        filtered_ips = [
-            ip for ip in filtered_ips if ip.get("geo", {}).get("asn") and f"AS{ip['geo']['asn']}" == asn_filter
-        ]
-    if country_filter:
-        filtered_ips = [ip for ip in filtered_ips if ip.get("geo", {}).get("country") == country_filter]
-    if city_filter:
-        filtered_ips = [ip for ip in filtered_ips if ip.get("geo", {}).get("city") == city_filter]
-
+    # Return page immediately with loading state - data loaded via AJAX
     return render_template(
         "ips.html",
-        ips=filtered_ips,
         hours=hours,
         source_filter=source_filter,
         available_sources=available_sources,
@@ -2199,7 +2348,7 @@ def ip_list():
 
 @app.route("/countries")
 def countries():
-    """All countries listing page."""
+    """All countries listing page - returns HTML immediately, data loaded via AJAX."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -2208,20 +2357,9 @@ def countries():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Get all countries (not just top 10)
-    # Limit to 5000 most recent sessions per source for performance
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
-    country_counter = Counter()
-    for session in sessions.values():
-        if session.get("src_ip"):
-            country = session.get("geo", {}).get("country", "Unknown")
-            country_counter[country] += 1
-
-    all_countries = country_counter.most_common()
-
+    # Return page immediately with loading state - data loaded via AJAX
     return render_template(
         "countries.html",
-        countries=all_countries,
         hours=hours,
         source_filter=source_filter,
         available_sources=available_sources,
@@ -2231,7 +2369,7 @@ def countries():
 
 @app.route("/credentials")
 def credentials():
-    """All credentials listing page."""
+    """All credentials listing page - returns HTML immediately, data loaded via AJAX."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -2240,24 +2378,9 @@ def credentials():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Get all credentials (not just top 10)
-    # Limit to 5000 most recent sessions per source for performance
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
-    credential_counter = Counter()
-    successful_credentials = set()
-    for session in sessions.values():
-        if session["username"] and session["password"]:
-            cred = f"{session['username']}:{session['password']}"
-            credential_counter[cred] += 1
-            if session.get("login_success"):
-                successful_credentials.add(cred)
-
-    all_credentials = credential_counter.most_common()
-
+    # Return page immediately with loading state - data loaded via AJAX
     return render_template(
         "credentials.html",
-        credentials=all_credentials,
-        successful_credentials=successful_credentials,
         hours=hours,
         source_filter=source_filter,
         available_sources=available_sources,
@@ -2267,7 +2390,7 @@ def credentials():
 
 @app.route("/clients")
 def clients():
-    """All SSH clients listing page."""
+    """All SSH clients listing page - returns HTML immediately, data loaded via AJAX."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -2276,19 +2399,9 @@ def clients():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Get all client versions (not just top 10)
-    # Limit to 5000 most recent sessions per source for performance
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
-    client_version_counter = Counter()
-    for session in sessions.values():
-        if session.get("client_version"):
-            client_version_counter[session["client_version"]] += 1
-
-    all_clients = client_version_counter.most_common()
-
+    # Return page immediately with loading state - data loaded via AJAX
     return render_template(
         "clients.html",
-        clients=all_clients,
         hours=hours,
         source_filter=source_filter,
         available_sources=available_sources,
@@ -2298,7 +2411,7 @@ def clients():
 
 @app.route("/asns")
 def asns():
-    """All ASNs listing page."""
+    """All ASNs listing page - returns HTML immediately, data loaded via AJAX."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -2307,37 +2420,9 @@ def asns():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Get all ASNs (not just top 10)
-    # Limit to 5000 most recent sessions per source for performance
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=5000)
-    asn_counter = Counter()
-    asn_details = {}
-    for session in sessions.values():
-        if session.get("src_ip"):
-            asn = session.get("geo", {}).get("asn")
-            asn_org = session.get("geo", {}).get("asn_org")
-            if asn:
-                asn_key = f"AS{asn}"
-                asn_counter[asn_key] += 1
-                if asn_key not in asn_details:
-                    asn_details[asn_key] = {"asn_number": asn, "asn_org": asn_org or "Unknown Organization"}
-
-    # Build full ASNs list with details
-    all_asns = []
-    for asn_key, count in asn_counter.most_common():
-        details = asn_details.get(asn_key, {})
-        all_asns.append(
-            {
-                "asn": asn_key,
-                "asn_number": details.get("asn_number", 0),
-                "asn_org": details.get("asn_org", "Unknown"),
-                "count": count,
-            }
-        )
-
+    # Return page immediately with loading state - data loaded via AJAX
     return render_template(
         "asns.html",
-        asns=all_asns,
         hours=hours,
         source_filter=source_filter,
         available_sources=available_sources,
