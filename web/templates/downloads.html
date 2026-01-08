@@ -3,18 +3,27 @@
 {% block title %}Downloads - Cowrie Honeypot{% endblock %}
 
 {% block content %}
-<!-- Loading indicator (hidden once page loads) -->
-<div id="loading-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;">
-    <div style="background: white; padding: 30px; border-radius: 8px; text-align: center;">
-        <div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px;"></div>
-        <p style="margin: 0; font-size: 16px;">Loading download data...</p>
-        <p style="margin: 5px 0 0; font-size: 12px; color: #666;">This may take a few seconds</p>
-    </div>
-</div>
 <style>
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+.spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 15px;
+}
+.loading-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #666;
+}
+.loading-state p {
+    margin: 10px 0;
 }
 </style>
 
@@ -24,7 +33,7 @@
         <div class="time-filter">
             {% if available_sources %}
             <label>Source:</label>
-            <select id="source-filter" onchange="updateFilters()">
+            <select id="source-filter" onchange="reloadPage()">
                 <option value="" {% if not source_filter %}selected{% endif %}>All Honeypots</option>
                 {% for source_name in available_sources %}
                 <option value="{{ source_name }}" {% if source_filter == source_name %}selected{% endif %}>{{ source_name }}</option>
@@ -32,7 +41,7 @@
             </select>
             {% endif %}
             <label>Time range:</label>
-            <select id="hours-filter" onchange="updateFilters()">
+            <select id="hours-filter" onchange="reloadPage()">
                 <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
                 <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48 hours</option>
                 <option value="168" {% if hours == 168 %}selected{% endif %}>Last 7 days</option>
@@ -41,33 +50,28 @@
         </div>
     </div>
 
-    <script>
-    function updateFilters() {
-        // Show loading overlay while navigating
-        document.getElementById('loading-overlay').style.display = 'flex';
-        const source = document.getElementById('source-filter') ? document.getElementById('source-filter').value : '';
-        const hours = document.getElementById('hours-filter').value;
-        let url = '?hours=' + hours;
-        if (source) {
-            url += '&source=' + encodeURIComponent(source);
-        }
-        window.location.href = url;
-    }
-
-    // Show loading indicator on any navigation
-    window.addEventListener('beforeunload', function() {
-        document.getElementById('loading-overlay').style.display = 'flex';
-    });
-    </script>
-
-    <div class="downloads-info">
-        <p>{{ downloads | length }} unique files downloaded</p>
+    <div id="downloads-info" class="downloads-info" style="display:none;">
+        <p><span id="downloads-count">0</span> unique files downloaded</p>
         <div class="alert alert-info" style="margin-top: 10px; padding: 10px; background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; color: #0c5460;">
             <strong>Download Protection:</strong> Files are available as password-protected ZIP archives. Password: <code>infected</code>
         </div>
     </div>
 
-    <table class="data-table downloads-table sortable">
+    <!-- Loading state (shown while fetching data) -->
+    <div id="loading-state" class="loading-state">
+        <div class="spinner"></div>
+        <p style="font-size: 16px; font-weight: 500;">Loading download data...</p>
+        <p style="font-size: 12px;">This may take a few seconds</p>
+    </div>
+
+    <!-- Error state (shown if fetch fails) -->
+    <div id="error-state" class="loading-state" style="display:none; color: #d32f2f;">
+        <p style="font-size: 16px; font-weight: 500;">⚠️ Failed to load downloads</p>
+        <p style="font-size: 12px;" id="error-message"></p>
+        <button onclick="loadDownloads()" style="margin-top: 15px; padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button>
+    </div>
+
+    <table id="downloads-table" class="data-table downloads-table sortable" style="display:none;">
         <thead>
             <tr>
                 <th>SHA256</th>
@@ -81,108 +85,190 @@
                 <th>Actions</th>
             </tr>
         </thead>
-        <tbody>
-            {% for dl in downloads %}
-            <tr>
-                <td>
-                    {% if dl.exists %}
-                    <a href="{{ url_for('download_zip', shasum=dl.shasum) }}"
-                       title="Download as password-protected ZIP (password: infected)&#10;Full hash: {{ dl.shasum }}"
-                       style="text-decoration: none; color: inherit;">
-                        <code>{{ dl.shasum | truncate_hash(20) }}</code>
-                    </a>
-                    {% else %}
-                    <code title="{{ dl.shasum }}">{{ dl.shasum | truncate_hash(20) }}</code>
-                    <span class="badge badge-warning" title="File not found on disk">Missing</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if dl.file_category %}
-                        {% set category_colors = {
-                            'executable': 'badge-danger',
-                            'script': 'badge-warning',
-                            'archive': 'badge-info',
-                            'document': 'badge-primary',
-                            'data': 'badge-secondary'
-                        } %}
-                        <span class="badge {{ category_colors.get(dl.file_category, 'badge-secondary') }}"
-                              title="{{ dl.file_type or 'Unknown' }}">
-                            {{ dl.file_category }}
-                        </span>
-                        {% if dl.file_type %}
-                        <div style="font-size: 0.7em; color: #666; margin-top: 2px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                             title="{{ dl.file_type }}">
-                            {{ dl.file_type[:40] }}{% if dl.file_type | length > 40 %}...{% endif %}
-                        </div>
-                        {% endif %}
-                    {% else %}
-                    <span class="text-muted">—</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if dl.size %}
-                    {{ (dl.size / 1024) | round(1) }} KB
-                    {% else %}
-                    N/A
-                    {% endif %}
-                </td>
-                <td>
-                    {% if dl.yara_matches is defined and dl.yara_matches %}
-                        <span class="badge badge-warning" title="{{ dl.yara_matches | join(', ') }}">
-                            {{ dl.yara_matches | length }} match{% if dl.yara_matches | length > 1 %}es{% endif %}
-                        </span>
-                        <div class="yara-matches-tooltip" style="font-size: 0.75em; color: #666; margin-top: 2px;">
-                            {{ dl.yara_matches[:3] | join(', ') }}{% if dl.yara_matches | length > 3 %}...{% endif %}
-                        </div>
-                    {% else %}
-                    <span class="text-muted">—</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if dl.vt_detections is defined %}
-                        {% if dl.vt_detections > 0 %}
-                        <span class="badge badge-danger">
-                            {{ dl.vt_detections }}/{{ dl.vt_total }}
-                        </span>
-                        {% else %}
-                        <span class="badge badge-success">0/{{ dl.vt_total }}</span>
-                        {% endif %}
-                    {% else %}
-                    <span class="text-muted">—</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if dl.vt_threat_label %}
-                    <span class="badge badge-warning" style="background: #fff3cd; color: #856404;">
-                        {{ dl.vt_threat_label }}
-                    </span>
-                    {% else %}
-                    <span class="text-muted">—</span>
-                    {% endif %}
-                </td>
-                <td>{{ dl.count }}x</td>
-                <td>{{ dl.timestamp | format_timestamp }}</td>
-                <td class="actions">
-                    {% if dl.is_previewable and dl.exists %}
-                    <a href="{{ url_for('download_preview', shasum=dl.shasum) }}"
-                       class="btn btn-sm btn-preview"
-                       title="Preview file content">Preview</a>
-                    {% endif %}
-                    <a href="https://www.virustotal.com/gui/file/{{ dl.shasum }}"
-                       target="_blank"
-                       class="btn btn-sm"
-                       title="View on VirusTotal">VT</a>
-                    <a href="{{ url_for('session_detail', session_id=dl.session_id) }}"
-                       class="btn btn-sm"
-                       title="View session">Session</a>
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="9" class="no-data">No downloads recorded</td>
-            </tr>
-            {% endfor %}
+        <tbody id="downloads-tbody">
+            <!-- Populated by JavaScript -->
         </tbody>
     </table>
 </div>
+
+<script>
+function reloadPage() {
+    const source = document.getElementById('source-filter') ? document.getElementById('source-filter').value : '';
+    const hours = document.getElementById('hours-filter').value;
+    let url = '?hours=' + hours;
+    if (source) {
+        url += '&source=' + encodeURIComponent(source);
+    }
+    window.location.href = url;
+}
+
+function truncateHash(hash, length) {
+    if (!hash) return 'N/A';
+    if (hash.length <= length) return hash;
+    return hash.substring(0, length) + '...';
+}
+
+function formatTimestamp(ts) {
+    if (!ts) return 'N/A';
+    try {
+        const date = new Date(ts);
+        return date.toLocaleString();
+    } catch (e) {
+        return ts;
+    }
+}
+
+function formatSize(bytes) {
+    if (!bytes) return 'N/A';
+    return (bytes / 1024).toFixed(1) + ' KB';
+}
+
+function loadDownloads() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hours = urlParams.get('hours') || '{{ hours }}';
+    const source = urlParams.get('source') || '{{ source_filter }}';
+
+    // Show loading state
+    document.getElementById('loading-state').style.display = 'block';
+    document.getElementById('error-state').style.display = 'none';
+    document.getElementById('downloads-table').style.display = 'none';
+    document.getElementById('downloads-info').style.display = 'none';
+
+    // Build API URL
+    let apiUrl = '/api/downloads-data?hours=' + hours;
+    if (source) {
+        apiUrl += '&source=' + encodeURIComponent(source);
+    }
+
+    // Fetch data
+    fetch(apiUrl)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Server returned ' + response.status);
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Hide loading, show table
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('downloads-info').style.display = 'block';
+            document.getElementById('downloads-table').style.display = 'table';
+
+            // Update count
+            document.getElementById('downloads-count').textContent = data.count || 0;
+
+            // Populate table
+            const tbody = document.getElementById('downloads-tbody');
+            tbody.innerHTML = '';
+
+            if (!data.downloads || data.downloads.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="no-data">No downloads recorded</td></tr>';
+                return;
+            }
+
+            data.downloads.forEach(dl => {
+                const row = document.createElement('tr');
+
+                // SHA256 column
+                let shaCol = '<td>';
+                if (dl.exists) {
+                    shaCol += '<a href="/download/' + dl.shasum + '.zip" title="Download as password-protected ZIP (password: infected)&#10;Full hash: ' + dl.shasum + '" style="text-decoration: none; color: inherit;">';
+                    shaCol += '<code>' + truncateHash(dl.shasum, 20) + '</code></a>';
+                } else {
+                    shaCol += '<code title="' + dl.shasum + '">' + truncateHash(dl.shasum, 20) + '</code>';
+                    shaCol += '<span class="badge badge-warning" title="File not found on disk">Missing</span>';
+                }
+                shaCol += '</td>';
+
+                // Type column
+                let typeCol = '<td>';
+                if (dl.file_category) {
+                    const categoryColors = {
+                        'executable': 'badge-danger',
+                        'script': 'badge-warning',
+                        'archive': 'badge-info',
+                        'document': 'badge-primary',
+                        'data': 'badge-secondary'
+                    };
+                    const colorClass = categoryColors[dl.file_category] || 'badge-secondary';
+                    typeCol += '<span class="badge ' + colorClass + '" title="' + (dl.file_type || 'Unknown') + '">' + dl.file_category + '</span>';
+                    if (dl.file_type) {
+                        const shortType = dl.file_type.length > 40 ? dl.file_type.substring(0, 40) + '...' : dl.file_type;
+                        typeCol += '<div style="font-size: 0.7em; color: #666; margin-top: 2px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + dl.file_type + '">' + shortType + '</div>';
+                    }
+                } else {
+                    typeCol += '<span class="text-muted">—</span>';
+                }
+                typeCol += '</td>';
+
+                // Size column
+                const sizeCol = '<td>' + formatSize(dl.size) + '</td>';
+
+                // YARA column
+                let yaraCol = '<td>';
+                if (dl.yara_matches && dl.yara_matches.length > 0) {
+                    yaraCol += '<span class="badge badge-warning" title="' + dl.yara_matches.join(', ') + '">';
+                    yaraCol += dl.yara_matches.length + ' match' + (dl.yara_matches.length > 1 ? 'es' : '') + '</span>';
+                    const preview = dl.yara_matches.slice(0, 3).join(', ') + (dl.yara_matches.length > 3 ? '...' : '');
+                    yaraCol += '<div class="yara-matches-tooltip" style="font-size: 0.75em; color: #666; margin-top: 2px;">' + preview + '</div>';
+                } else {
+                    yaraCol += '<span class="text-muted">—</span>';
+                }
+                yaraCol += '</td>';
+
+                // VT Score column
+                let vtScoreCol = '<td>';
+                if (dl.vt_detections !== undefined) {
+                    if (dl.vt_detections > 0) {
+                        vtScoreCol += '<span class="badge badge-danger">' + dl.vt_detections + '/' + dl.vt_total + '</span>';
+                    } else {
+                        vtScoreCol += '<span class="badge badge-success">0/' + dl.vt_total + '</span>';
+                    }
+                } else {
+                    vtScoreCol += '<span class="text-muted">—</span>';
+                }
+                vtScoreCol += '</td>';
+
+                // VT Threat column
+                let vtThreatCol = '<td>';
+                if (dl.vt_threat_label) {
+                    vtThreatCol += '<span class="badge badge-warning" style="background: #fff3cd; color: #856404;">' + dl.vt_threat_label + '</span>';
+                } else {
+                    vtThreatCol += '<span class="text-muted">—</span>';
+                }
+                vtThreatCol += '</td>';
+
+                // Count column
+                const countCol = '<td>' + (dl.count || 1) + 'x</td>';
+
+                // Timestamp column
+                const timeCol = '<td>' + formatTimestamp(dl.timestamp) + '</td>';
+
+                // Actions column
+                let actionsCol = '<td class="actions">';
+                if (dl.is_previewable && dl.exists) {
+                    actionsCol += '<a href="/preview/' + dl.shasum + '" class="btn btn-sm btn-preview" title="Preview file content">Preview</a> ';
+                }
+                actionsCol += '<a href="https://www.virustotal.com/gui/file/' + dl.shasum + '" target="_blank" class="btn btn-sm" title="View on VirusTotal">VT</a> ';
+                actionsCol += '<a href="/session/' + dl.session_id + '" class="btn btn-sm" title="View session">Session</a>';
+                actionsCol += '</td>';
+
+                row.innerHTML = shaCol + typeCol + sizeCol + yaraCol + vtScoreCol + vtThreatCol + countCol + timeCol + actionsCol;
+                tbody.appendChild(row);
+            });
+        })
+        .catch(error => {
+            // Show error state
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('error-state').style.display = 'block';
+            document.getElementById('error-message').textContent = error.message;
+            console.error('Failed to load downloads:', error);
+        });
+}
+
+// Load data when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadDownloads();
+});
+</script>
 {% endblock %}
