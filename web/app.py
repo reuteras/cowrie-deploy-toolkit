@@ -1862,7 +1862,7 @@ def system_info():
 
 @app.route("/downloads")
 def downloads():
-    """Downloaded files listing page."""
+    """Downloaded files listing page. Returns HTML immediately, data loaded via AJAX."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -1871,10 +1871,13 @@ def downloads():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Extract downloads from sessions (they include database metadata)
-    # Limit to 5000 most recent sessions per source for performance
-    all_sessions = session_parser.parse_all(
-        hours=hours, source_filter=source_filter if source_filter else None, max_sessions=0
+    # Return page immediately with loading state - data loaded via AJAX
+    return render_template(
+        "downloads.html",
+        hours=hours,
+        source_filter=source_filter,
+        available_sources=available_sources,
+        config=CONFIG,
     )
 
     # Collect all downloads from sessions
@@ -1941,6 +1944,73 @@ def downloads():
         available_sources=available_sources,
         config=CONFIG,
     )
+
+
+@app.route("/api/downloads-data")
+def downloads_data():
+    """API endpoint for downloads data - called via AJAX from downloads page."""
+    hours = request.args.get("hours", 168, type=int)
+    source_filter = request.args.get("source", "")
+
+    # Get available sources for multi-honeypot mode
+    available_sources = []
+    if hasattr(session_parser, "sources"):
+        available_sources = list(session_parser.sources.keys())
+
+    # Extract downloads from sessions (they include database metadata)
+    # Limit to 5000 most recent sessions per source for performance
+    all_sessions = session_parser.parse_all(
+        hours=hours, source_filter=source_filter if source_filter else None, max_sessions=0
+    )
+
+    # Collect all downloads from sessions
+    all_downloads = []
+    for session in all_sessions.values():
+        for download in session.get("downloads", []):
+            # Add session context to each download
+            download_with_context = download.copy()
+            download_with_context["session_id"] = session["id"]
+            download_with_context["src_ip"] = session.get("src_ip")
+            download_with_context["_source"] = session.get("_source", "local")
+            all_downloads.append(download_with_context)
+
+    # Deduplicate by shasum
+    unique_downloads = {}
+    for dl in all_downloads:
+        shasum = dl.get("shasum")
+        if not shasum:
+            continue
+
+        if shasum not in unique_downloads:
+            unique_downloads[shasum] = dl
+            unique_downloads[shasum]["count"] = 1
+        else:
+            unique_downloads[shasum]["count"] += 1
+
+    # Check which files exist on disk and get VT/YARA scores
+    download_path = CONFIG["download_path"]
+    for shasum, dl in unique_downloads.items():
+        file_path = os.path.join(download_path, shasum)
+        dl["exists"] = os.path.exists(file_path)
+
+        # Get VT and YARA data from cache
+        vt_data = vt_cache.get(shasum)
+        if vt_data:
+            dl["vt_detections"] = vt_data.get("detections", 0)
+            dl["vt_total"] = vt_data.get("total", 0)
+            dl["vt_threat_label"] = vt_data.get("threat_label")
+
+        yara_data = yara_cache.get(shasum)
+        if yara_data:
+            dl["yara_matches"] = yara_data.get("matches", [])
+            dl["file_type"] = yara_data.get("file_type")
+            dl["file_category"] = yara_data.get("file_category")
+            dl["size"] = yara_data.get("size")
+
+    # Sort by timestamp (most recent first)
+    sorted_downloads = sorted(unique_downloads.values(), key=lambda x: x.get("timestamp") or "", reverse=True)
+
+    return jsonify({"downloads": sorted_downloads, "count": len(sorted_downloads)})
 
 
 @app.route("/api/ips-data")
