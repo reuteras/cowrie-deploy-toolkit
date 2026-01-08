@@ -1832,82 +1832,12 @@ def downloads():
         config=CONFIG,
     )
 
-    # Collect all downloads from sessions
-    all_downloads = []
-    for session in all_sessions.values():
-        for download in session.get("downloads", []):
-            # Add session context to each download
-            download_with_context = download.copy()
-            download_with_context["session_id"] = session["id"]
-            download_with_context["src_ip"] = session.get("src_ip")
-            download_with_context["_source"] = session.get("_source", "local")
-            all_downloads.append(download_with_context)
-
-    # Deduplicate by shasum
-    unique_downloads = {}
-    for dl in all_downloads:
-        shasum = dl.get("shasum")
-        if not shasum:
-            continue
-
-        if shasum not in unique_downloads:
-            unique_downloads[shasum] = dl
-            unique_downloads[shasum]["count"] = 1
-        else:
-            unique_downloads[shasum]["count"] += 1
-
-    # Check which files exist on disk and get VT/YARA scores
-    download_path = CONFIG["download_path"]
-    for shasum, dl in unique_downloads.items():
-        file_path = os.path.join(download_path, shasum)
-        dl["exists"] = os.path.exists(file_path)
-        if dl["exists"]:
-            dl["size"] = os.path.getsize(file_path)
-        else:
-            dl["size"] = 0
-
-        # Get YARA matches and file type from cache
-        yara_result = yara_cache.get_result(shasum)
-        if yara_result:
-            if yara_result.get("matches"):
-                dl["yara_matches"] = yara_result["matches"]
-            if yara_result.get("file_type"):
-                dl["file_type"] = yara_result["file_type"]
-                dl["file_mime"] = yara_result.get("file_mime")
-                dl["file_category"] = yara_result.get("file_category")
-                dl["is_previewable"] = yara_result.get("is_previewable", False)
-
-        # Get VirusTotal score if scanner is available
-        if vt_scanner and shasum:
-            vt_result = vt_scanner.scan_file(shasum)
-            if vt_result:
-                dl["vt_detections"] = vt_result["detections"]
-                dl["vt_total"] = vt_result["total_engines"]
-                dl["vt_link"] = vt_result["link"]
-                dl["vt_threat_label"] = vt_result.get("threat_label", "")
-
-    downloads_list = sorted(unique_downloads.values(), key=lambda x: x.get("timestamp", ""), reverse=True)
-
-    return render_template(
-        "downloads.html",
-        downloads=downloads_list,
-        hours=hours,
-        source_filter=source_filter,
-        available_sources=available_sources,
-        config=CONFIG,
-    )
-
 
 @app.route("/api/downloads-data")
 def downloads_data():
     """API endpoint for downloads data - called via AJAX from downloads page."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
-
-    # Get available sources for multi-honeypot mode
-    available_sources = []
-    if hasattr(session_parser, "sources"):
-        available_sources = list(session_parser.sources.keys())
 
     # Extract downloads from sessions (they include database metadata)
     # Limit to 5000 most recent sessions per source for performance
