@@ -1858,6 +1858,8 @@ _DOWNLOADS_CACHE_TTL = 300  # 5 minutes
 @app.route("/api/downloads-data")
 def downloads_data():
     """API endpoint for downloads data - called via AJAX from downloads page."""
+    global _downloads_cache, _downloads_cache_time
+
     hours = request.args.get("hours", 24, type=int)
     source_filter = request.args.get("source", "")
 
