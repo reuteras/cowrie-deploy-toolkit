@@ -1849,11 +1849,24 @@ def downloads():
     )
 
 
+# Global cache for downloads data (simple in-memory cache)
+_downloads_cache = {}
+_downloads_cache_time = 0
+_DOWNLOADS_CACHE_TTL = 300  # 5 minutes
+
+
 @app.route("/api/downloads-data")
 def downloads_data():
     """API endpoint for downloads data - called via AJAX from downloads page."""
     hours = request.args.get("hours", 24, type=int)
     source_filter = request.args.get("source", "")
+
+    # Check cache
+    cache_key = f"{hours}_{source_filter}"
+    current_time = time.time()
+
+    if cache_key in _downloads_cache and current_time - _downloads_cache_time < _DOWNLOADS_CACHE_TTL:
+        return jsonify(_downloads_cache[cache_key])
 
     # Extract downloads from sessions (they include database metadata)
     # Limit to 5000 most recent sessions per source for performance
@@ -1891,21 +1904,22 @@ def downloads_data():
         file_path = os.path.join(download_path, shasum)
         dl["exists"] = os.path.exists(file_path)
 
-        # Get VT and YARA data (use scanner for live scans if available)
-        vt_data = None
-        if vt_scanner:
-            vt_result = vt_scanner.scan_file(shasum)
-            if vt_result:
-                vt_data = vt_result
-        elif cache_db:
-            vt_data = cache_db.get_vt_result(shasum)
+        # Get VT data from database (using the same logic as API)
+        # Import here to avoid circular imports
+        try:
+            from services.sqlite_parser import sqlite_parser
 
-        if vt_data:
-            dl["vt_detections"] = vt_data.get("detections", 0)
-            dl["vt_total"] = vt_data.get("total_engines", 0)
-            dl["vt_threat_label"] = vt_data.get("threat_label")
-        else:
-            # No VT data available, set defaults
+            vt_data = sqlite_parser.get_vt_results(shasum)
+            if vt_data:
+                dl["vt_detections"] = vt_data.get("detections", 0)
+                dl["vt_total"] = vt_data.get("total", 0)
+                dl["vt_threat_label"] = vt_data.get("threat_label", "")
+            else:
+                dl["vt_detections"] = 0
+                dl["vt_total"] = 0
+                dl["vt_threat_label"] = ""
+        except Exception:
+            # Fallback if database query fails
             dl["vt_detections"] = 0
             dl["vt_total"] = 0
             dl["vt_threat_label"] = ""
@@ -1929,7 +1943,12 @@ def downloads_data():
     # Sort by timestamp (most recent first)
     sorted_downloads = sorted(unique_downloads.values(), key=lambda x: x.get("timestamp") or "", reverse=True)
 
-    return jsonify({"downloads": sorted_downloads, "count": len(sorted_downloads)})
+    # Cache the result
+    result = {"downloads": sorted_downloads, "count": len(sorted_downloads)}
+    _downloads_cache[cache_key] = result
+    _downloads_cache_time = current_time
+
+    return jsonify(result)
 
 
 @app.route("/api/ips-data")

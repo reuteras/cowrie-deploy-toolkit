@@ -12,6 +12,7 @@ from config import config
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from services.cache import CacheDB, YARACache
+from services.sqlite_parser import sqlite_parser
 
 router = APIRouter()
 
@@ -88,8 +89,7 @@ async def get_downloads(limit: int = Query(100, ge=1, le=1000), offset: int = Qu
     if not downloads_path.exists():
         return {"total": 0, "downloads": []}
 
-    # Initialize cache readers
-    vt_cache = CacheDB(config.VT_CACHE_DB)
+    # Initialize cache readers (for YARA data only)
     yara_cache = YARACache(config.YARA_CACHE_DB)
 
     # Get all files
@@ -107,12 +107,12 @@ async def get_downloads(limit: int = Query(100, ge=1, le=1000), offset: int = Qu
                 "exists": True,
             }
 
-            # Add VT data
-            vt_data = vt_cache.get_vt_result(sha256)
+            # Add VT data from database
+            vt_data = sqlite_parser.get_vt_results(sha256)
             if vt_data:
                 file_info["vt_detections"] = vt_data.get("detections", 0)
-                file_info["vt_total"] = vt_data.get("total_engines", 0)
-                file_info["vt_threat_label"] = vt_data.get("threat_label")
+                file_info["vt_total"] = vt_data.get("total", 0)
+                file_info["vt_threat_label"] = vt_data.get("threat_label", "")
 
             # Add YARA data
             yara_data = yara_cache.get_result(sha256)
