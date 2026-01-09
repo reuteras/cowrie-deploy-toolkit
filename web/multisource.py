@@ -675,11 +675,17 @@ class MultiSourceDataSource:
                     self.backoff.record_success(source.name)  # Reset backoff on success
 
                     # Merge top downloads (both malicious and clean, but unique by SHA256)
-                    for dl in downloads_data.get("downloads", []):
+                    downloads_list = downloads_data.get("downloads", [])
+                    print(f"[DEBUG] MultiSource: Got {len(downloads_list)} downloads from {source.name}")
+                    for dl in downloads_list:
                         # Add source tag to track which source this download came from
                         dl_copy = dl.copy()
                         dl_copy["_source"] = source.name
                         aggregated["top_downloads_with_vt"].append(dl_copy)
+                        if dl.get("vt_detections", 0) > 0:
+                            print(
+                                f"[DEBUG] MultiSource: VT data from {source.name}: {dl.get('vt_detections')}/{dl.get('vt_total')} for {dl.get('shasum')[:16]}..."
+                            )
 
                 except Exception as e:
                     print(f"[MultiSource] Error fetching downloads from '{source.name}': {e}")

@@ -113,6 +113,9 @@ async def get_downloads(limit: int = Query(100, ge=1, le=1000), offset: int = Qu
                 file_info["vt_detections"] = vt_data.get("detections", 0)
                 file_info["vt_total"] = vt_data.get("total", 0)
                 file_info["vt_threat_label"] = vt_data.get("threat_label", "")
+                print(f"[DEBUG] API: Found VT data for {sha256}: {vt_data}")
+            else:
+                print(f"[DEBUG] API: No VT data for {sha256}")
 
             # Add YARA data
             yara_data = yara_cache.get_result(sha256)
