@@ -31,10 +31,11 @@ services:
       - GEOIP_CITY_DB=/geoip/GeoLite2-City.mmdb
       - GEOIP_ASN_DB=/geoip/GeoLite2-ASN.mmdb
 
-      # Cache databases
-      - YARA_CACHE_DB=/opt-cowrie-data/yara-cache.db
-      - CANARY_WEBHOOKS_DB=/opt-cowrie-data/canary-webhooks.db
-      - IPLOCK_DB=/cowrie-data/lib/cowrie/iplock.db
+       # Cache databases
+       - YARA_CACHE_DB=/opt-cowrie-data/yara-cache.db
+       - VT_CACHE_DB=/opt-cowrie-data/vt-cache.db
+       - CANARY_WEBHOOKS_DB=/opt-cowrie-data/canary-webhooks.db
+       - IPLOCK_DB=/cowrie-data/lib/cowrie/iplock.db
 
       # API keys (passed from deployment script)
       - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
