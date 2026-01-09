@@ -672,6 +672,10 @@ class MultiSourceDataSource:
                 source = future_to_source_downloads[future]
                 try:
                     downloads_data = future.result(timeout=30)
+                    print(f"[DEBUG] downloads_data from {source.name}: {type(downloads_data)}")
+                    if downloads_data is None:
+                        print(f"[WARN] downloads_data is None from {source.name}, skipping")
+                        continue
                     self.backoff.record_success(source.name)  # Reset backoff on success
 
                     # Merge top downloads (both malicious and clean, but unique by SHA256)

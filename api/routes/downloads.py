@@ -134,7 +134,9 @@ async def get_downloads(limit: int = Query(100, ge=1, le=1000), offset: int = Qu
     total = len(files)
     paginated = files[offset : offset + limit]
 
-    return {"total": total, "limit": limit, "offset": offset, "downloads": paginated}
+    result = {"total": total, "limit": limit, "offset": offset, "downloads": paginated}
+    print(f"[DEBUG] API returning: {len(paginated)} downloads with VT data")
+    return result
 
 
 @router.get("/downloads/{sha256}")
