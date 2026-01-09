@@ -682,6 +682,12 @@ class MultiSourceDataSource:
                     downloads_list = downloads_data.get("downloads", [])
                     print(f"[DEBUG] MultiSource: Got {len(downloads_list)} downloads from {source.name}")
                     for dl in downloads_list:
+                        if dl is None:
+                            print(f"[WARN] dl is None in downloads_list from {source.name}")
+                            continue
+                        if not isinstance(dl, dict):
+                            print(f"[WARN] dl is not dict in downloads_list from {source.name}: {type(dl)} - {dl}")
+                            continue
                         # Add source tag to track which source this download came from
                         dl_copy = dl.copy()
                         dl_copy["_source"] = source.name
@@ -740,6 +746,12 @@ class MultiSourceDataSource:
         # Deduplicate and sort top malicious downloads by SHA256 and VT detections
         dl_dict = {}
         for dl in aggregated["top_downloads_with_vt"]:
+            if dl is None:
+                print("[WARN] None item in top_downloads_with_vt")
+                continue
+            if not isinstance(dl, dict):
+                print(f"[WARN] Non-dict item in top_downloads_with_vt: {type(dl)} - {dl}")
+                continue
             shasum = dl.get("shasum")
             if shasum:
                 if shasum not in dl_dict:
@@ -751,9 +763,12 @@ class MultiSourceDataSource:
                     if new_detections > existing_detections:
                         dl_dict[shasum] = dl
 
+        # Filter out any None values that might have slipped through
+        valid_downloads = [dl for dl in dl_dict.values() if dl is not None and isinstance(dl, dict)]
         aggregated["top_downloads_with_vt"] = sorted(
-            dl_dict.values(), key=lambda x: x.get("vt_detections", 0), reverse=True
+            valid_downloads, key=lambda x: x.get("vt_detections", 0), reverse=True
         )[:10]
+        print(f"[DEBUG] Final top_downloads_with_vt: {len(aggregated['top_downloads_with_vt'])} items")
 
         aggregated["top_countries"] = sorted(aggregated["top_countries"].items(), key=lambda x: x[1], reverse=True)[:10]
         aggregated["top_credentials"] = sorted(aggregated["top_credentials"].items(), key=lambda x: x[1], reverse=True)[
