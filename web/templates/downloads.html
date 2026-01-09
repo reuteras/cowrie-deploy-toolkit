@@ -247,7 +247,7 @@ function loadDownloads() {
                 // Actions column
                 let actionsCol = '<td class="actions">';
                 if (dl.is_previewable && dl.exists) {
-                    actionsCol += '<a href="/preview/' + dl.shasum + '" class="btn btn-sm btn-preview" title="Preview file content">Preview</a> ';
+                    actionsCol += '<a href="/download/' + dl.shasum + '/preview" class="btn btn-sm btn-preview" title="Preview file content">Preview</a> ';
                 }
                 actionsCol += '<a href="https://www.virustotal.com/gui/file/' + dl.shasum + '" target="_blank" class="btn btn-sm" title="View on VirusTotal">VT</a> ';
                 actionsCol += '<a href="/session/' + dl.session_id + '" class="btn btn-sm" title="View session">Session</a>';
