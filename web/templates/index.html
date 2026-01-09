@@ -228,13 +228,15 @@
                     {% for dl in stats.top_downloads_with_vt %}
                     <tr>
                         <td>
-                            <a href="https://www.virustotal.com/gui/file/{{ dl.shasum }}" target="_blank"
-                               title="{{ dl.shasum }}">
-                                <code>{{ dl.shasum | truncate_hash(16) }}</code>
+                            {% set shasum = dl.get('sha256') or dl.get('shasum', '') %}
+                            <a href="https://www.virustotal.com/gui/file/{{ shasum }}" target="_blank"
+                               title="{{ shasum }}">
+                                <code>{{ shasum | truncate_hash(16) }}</code>
                             </a>
                         </td>
                         <td>
-                            {% if dl.file_category %}
+                            {% set file_category = dl.get('file_category') %}
+                            {% if file_category %}
                                 {% set category_colors = {
                                     'executable': 'badge-danger',
                                     'script': 'badge-warning',
@@ -242,39 +244,42 @@
                                     'document': 'badge-primary',
                                     'data': 'badge-secondary'
                                 } %}
-                                <span class="badge {{ category_colors.get(dl.file_category, 'badge-secondary') }}"
-                                      title="{{ dl.file_type or 'Unknown' }}">
-                                    {{ dl.file_category }}
+                                <span class="badge {{ category_colors.get(file_category, 'badge-secondary') }}"
+                                      title="{{ dl.get('file_type') or 'Unknown' }}">
+                                    {{ file_category }}
                                 </span>
                             {% else %}
                             <span class="text-muted">—</span>
                             {% endif %}
                         </td>
                         <td>
-                            {% if dl.vt_detections >= 40 %}
-                            <span class="badge badge-danger">{{ dl.vt_detections }}/{{ dl.vt_total }}</span>
-                            {% elif dl.vt_detections >= 10 %}
-                            <span class="badge badge-warning">{{ dl.vt_detections }}/{{ dl.vt_total }}</span>
-                            {% elif dl.vt_detections > 0 %}
-                            <span class="badge badge-info">{{ dl.vt_detections }}/{{ dl.vt_total }}</span>
-                            {% elif dl.vt_total > 0 %}
-                            <span class="badge badge-success">0/{{ dl.vt_total }}</span>
-                            {% elif dl.vt_total == 0 and dl.vt_detections == 0 %}
+                            {% set vt_detections = dl.get('vt_detections', 0) %}
+                            {% set vt_total = dl.get('vt_total', 0) %}
+                            {% if vt_detections >= 40 %}
+                            <span class="badge badge-danger">{{ vt_detections }}/{{ vt_total }}</span>
+                            {% elif vt_detections >= 10 %}
+                            <span class="badge badge-warning">{{ vt_detections }}/{{ vt_total }}</span>
+                            {% elif vt_detections > 0 %}
+                            <span class="badge badge-info">{{ vt_detections }}/{{ vt_total }}</span>
+                            {% elif vt_total > 0 %}
+                            <span class="badge badge-success">0/{{ vt_total }}</span>
+                            {% elif vt_total == 0 and vt_detections == 0 %}
                             <span class="badge badge-secondary">0/0</span>
                             {% else %}
                             <span class="text-muted">—</span>
                             {% endif %}
                         </td>
                         <td>
-                            {% if dl.vt_threat_label %}
+                            {% set vt_threat_label = dl.get('vt_threat_label', '') %}
+                            {% if vt_threat_label %}
                             <span class="badge badge-warning" style="background: #fff3cd; color: #856404;">
-                                {{ dl.vt_threat_label }}
+                                {{ vt_threat_label }}
                             </span>
                             {% else %}
                             <span class="text-muted">—</span>
                             {% endif %}
                         </td>
-                        <td>{{ dl.timestamp | format_timestamp }}</td>
+                        <td>{{ dl.get('timestamp') | format_timestamp }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
