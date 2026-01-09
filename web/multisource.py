@@ -468,8 +468,8 @@ class MultiSourceDataSource:
         Returns:
             Aggregated stats dict
         """
-        # Check cache first
-        cache_key = f"stats_{hours}_{source_filter or 'all'}"
+        # Check cache first (version 2 includes VT data)
+        cache_key = f"stats_v2_{hours}_{source_filter or 'all'}"
         cached = self.stats_cache.get(cache_key)
         if cached is not None:
             print(f"[MultiSource] Cache hit for stats (hours={hours}, filter={source_filter})")

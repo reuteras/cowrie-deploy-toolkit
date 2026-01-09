@@ -687,7 +687,6 @@ class SessionParser:
                 )
 
         # Deduplicate by shasum and get VT scores
-        print(f"[DEBUG] get_stats: starting VT processing with {len(all_downloads)} downloads")
         all_scanned_files = {}
         vt_total_scanned = 0
         vt_total_malicious = 0
@@ -695,67 +694,61 @@ class SessionParser:
         vt_total_engines = 0
         vt_threat_families = set()
 
-        try:
-            for dl in all_downloads:
-                shasum = dl["shasum"]
-                if shasum and shasum not in all_scanned_files:
-                    file_path = os.path.join(download_path, shasum)
-                    dl["exists"] = os.path.exists(file_path)
-                    if dl["exists"]:
-                        dl["size"] = os.path.getsize(file_path)
-                    else:
-                        dl["size"] = 0
+        for dl in all_downloads:
+            shasum = dl["shasum"]
+            if shasum and shasum not in all_scanned_files:
+                file_path = os.path.join(download_path, shasum)
+                dl["exists"] = os.path.exists(file_path)
+                if dl["exists"]:
+                    dl["size"] = os.path.getsize(file_path)
+                else:
+                    dl["size"] = 0
 
-                    # Get YARA matches and file type
-                    yara_result = yara_cache.get_result(shasum)
-                    if yara_result:
-                        dl["file_type"] = yara_result.get("file_type")
-                        dl["file_category"] = yara_result.get("file_category")
-                        dl["is_previewable"] = yara_result.get("is_previewable", False)
+                # Get YARA matches and file type
+                yara_result = yara_cache.get_result(shasum)
+                if yara_result:
+                    dl["file_type"] = yara_result.get("file_type")
+                    dl["file_category"] = yara_result.get("file_category")
+                    dl["is_previewable"] = yara_result.get("is_previewable", False)
 
-                    # Get VirusTotal score from cache or live scan
-                    vt_data = None
-                    if vt_scanner:
-                        vt_result = vt_scanner.scan_file(shasum)
-                        if vt_result:
-                            vt_data = vt_result
-                    elif cache_db:
-                        vt_data = cache_db.get_vt_result(shasum)
+                # Get VirusTotal score from cache or live scan
+                vt_data = None
+                if vt_scanner:
+                    vt_result = vt_scanner.scan_file(shasum)
+                    if vt_result:
+                        vt_data = vt_result
+                elif cache_db:
+                    vt_data = cache_db.get_vt_result(shasum)
 
-                    all_scanned_files[shasum] = dl
+                all_scanned_files[shasum] = dl
 
-                    if vt_data:
-                        vt_total_scanned += 1
-                        detections = vt_data.get("detections", 0)
-                        total_eng = vt_data.get("total_engines", 0)
+                if vt_data:
+                    vt_total_scanned += 1
+                    detections = vt_data.get("detections", 0)
+                    total_eng = vt_data.get("total_engines", 0)
 
-                        dl["vt_detections"] = detections
-                        dl["vt_total"] = total_eng
-                        dl["vt_link"] = vt_data.get("link", "")
-                        dl["vt_threat_label"] = vt_data.get("threat_label", "")
+                    dl["vt_detections"] = detections
+                    dl["vt_total"] = total_eng
+                    dl["vt_link"] = vt_data.get("link", "")
+                    dl["vt_threat_label"] = vt_data.get("threat_label", "")
 
-                        # Aggregate stats
-                        vt_total_detections += detections
-                        vt_total_engines += total_eng
+                    # Aggregate stats
+                    vt_total_detections += detections
+                    vt_total_engines += total_eng
 
-                        if detections > 0:
-                            vt_total_malicious += 1
+                    if detections > 0:
+                        vt_total_malicious += 1
 
-                            # Track threat families
-                            threat_label = vt_data.get("threat_label", "")
-                            if threat_label:
-                                vt_threat_families.add(threat_label)
-                    else:
-                        # No VT data available, set defaults
-                        dl["vt_detections"] = 0
-                        dl["vt_total"] = 0
-                        dl["vt_link"] = ""
-                        dl["vt_threat_label"] = ""
-        except Exception as e:
-            print(f"[ERROR] get_stats: exception in VT processing: {e}")
-            import traceback
-
-            traceback.print_exc()
+                        # Track threat families
+                        threat_label = vt_data.get("threat_label", "")
+                        if threat_label:
+                            vt_threat_families.add(threat_label)
+                else:
+                    # No VT data available, set defaults
+                    dl["vt_detections"] = 0
+                    dl["vt_total"] = 0
+                    dl["vt_link"] = ""
+                    dl["vt_threat_label"] = ""
 
         # Calculate VirusTotal statistics
         vt_stats = {
@@ -767,10 +760,6 @@ class SessionParser:
 
         # Sort by VT detections (most detected first, but include all files)
         top_downloads = sorted(all_scanned_files.values(), key=lambda x: x.get("vt_detections", 0), reverse=True)[:10]
-
-        print(
-            f"[DEBUG] get_stats: all_downloads={len(all_downloads)}, unique_downloads={len(unique_downloads)}, all_scanned_files={len(all_scanned_files)}, top_downloads={len(top_downloads)}"
-        )
 
         return {
             "total_sessions": len(sessions),
