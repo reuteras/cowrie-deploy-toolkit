@@ -10,6 +10,8 @@ services:
       # Read-only access to Cowrie data
       - cowrie-var:/cowrie/cowrie-git/var:ro
       - cowrie-etc:/cowrie-etc:ro
+      # Writable cache for API processing
+      - cowrie-cache:/cowrie-cache
       - /opt/cowrie/var:/opt-cowrie-data:ro
       - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
       - /opt/cowrie/identity:/identity:ro
@@ -56,3 +58,5 @@ volumes:
     name: cowrie-var
   cowrie-etc:
     name: cowrie-etc
+  cowrie-cache:
+    name: cowrie-cache
