@@ -10,9 +10,9 @@ class Config:
     """API Configuration from environment variables"""
 
     # Cowrie data paths (mounted volumes)
-    COWRIE_LOG_PATH: str = os.getenv("COWRIE_LOG_PATH", "/cowrie-data/log/cowrie/cowrie.json")
-    COWRIE_TTY_PATH: str = os.getenv("COWRIE_TTY_PATH", "/cowrie-data/lib/cowrie/tty")
-    COWRIE_DOWNLOADS_PATH: str = os.getenv("COWRIE_DOWNLOADS_PATH", "/cowrie-data/lib/cowrie/downloads")
+    COWRIE_LOG_PATH: str = os.getenv("COWRIE_LOG_PATH", "/cowrie/cowrie-git/var/log/cowrie/cowrie.json")
+    COWRIE_TTY_PATH: str = os.getenv("COWRIE_TTY_PATH", "/cowrie/cowrie-git/var/lib/cowrie/tty")
+    COWRIE_DOWNLOADS_PATH: str = os.getenv("COWRIE_DOWNLOADS_PATH", "/cowrie/cowrie-git/var/lib/cowrie/downloads")
     COWRIE_SHARE_PATH: str = os.getenv("COWRIE_SHARE_PATH", "/cowrie-data/share/cowrie")
 
     # GeoIP databases

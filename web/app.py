@@ -33,15 +33,9 @@ app = Flask(__name__)
 
 # Configuration from environment variables
 CONFIG = {
-    "log_path": os.getenv("COWRIE_LOG_PATH", "/cowrie-data/log/cowrie/cowrie.json"),
-    "tty_path": os.getenv("COWRIE_TTY_PATH", "/cowrie-data/lib/cowrie/tty"),
-    "download_path": os.getenv("COWRIE_DOWNLOAD_PATH", "/cowrie-data/lib/cowrie/downloads"),
-    "honeyfs_path": os.getenv("HONEYFS_PATH", "/cowrie-data/share/cowrie/contents"),
-    "identity_path": os.getenv("IDENTITY_PATH", "/identity"),
-    "geoip_db_path": os.getenv("GEOIP_DB_PATH", "/cowrie-data/geoip/GeoLite2-City.mmdb"),
-    "geoip_asn_path": os.getenv("GEOIP_ASN_PATH", "/cowrie-data/geoip/GeoLite2-ASN.mmdb"),
-    "base_url": os.getenv("BASE_URL", ""),
-    "virustotal_api_key": os.getenv("VIRUSTOTAL_API_KEY", ""),
+    "log_path": os.getenv("COWRIE_LOG_PATH", "/cowrie/cowrie-git/var/log/cowrie/cowrie.json"),
+    "tty_path": os.getenv("COWRIE_TTY_PATH", "/cowrie/cowrie-git/var/lib/cowrie/tty"),
+    "download_path": os.getenv("COWRIE_DOWNLOAD_PATH", "/cowrie/cowrie-git/var/lib/cowrie/downloads"),
     "cache_db_path": os.getenv("CACHE_DB_PATH", "/cowrie-cache/vt-cache.db"),
     "yara_cache_db_path": os.getenv("YARA_CACHE_DB_PATH", "/cowrie-cache/yara-cache.db"),
     "metadata_path": os.getenv("COWRIE_METADATA_PATH", "/cowrie-metadata/metadata.json"),
