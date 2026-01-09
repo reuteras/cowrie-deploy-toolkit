@@ -694,11 +694,12 @@ class MultiSourceDataSource:
                             dl_copy["_source"] = source.name
                             aggregated["top_downloads_with_vt"].append(dl_copy)
                             if dl.get("vt_detections", 0) > 0:
+                                shasum = dl.get("sha256") or dl.get("shasum", "")
                                 print(
-                                    f"[DEBUG] MultiSource: VT data from {source.name}: {dl.get('vt_detections')}/{dl.get('vt_total')} for {dl.get('shasum')[:16]}..."
+                                    f"[DEBUG] MultiSource: VT data from {source.name}: {dl.get('vt_detections')}/{dl.get('vt_total')} for {shasum[:16]}..."
                                 )
                         except Exception as e:
-                            print(f"[ERROR] Failed to process download from {source.name}: {e} - dl: {dl}")
+                            print(f"[ERROR] Failed to process download from {source.name}: {e}")
                             continue
 
                 except Exception as e:
@@ -756,7 +757,7 @@ class MultiSourceDataSource:
             if not isinstance(dl, dict):
                 print(f"[WARN] Non-dict item in top_downloads_with_vt: {type(dl)} - {dl}")
                 continue
-            shasum = dl.get("shasum")
+            shasum = dl.get("sha256") or dl.get("shasum")
             if shasum:
                 if shasum not in dl_dict:
                     dl_dict[shasum] = dl
