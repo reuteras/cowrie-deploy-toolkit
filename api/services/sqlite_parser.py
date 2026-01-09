@@ -15,8 +15,8 @@ import geoip2.database
 import geoip2.errors
 
 # Database path (container mount path)
-DEFAULT_DB_PATH = "/cowrie-data/lib/cowrie/cowrie.db"
-DEFAULT_LOG_PATH = "/cowrie-data/log/cowrie/cowrie.json"
+DEFAULT_DB_PATH = "/cowrie/cowrie-git/var/lib/cowrie/cowrie.db"
+DEFAULT_LOG_PATH = "/cowrie/cowrie-git/var/log/cowrie/cowrie.json"
 
 
 class SQLiteStatsParser:

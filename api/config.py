@@ -20,10 +20,10 @@ class Config:
     GEOIP_ASN_DB: str = os.getenv("GEOIP_ASN_DB", "/geoip/GeoLite2-ASN.mmdb")
 
     # Cache databases
-    YARA_CACHE_DB: str = os.getenv("YARA_CACHE_DB", "/cowrie/cowrie-git/var/cache/yara-cache.db")
-    VT_CACHE_DB: str = os.getenv("VT_CACHE_DB", "/cowrie/cowrie-git/var/cache/vt-cache.db")
+    YARA_CACHE_DB: str = os.getenv("YARA_CACHE_DB", "/cowrie-cache/yara-cache.db")
+    VT_CACHE_DB: str = os.getenv("VT_CACHE_DB", "/cowrie-cache/vt-cache.db")
     CANARY_WEBHOOKS_DB: str = os.getenv("CANARY_WEBHOOKS_DB", "/opt-cowrie-data/canary-webhooks.db")
-    IPLOCK_DB: str = os.getenv("IPLOCK_DB", "/cowrie-data/lib/cowrie/iplock.db")
+    IPLOCK_DB: str = os.getenv("IPLOCK_DB", "/cowrie/cowrie-git/var/lib/cowrie/iplock.db")
 
     # API keys
     VIRUSTOTAL_API_KEY: str = os.getenv("VIRUSTOTAL_API_KEY", "")
