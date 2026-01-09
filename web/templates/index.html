@@ -259,6 +259,8 @@
                             <span class="badge badge-info">{{ dl.vt_detections }}/{{ dl.vt_total }}</span>
                             {% elif dl.vt_total > 0 %}
                             <span class="badge badge-success">0/{{ dl.vt_total }}</span>
+                            {% elif dl.vt_total == 0 and dl.vt_detections == 0 %}
+                            <span class="badge badge-secondary">0/0</span>
                             {% else %}
                             <span class="text-muted">—</span>
                             {% endif %}

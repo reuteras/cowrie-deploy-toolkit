@@ -1829,7 +1829,7 @@ def system_info():
 @app.route("/downloads")
 def downloads():
     """Downloaded files listing page. Returns HTML immediately, data loaded via AJAX."""
-    hours = request.args.get("hours", 168, type=int)
+    hours = request.args.get("hours", 24, type=int)
     source_filter = request.args.get("source", "")
 
     # Get available sources for multi-honeypot mode
@@ -1850,7 +1850,7 @@ def downloads():
 @app.route("/api/downloads-data")
 def downloads_data():
     """API endpoint for downloads data - called via AJAX from downloads page."""
-    hours = request.args.get("hours", 168, type=int)
+    hours = request.args.get("hours", 24, type=int)
     source_filter = request.args.get("source", "")
 
     # Extract downloads from sessions (they include database metadata)
@@ -1883,32 +1883,37 @@ def downloads_data():
         else:
             unique_downloads[shasum]["count"] += 1
 
-        # Check which files exist on disk and get VT/YARA scores
-        download_path = CONFIG["download_path"]
-        for shasum, dl in unique_downloads.items():
-            file_path = os.path.join(download_path, shasum)
-            dl["exists"] = os.path.exists(file_path)
+    # Check which files exist on disk and get VT/YARA scores
+    download_path = CONFIG["download_path"]
+    for shasum, dl in unique_downloads.items():
+        file_path = os.path.join(download_path, shasum)
+        dl["exists"] = os.path.exists(file_path)
 
-            # Get VT and YARA data (use scanner for live scans if available)
-            vt_data = None
-            if vt_scanner:
-                vt_result = vt_scanner.scan_file(shasum)
-                if vt_result:
-                    vt_data = vt_result
-            elif cache_db:
-                vt_data = cache_db.get_vt_result(shasum)
+        # Get VT and YARA data (use scanner for live scans if available)
+        vt_data = None
+        if vt_scanner:
+            vt_result = vt_scanner.scan_file(shasum)
+            if vt_result:
+                vt_data = vt_result
+        elif cache_db:
+            vt_data = cache_db.get_vt_result(shasum)
 
-            if vt_data:
-                dl["vt_detections"] = vt_data.get("detections", 0)
-                dl["vt_total"] = vt_data.get("total_engines", 0)
-                dl["vt_threat_label"] = vt_data.get("threat_label")
+        if vt_data:
+            dl["vt_detections"] = vt_data.get("detections", 0)
+            dl["vt_total"] = vt_data.get("total_engines", 0)
+            dl["vt_threat_label"] = vt_data.get("threat_label")
+        else:
+            # No VT data available, set defaults
+            dl["vt_detections"] = 0
+            dl["vt_total"] = 0
+            dl["vt_threat_label"] = ""
 
-            yara_data = yara_cache.get_result(shasum)
-            if yara_data:
-                dl["yara_matches"] = yara_data.get("matches", [])
-                dl["file_type"] = yara_data.get("file_type")
-                dl["file_category"] = yara_data.get("file_category")
-                dl["is_previewable"] = yara_data.get("is_previewable", False)
+        yara_data = yara_cache.get_result(shasum)
+        if yara_data:
+            dl["yara_matches"] = yara_data.get("matches", [])
+            dl["file_type"] = yara_data.get("file_type")
+            dl["file_category"] = yara_data.get("file_category")
+            dl["is_previewable"] = yara_data.get("is_previewable", False)
 
         # Set file size from filesystem if file exists
         if dl["exists"]:
