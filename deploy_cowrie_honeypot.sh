@@ -1158,7 +1158,6 @@ services:
       - "22:2222"
     volumes:
       - cowrie-var:/cowrie/cowrie-git/var
-      - cowrie-cache:/cowrie-cache
       - /opt/cowrie/etc/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
       - /opt/cowrie/etc/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
       - /opt/cowrie/share:/cowrie/cowrie-git/share:ro
@@ -1177,8 +1176,6 @@ volumes:
   cowrie-var:
     name: cowrie-var
     external: true
-  cowrie-cache:
-    name: cowrie-cache
 DOCKEREOF
 
 echo "[remote] Pulling pre-built Cowrie image from GitHub Container Registry..."
@@ -1630,7 +1627,6 @@ services:
       - "22:2222"
     volumes:
       - cowrie-var:/cowrie/cowrie-git/var
-      - cowrie-cache:/cowrie-cache
       - /opt/cowrie/etc/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
       - /opt/cowrie/etc/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
       - /opt/cowrie/share:/cowrie/cowrie-git/share:ro
@@ -1695,8 +1691,6 @@ volumes:
   cowrie-var:
     name: cowrie-var
     external: true
-  cowrie-cache:
-    name: cowrie-cache
 
 networks:
   cowrie-internal:
