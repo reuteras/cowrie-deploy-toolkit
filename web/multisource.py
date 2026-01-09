@@ -682,20 +682,24 @@ class MultiSourceDataSource:
                     downloads_list = downloads_data.get("downloads", [])
                     print(f"[DEBUG] MultiSource: Got {len(downloads_list)} downloads from {source.name}")
                     for dl in downloads_list:
-                        if dl is None:
-                            print(f"[WARN] dl is None in downloads_list from {source.name}")
+                        try:
+                            if dl is None:
+                                print(f"[WARN] dl is None in downloads_list from {source.name}")
+                                continue
+                            if not isinstance(dl, dict):
+                                print(f"[WARN] dl is not dict in downloads_list from {source.name}: {type(dl)} - {dl}")
+                                continue
+                            # Add source tag to track which source this download came from
+                            dl_copy = dl.copy()
+                            dl_copy["_source"] = source.name
+                            aggregated["top_downloads_with_vt"].append(dl_copy)
+                            if dl.get("vt_detections", 0) > 0:
+                                print(
+                                    f"[DEBUG] MultiSource: VT data from {source.name}: {dl.get('vt_detections')}/{dl.get('vt_total')} for {dl.get('shasum')[:16]}..."
+                                )
+                        except Exception as e:
+                            print(f"[ERROR] Failed to process download from {source.name}: {e} - dl: {dl}")
                             continue
-                        if not isinstance(dl, dict):
-                            print(f"[WARN] dl is not dict in downloads_list from {source.name}: {type(dl)} - {dl}")
-                            continue
-                        # Add source tag to track which source this download came from
-                        dl_copy = dl.copy()
-                        dl_copy["_source"] = source.name
-                        aggregated["top_downloads_with_vt"].append(dl_copy)
-                        if dl.get("vt_detections", 0) > 0:
-                            print(
-                                f"[DEBUG] MultiSource: VT data from {source.name}: {dl.get('vt_detections')}/{dl.get('vt_total')} for {dl.get('shasum')[:16]}..."
-                            )
 
                 except Exception as e:
                     print(f"[MultiSource] Error fetching downloads from '{source.name}': {e}")
