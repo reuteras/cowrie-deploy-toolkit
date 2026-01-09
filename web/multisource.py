@@ -511,7 +511,7 @@ class MultiSourceDataSource:
                 "avg_detection_rate": 0.0,
                 "total_threat_families": set(),
             },
-            "top_malicious_downloads": [],  # List of malicious downloads with VT data
+            "top_downloads_with_vt": [],  # List of downloads with VT data
             "source_stats": {},  # Per-source breakdown
             "source_errors": {},
         }
@@ -656,11 +656,11 @@ class MultiSourceDataSource:
                     aggregated["vt_stats"]["total_malicious"] += vt.get("total_malicious", 0)
 
                     # Merge top malicious downloads
-                    for dl in stats.get("top_malicious_downloads", []):
+                    for dl in stats.get("top_downloads_with_vt", []):
                         # Add source tag to track which source this download came from
                         dl_copy = dl.copy()
                         dl_copy["_source"] = source.name
-                        aggregated["top_malicious_downloads"].append(dl_copy)
+                        aggregated["top_downloads_with_vt"].append(dl_copy)
 
                 except Exception as e:
                     print(f"[MultiSource] Error fetching stats from '{source.name}': {e}")
@@ -679,7 +679,7 @@ class MultiSourceDataSource:
                         # Add source tag to track which source this download came from
                         dl_copy = dl.copy()
                         dl_copy["_source"] = source.name
-                        aggregated["top_malicious_downloads"].append(dl_copy)
+                        aggregated["top_downloads_with_vt"].append(dl_copy)
 
                 except Exception as e:
                     print(f"[MultiSource] Error fetching downloads from '{source.name}': {e}")
@@ -729,7 +729,7 @@ class MultiSourceDataSource:
 
         # Deduplicate and sort top malicious downloads by SHA256 and VT detections
         dl_dict = {}
-        for dl in aggregated["top_malicious_downloads"]:
+        for dl in aggregated["top_downloads_with_vt"]:
             shasum = dl.get("shasum")
             if shasum:
                 if shasum not in dl_dict:
@@ -741,7 +741,7 @@ class MultiSourceDataSource:
                     if new_detections > existing_detections:
                         dl_dict[shasum] = dl
 
-        aggregated["top_malicious_downloads"] = sorted(
+        aggregated["top_downloads_with_vt"] = sorted(
             dl_dict.values(), key=lambda x: x.get("vt_detections", 0), reverse=True
         )[:10]
 

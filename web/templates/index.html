@@ -213,7 +213,7 @@
         <!-- Threat Intelligence: VirusTotal -->
         <div class="dashboard-card">
             <h2>🔍 VirusTotal Intelligence <a href="{{ url_for('downloads', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
-            {% if stats.top_malicious_downloads %}
+            {% if stats.top_downloads_with_vt and stats.top_downloads_with_vt|length > 0 %}
             <table class="data-table">
                 <thead>
                     <tr>
@@ -225,7 +225,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for dl in stats.top_malicious_downloads %}
+                    {% for dl in stats.top_downloads_with_vt %}
                     <tr>
                         <td>
                             <a href="https://www.virustotal.com/gui/file/{{ dl.shasum }}" target="_blank"
@@ -255,8 +255,12 @@
                             <span class="badge badge-danger">{{ dl.vt_detections }}/{{ dl.vt_total }}</span>
                             {% elif dl.vt_detections >= 10 %}
                             <span class="badge badge-warning">{{ dl.vt_detections }}/{{ dl.vt_total }}</span>
-                            {% else %}
+                            {% elif dl.vt_detections > 0 %}
                             <span class="badge badge-info">{{ dl.vt_detections }}/{{ dl.vt_total }}</span>
+                            {% elif dl.vt_total > 0 %}
+                            <span class="badge badge-success">0/{{ dl.vt_total }}</span>
+                            {% else %}
+                            <span class="text-muted">—</span>
                             {% endif %}
                         </td>
                         <td>
@@ -274,9 +278,9 @@
                 </tbody>
             </table>
             {% else %}
-            <p class="no-data">No malicious downloads detected</p>
+            <p class="no-data">No downloads scanned by VirusTotal</p>
             <p style="font-size: 0.9em; color: var(--text-secondary); margin-top: 0.5rem;">
-                VirusTotal threat intelligence for downloaded malware samples, showing detection counts across antivirus engines.
+                Files will appear here once they are scanned by VirusTotal for malware detection.
             </p>
             {% endif %}
         </div>

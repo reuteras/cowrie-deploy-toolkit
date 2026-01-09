@@ -720,6 +720,9 @@ class SessionParser:
                 elif cache_db:
                     vt_data = cache_db.get_vt_result(shasum)
 
+                # Always add files to scanned list, even without VT data
+                all_scanned_files[shasum] = dl
+
                 if vt_data:
                     vt_total_scanned += 1
                     detections = vt_data.get("detections", 0)
@@ -734,9 +737,6 @@ class SessionParser:
                     vt_total_detections += detections
                     vt_total_engines += total_eng
 
-                    # Track all scanned files (including clean files with 0 detections)
-                    all_scanned_files[shasum] = dl
-
                     if detections > 0:
                         vt_total_malicious += 1
 
@@ -744,6 +744,12 @@ class SessionParser:
                         threat_label = vt_data.get("threat_label", "")
                         if threat_label:
                             vt_threat_families.add(threat_label)
+                else:
+                    # No VT data available, set defaults
+                    dl["vt_detections"] = 0
+                    dl["vt_total"] = 0
+                    dl["vt_link"] = ""
+                    dl["vt_threat_label"] = ""
 
         # Calculate VirusTotal statistics
         vt_stats = {
@@ -770,7 +776,7 @@ class SessionParser:
             "top_commands": command_counter.most_common(20),
             "top_clients": client_version_counter.most_common(10),
             "top_asns": top_asns,
-            "top_malicious_downloads": top_downloads,
+            "top_downloads_with_vt": top_downloads,
             "vt_stats": vt_stats,
             "hourly_activity": sorted_hours[-48:],  # Last 48 hours
         }
