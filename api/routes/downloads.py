@@ -124,6 +124,9 @@ async def get_downloads(limit: int = Query(100, ge=1, le=1000), offset: int = Qu
                 file_info["file_type"] = yara_data.get("file_type")
                 file_info["file_category"] = yara_data.get("file_category")
                 file_info["is_previewable"] = yara_data.get("is_previewable", False)
+                print(f"[DEBUG] API YARA found for {sha256[:16]}...: {yara_data.get('file_category')}")
+            else:
+                print(f"[DEBUG] API YARA not found for {sha256[:16]}...")
 
             files.append(file_info)
 

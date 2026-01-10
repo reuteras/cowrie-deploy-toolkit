@@ -1932,6 +1932,9 @@ def downloads_data():
             dl["file_type"] = yara_data.get("file_type")
             dl["file_category"] = yara_data.get("file_category")
             dl["is_previewable"] = yara_data.get("is_previewable", False)
+            print(f"[DEBUG] Web YARA found for {shasum[:16]}...: {yara_data.get('file_category')}")
+        else:
+            print(f"[DEBUG] Web YARA not found for {shasum[:16]}...")
 
         # Set file size from filesystem if file exists
         if dl["exists"]:
