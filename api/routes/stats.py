@@ -5,9 +5,35 @@ Provides aggregated statistics from Cowrie data
 """
 
 import logging
+from datetime import datetime, timedelta
 
+import time
 from fastapi import APIRouter, Query
 from services.sqlite_parser import sqlite_parser
+
+
+# Simple in-memory cache for aggregated data
+class SimpleCache:
+    def __init__(self):
+        self.cache = {}
+        self.timestamps = {}
+
+    def get(self, key):
+        if key in self.cache:
+            if time.time() - self.timestamps.get(key, 0) < 300:  # 5 minutes
+                return self.cache[key]
+            else:
+                # Expired, remove
+                del self.cache[key]
+                del self.timestamps[key]
+        return None
+
+    def set(self, key, value, ttl=300):
+        self.cache[key] = value
+        self.timestamps[key] = time.time()
+
+
+cache = SimpleCache()
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -38,3 +64,124 @@ async def get_stats_overview(days: int = Query(7, ge=1, le=365)):
 
     logger.info(f"Using SQLite parser for stats (days={days})")
     return sqlite_parser.get_stats_overview(days=days)
+
+
+@router.get("/dashboard/overview")
+async def get_dashboard_overview(hours: int = Query(24, ge=1), force_refresh: bool = Query(False)):
+    """
+    Get complete aggregated dashboard data in one request
+
+    This endpoint provides all data needed for the dashboard in a single call,
+    including pre-aggregated statistics and top downloads with VT data.
+
+    Args:
+        hours: Number of hours to include in statistics
+        force_refresh: Force cache refresh (ignore cached data)
+
+    Returns:
+        Complete dashboard data with stats, downloads, IPs, etc.
+    """
+    if not sqlite_parser.available:
+        logger.error(f"SQLite database not found at {sqlite_parser.db_path}")
+        raise FileNotFoundError(
+            f"SQLite database required but not found at {sqlite_parser.db_path}. "
+            "Please enable SQLite output in Cowrie configuration."
+        )
+
+    # Check cache unless force refresh
+    cache_key = f"dashboard_{hours}"
+    if not force_refresh:
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            logger.info(f"Returning cached dashboard data for {hours} hours")
+            return cached_data
+
+    logger.info(f"Generating dashboard overview for {hours} hours")
+
+    # Get base stats
+    stats = sqlite_parser.get_stats_overview(days=max(1, hours // 24))
+
+    # Add aggregated download data with VT and metadata
+    top_downloads = get_top_downloads_with_vt(hours)
+
+    # Add source identification (for multi-source compatibility)
+    result = {
+        "stats": stats,
+        "top_downloads_with_vt": top_downloads,
+        "generated_at": datetime.now().isoformat(),
+        "hours": hours,
+        "sources": ["local"],  # For multi-source identification
+        "status": "complete",
+    }
+
+    # Cache for 5 minutes
+    cache.set(cache_key, result, ttl=300)
+
+    return result
+
+
+def get_top_downloads_with_vt(hours: int) -> list:
+    """Get top downloads with VT data and metadata from database"""
+    if not sqlite_parser.available:
+        return []
+
+    # Create direct database connection
+    import sqlite3
+
+    db_path = sqlite_parser.db_path
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    try:
+        cutoff = datetime.now() - timedelta(hours=hours)
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
+
+        # Aggregate downloads by SHA256 with VT data and metadata
+        cursor.execute(
+            """
+            SELECT
+                d.shasum,
+                COUNT(d.id) as download_count,
+                MAX(d.timestamp) as latest_download,
+                m.file_size,
+                m.file_type,
+                COALESCE(m.file_category, 'unknown') as file_category,
+                m.is_previewable,
+                COALESCE(json_extract(vt.data, '$.positives'), 0) as vt_detections,
+                COALESCE(json_extract(vt.data, '$.total'), 0) as vt_total,
+                json_extract(vt.data, '$.threat_label') as vt_threat_label
+            FROM downloads d
+            LEFT JOIN download_meta m ON d.shasum = m.shasum
+            LEFT JOIN events vt ON vt.eventid = 'cowrie.virustotal.scanfile'
+                AND json_extract(vt.data, '$.sha256') = d.shasum
+                AND vt.timestamp >= ?
+            WHERE d.timestamp >= ?
+            GROUP BY d.shasum
+            ORDER BY vt_detections DESC, download_count DESC
+            LIMIT 10
+            """,
+            (cutoff_str, cutoff_str),
+        )
+
+        downloads = []
+        for row in cursor.fetchall():
+            downloads.append(
+                {
+                    "shasum": row["shasum"],
+                    "download_count": row["download_count"],
+                    "latest_download": row["latest_download"],
+                    "file_size": row["file_size"],
+                    "file_type": row["file_type"],
+                    "file_category": row["file_category"],
+                    "is_previewable": bool(row["is_previewable"]),
+                    "vt_detections": row["vt_detections"],
+                    "vt_total": row["vt_total"],
+                    "vt_threat_label": row["vt_threat_label"],
+                }
+            )
+
+        return downloads
+
+    finally:
+        conn.close()

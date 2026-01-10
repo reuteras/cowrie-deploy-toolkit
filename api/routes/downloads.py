@@ -164,7 +164,6 @@ async def get_downloads(
     paginated = files[offset : offset + limit]
 
     result = {"total": total, "limit": limit, "offset": offset, "downloads": paginated}
-    print(f"[DEBUG] API returning: {len(paginated)} downloads with VT data")
     return result
 
 

@@ -457,9 +457,9 @@ class MultiSourceDataSource:
 
         return None
 
-    def get_stats(self, hours: int = 24, source_filter: Optional[str] = None) -> dict:
+    def get_stats(self, hours: int = 24, source_filter: Optional[str] = None, force_refresh: bool = False) -> dict:
         """
-        Get aggregated statistics from all sources with caching.
+        Get aggregated statistics from all sources using pre-aggregated API endpoints.
 
         Args:
             hours: Time range in hours
@@ -468,11 +468,10 @@ class MultiSourceDataSource:
         Returns:
             Aggregated stats dict
         """
-        # Check cache first (version 2 includes VT data)
-        cache_key = f"stats_v2_{hours}_{source_filter or 'all'}"
+        # Check cache first
+        cache_key = f"stats_v3_{hours}_{source_filter or 'all'}"
         cached = self.stats_cache.get(cache_key)
         if cached is not None:
-            print(f"[MultiSource] Cache hit for stats (hours={hours}, filter={source_filter})")
             return cached
 
         # Determine which sources to query
@@ -489,37 +488,148 @@ class MultiSourceDataSource:
             skipped = set(sources_to_query.keys()) - set(available_sources.keys())
             print(f"[MultiSource] Skipping sources in backoff: {skipped}")
 
-        # Initialize aggregated stats
+        # Initialize result
         aggregated = {
             "total_sessions": 0,
-            "unique_ips": set(),
+            "unique_ips": 0,
             "sessions_with_commands": 0,
             "total_downloads": 0,
-            "unique_downloads": set(),
-            "ip_list": [],  # List of IP details with geo, counts, etc.
-            "top_countries": {},
-            "top_credentials": {},
-            "successful_credentials": set(),
-            "top_commands": {},
-            "top_clients": {},
-            "top_asns": {},
+            "unique_downloads": 0,
+            "ip_list": [],
+            "top_countries": [],
+            "top_credentials": [],
+            "successful_credentials": [],
+            "top_commands": [],
+            "top_clients": [],
+            "top_asns": [],
             "ip_locations": [],
-            "hourly_activity": {},
+            "hourly_activity": [],
             "vt_stats": {
                 "total_scanned": 0,
                 "total_malicious": 0,
                 "avg_detection_rate": 0.0,
-                "total_threat_families": set(),
+                "total_threat_families": 0,
             },
-            "top_downloads_with_vt": [],  # List of downloads with VT data
-            "source_stats": {},  # Per-source breakdown
+            "top_downloads_with_vt": [],
+            "source_stats": {},
             "source_errors": {},
+            "failed_sources": [],
         }
 
         if not available_sources:
             print("[MultiSource] No sources available (all in backoff)")
-            self.stats_cache.set(cache_key, aggregated, ttl=5)  # Short cache for empty results
+            self.stats_cache.set(cache_key, aggregated, ttl=5)
             return aggregated
+
+        # Query each source's aggregated dashboard endpoint
+        for source_name, source in available_sources.items():
+            try:
+                # Call the new aggregated endpoint
+                params = f"/dashboard/overview?hours={hours}"
+                if force_refresh:
+                    params += "&force_refresh=true"
+                data = source.datasource._call_api("GET", params)
+                self.backoff.record_success(source.name)
+
+                # Merge the pre-aggregated data
+                aggregated["total_sessions"] += data.get("stats", {}).get("total_sessions", 0)
+                aggregated["unique_ips"] += data.get("stats", {}).get("unique_ips", 0)
+                aggregated["sessions_with_commands"] += data.get("stats", {}).get("sessions_with_commands", 0)
+                aggregated["total_downloads"] += data.get("stats", {}).get("total_downloads", 0)
+                aggregated["unique_downloads"] += data.get("stats", {}).get("unique_downloads", 0)
+
+                # Merge lists (extend for multi-source)
+                aggregated["ip_list"].extend(data.get("stats", {}).get("ip_list", []))
+                aggregated["top_countries"].extend(data.get("stats", {}).get("top_countries", []))
+                aggregated["top_credentials"].extend(data.get("stats", {}).get("top_credentials", []))
+                aggregated["top_commands"].extend(data.get("stats", {}).get("top_commands", []))
+                aggregated["top_clients"].extend(data.get("stats", {}).get("top_clients", []))
+                aggregated["top_asns"].extend(data.get("stats", {}).get("top_asns", []))
+                aggregated["ip_locations"].extend(data.get("ip_locations", []))
+
+                # Merge VT stats
+                vt_stats = data.get("stats", {}).get("vt_stats", {})
+                aggregated["vt_stats"]["total_scanned"] += vt_stats.get("total_scanned", 0)
+                aggregated["vt_stats"]["total_malicious"] += vt_stats.get("total_malicious", 0)
+
+                # Merge top downloads with VT data
+                downloads = data.get("top_downloads_with_vt", [])
+                for dl in downloads:
+                    # Add source tag
+                    dl_copy = dl.copy()
+                    dl_copy["_source"] = source_name
+                    aggregated["top_downloads_with_vt"].append(dl_copy)
+
+                # Store per-source stats
+                aggregated["source_stats"][source_name] = {
+                    "type": source.type,
+                    "status": "success",
+                    "sessions": data.get("stats", {}).get("total_sessions", 0),
+                    "downloads": len(downloads),
+                }
+
+                print(
+                    f"[MultiSource] Merged data from '{source_name}': {data.get('stats', {}).get('total_sessions', 0)} sessions, {len(downloads)} downloads"
+                )
+
+            except Exception as e:
+                print(f"[MultiSource] Error fetching dashboard data from '{source_name}': {e}")
+                aggregated["source_errors"][source_name] = str(e)
+                aggregated["failed_sources"].append(source_name)
+                self.backoff.record_failure(source.name)
+
+        # Final processing: deduplicate and sort
+        aggregated["top_downloads_with_vt"] = self._deduplicate_and_sort_downloads(aggregated["top_downloads_with_vt"])
+
+        # Calculate VT averages
+        if aggregated["vt_stats"]["total_scanned"] > 0:
+            aggregated["vt_stats"]["avg_detection_rate"] = (
+                aggregated["vt_stats"]["total_malicious"] / aggregated["vt_stats"]["total_scanned"]
+            ) * 100
+
+        # Sort aggregated lists
+        aggregated["top_countries"] = sorted(
+            aggregated["top_countries"], key=lambda x: x[1] if isinstance(x, list) else 0, reverse=True
+        )[:10]
+        aggregated["top_credentials"] = sorted(
+            aggregated["top_credentials"], key=lambda x: x[1] if isinstance(x, list) else 0, reverse=True
+        )[:10]
+        aggregated["top_commands"] = sorted(
+            aggregated["top_commands"], key=lambda x: x[1] if isinstance(x, list) else 0, reverse=True
+        )[:10]
+        aggregated["top_clients"] = sorted(
+            aggregated["top_clients"], key=lambda x: x[1] if isinstance(x, list) else 0, reverse=True
+        )[:10]
+
+        print(
+            f"[MultiSource] Final aggregation: {len(aggregated['top_downloads_with_vt'])} unique downloads with VT data"
+        )
+
+        # Cache the result
+        self.stats_cache.set(cache_key, aggregated, ttl=300)  # 5 minutes
+
+        return aggregated
+
+    def _deduplicate_and_sort_downloads(self, downloads_list):
+        """Deduplicate downloads by SHA256 and sort by VT detections."""
+        dl_dict = {}
+        for dl in downloads_list:
+            if dl is None or not isinstance(dl, dict):
+                continue
+            shasum = dl.get("sha256") or dl.get("shasum")
+            if shasum:
+                if shasum not in dl_dict:
+                    dl_dict[shasum] = dl
+                else:
+                    # Keep the one with higher VT detections
+                    existing = dl_dict[shasum].get("vt_detections", 0)
+                    current = dl.get("vt_detections", 0)
+                    if current > existing:
+                        dl_dict[shasum] = dl
+
+        # Filter to only VT-scanned files and sort
+        valid_downloads = [dl for dl in dl_dict.values() if dl.get("vt_total", 0) > 0]
+        return sorted(valid_downloads, key=lambda x: x.get("vt_detections", 0), reverse=True)[:10]
 
         # Query sources in parallel with reduced concurrency
         max_workers = min(len(available_sources), MAX_WORKERS)
@@ -672,7 +782,6 @@ class MultiSourceDataSource:
                 source = future_to_source_downloads[future]
                 try:
                     downloads_data = future.result(timeout=30)
-                    print(f"[DEBUG] downloads_data from {source.name}: {type(downloads_data)}")
                     if downloads_data is None:
                         print(f"[WARN] downloads_data is None from {source.name}, skipping")
                         continue
@@ -680,7 +789,6 @@ class MultiSourceDataSource:
 
                     # Merge top downloads (both malicious and clean, but unique by SHA256)
                     downloads_list = downloads_data.get("downloads", [])
-                    print(f"[DEBUG] MultiSource: Got {len(downloads_list)} downloads from {source.name}")
                     for dl in downloads_list:
                         try:
                             if dl is None:
@@ -775,7 +883,6 @@ class MultiSourceDataSource:
         aggregated["top_downloads_with_vt"] = sorted(
             valid_downloads, key=lambda x: x.get("vt_detections", 0), reverse=True
         )[:10]
-        print(f"[DEBUG] Final top_downloads_with_vt: {len(aggregated['top_downloads_with_vt'])} items")
 
         aggregated["top_countries"] = sorted(aggregated["top_countries"].items(), key=lambda x: x[1], reverse=True)[:10]
         aggregated["top_credentials"] = sorted(aggregated["top_credentials"].items(), key=lambda x: x[1], reverse=True)[
