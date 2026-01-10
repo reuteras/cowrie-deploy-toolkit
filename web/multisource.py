@@ -607,6 +607,32 @@ class MultiSourceDataSource:
 
         return aggregated
 
+    def get_dashboard_overview(self, hours: int = 24, force_refresh: bool = False) -> dict:
+        """
+        Get complete dashboard data in one request (multi-source compatible).
+
+        This aggregates data from all sources into the dashboard overview format.
+
+        Args:
+            hours: Number of hours to include in statistics
+            force_refresh: Force cache refresh
+
+        Returns:
+            Complete dashboard data dict with stats and downloads
+        """
+        # Get aggregated stats
+        aggregated_stats = self.get_stats(hours=hours, force_refresh=force_refresh)
+
+        # Return in dashboard overview format
+        return {
+            "stats": aggregated_stats,
+            "top_downloads_with_vt": aggregated_stats.get("top_downloads_with_vt", []),
+            "generated_at": datetime.now().isoformat(),
+            "hours": hours,
+            "sources": list(self.sources.keys()),
+            "status": "complete",
+        }
+
     def _deduplicate_and_sort_downloads(self, downloads_list):
         """Deduplicate downloads by SHA256 and sort by VT detections."""
         dl_dict = {}
