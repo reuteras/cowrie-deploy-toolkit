@@ -552,25 +552,30 @@ class SQLiteStatsParser:
                         }
                     )
 
-                # Get downloads
+                # Get downloads with metadata
                 cursor.execute(
                     """
-                    SELECT timestamp, url, outfile, shasum
-                    FROM downloads
-                    WHERE session = ?
-                    ORDER BY timestamp
+                    SELECT d.timestamp, d.url, d.outfile, d.shasum,
+                           m.file_size, m.file_type, m.file_category, m.is_previewable
+                    FROM downloads d
+                    LEFT JOIN download_meta m ON d.shasum = m.shasum
+                    WHERE d.session = ?
+                    ORDER BY d.timestamp
                     """,
                     (session_id,),
                 )
                 for dl_row in cursor.fetchall():
-                    session["downloads"].append(
-                        {
-                            "timestamp": dl_row["timestamp"],
-                            "url": dl_row["url"],
-                            "outfile": dl_row["outfile"],
-                            "shasum": dl_row["shasum"],
-                        }
-                    )
+                    download = {
+                        "timestamp": dl_row["timestamp"],
+                        "url": dl_row["url"],
+                        "outfile": dl_row["outfile"],
+                        "shasum": dl_row["shasum"],
+                        "file_size": dl_row["file_size"],
+                        "file_type": dl_row["file_type"],
+                        "file_category": dl_row["file_category"] or "unknown",
+                        "is_previewable": bool(dl_row["is_previewable"]),
+                    }
+                    session["downloads"].append(download)
 
                 # Calculate duration
                 if session["start_time"] and session["end_time"]:
@@ -699,25 +704,30 @@ class SQLiteStatsParser:
                     }
                 )
 
-            # Get downloads
+            # Get downloads with metadata
             cursor.execute(
                 """
-                SELECT timestamp, url, outfile, shasum
-                FROM downloads
-                WHERE session = ?
-                ORDER BY timestamp
+                SELECT d.timestamp, d.url, d.outfile, d.shasum,
+                       m.file_size, m.file_type, m.file_category, m.is_previewable
+                FROM downloads d
+                LEFT JOIN download_meta m ON d.shasum = m.shasum
+                WHERE d.session = ?
+                ORDER BY d.timestamp
                 """,
                 (session_id,),
             )
             for dl_row in cursor.fetchall():
-                session["downloads"].append(
-                    {
-                        "timestamp": dl_row["timestamp"],
-                        "url": dl_row["url"],
-                        "outfile": dl_row["outfile"],
-                        "shasum": dl_row["shasum"],
-                    }
-                )
+                download = {
+                    "timestamp": dl_row["timestamp"],
+                    "url": dl_row["url"],
+                    "outfile": dl_row["outfile"],
+                    "shasum": dl_row["shasum"],
+                    "file_size": dl_row["file_size"],
+                    "file_type": dl_row["file_type"],
+                    "file_category": dl_row["file_category"] or "unknown",
+                    "is_previewable": bool(dl_row["is_previewable"]),
+                }
+                session["downloads"].append(download)
 
             # Calculate duration
             if session["start_time"] and session["end_time"]:

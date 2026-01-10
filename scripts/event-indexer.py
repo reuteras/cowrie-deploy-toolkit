@@ -19,6 +19,7 @@ import json
 import os
 import signal
 import sqlite3
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -103,6 +104,11 @@ class EventIndexer:
                 """,
                 (session, timestamp, eventid, src_ip, json.dumps(event)),
             )
+
+            # Check for download events and detect file metadata
+            if eventid in ("cowrie.session.file_download", "cowrie.session.file_upload"):
+                self._detect_file_metadata(event)
+
             return True
         except sqlite3.IntegrityError:
             # Duplicate event, skip
@@ -110,6 +116,87 @@ class EventIndexer:
         except Exception as e:
             print(f"[!] Error indexing event: {e}")
             return False
+
+    def _detect_file_metadata(self, event: dict) -> None:
+        """
+        Detect and store file metadata for download/upload events.
+
+        Args:
+            event: Download/upload event dictionary
+        """
+        try:
+            # Get file path from event
+            shasum = event.get("shasum")
+            if not shasum:
+                return
+
+            # Construct file path (assuming downloads are in lib/cowrie/downloads/)
+            downloads_dir = Path(self.db_path).parent / "downloads"
+            file_path = downloads_dir / shasum
+
+            if not file_path.exists():
+                print(f"[!] File not found for metadata detection: {file_path}")
+                return
+
+            # Get file size
+            file_size = file_path.stat().st_size
+
+            # Detect MIME type using file command
+            try:
+                result = subprocess.run(
+                    ["file", "--mime-type", "-b", str(file_path)], capture_output=True, text=True, timeout=10
+                )
+
+                if result.returncode == 0:
+                    mime_type = result.stdout.strip()
+                else:
+                    mime_type = "application/octet-stream"  # Default
+            except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+                mime_type = "application/octet-stream"
+
+            # Map MIME type to category
+            file_category, is_previewable = self._map_mime_to_category(mime_type)
+
+            # Store metadata in database
+            self.conn.execute(
+                """
+                INSERT OR REPLACE INTO download_meta
+                (shasum, file_size, file_type, file_category, is_previewable, updated_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (shasum, file_size, mime_type, file_category, is_previewable),
+            )
+
+            print(f"[EventIndexer] Stored metadata for {shasum}: {file_category} ({mime_type})")
+
+        except Exception as e:
+            print(f"[!] Error detecting file metadata: {e}")
+
+    def _map_mime_to_category(self, mime_type: str) -> tuple[str, bool]:
+        """
+        Map MIME type to file category and previewability.
+
+        Args:
+            mime_type: MIME type string
+
+        Returns:
+            Tuple of (category, is_previewable)
+        """
+        if mime_type.startswith("application/"):
+            if "executable" in mime_type or "x-dosexec" in mime_type or "x-elf" in mime_type:
+                return "executable", False
+            elif any(fmt in mime_type for fmt in ["zip", "gzip", "tar", "x-tar", "x-gzip"]):
+                return "archive", False
+            elif any(doc in mime_type for doc in ["pdf", "document", "word", "excel"]):
+                return "document", True
+            else:
+                return "data", False
+        elif mime_type.startswith("text/"):
+            return "script", True
+        elif mime_type.startswith("image/"):
+            return "image", False
+        else:
+            return "unknown", False
 
     def _get_rotated_logs(self) -> list:
         """
@@ -197,6 +284,58 @@ class EventIndexer:
             total_indexed += count
 
         print(f"[EventIndexer] Backfill complete: {total_indexed} events indexed")
+
+        # Backfill missing download metadata
+        self._backfill_download_metadata()
+
+    def _backfill_download_metadata(self):
+        """Backfill metadata for downloads that don't have it."""
+        print("[EventIndexer] Checking for downloads missing metadata...")
+
+        try:
+            # Find downloads without metadata
+            cursor = self.conn.execute(
+                """
+                SELECT d.shasum FROM downloads d
+                LEFT JOIN download_meta m ON d.shasum = m.shasum
+                WHERE m.shasum IS NULL
+                """
+            )
+
+            missing_shasums = [row[0] for row in cursor.fetchall()]
+
+            if not missing_shasums:
+                print("[EventIndexer] All downloads have metadata")
+                return
+
+            print(f"[EventIndexer] Found {len(missing_shasums)} downloads missing metadata")
+
+            # Process in batches to avoid overwhelming the system
+            batch_size = 50
+            processed = 0
+
+            for i in range(0, len(missing_shasums), batch_size):
+                batch = missing_shasums[i : i + batch_size]
+
+                for shasum in batch:
+                    # Create a mock event for metadata detection
+                    mock_event = {
+                        "eventid": "cowrie.session.file_download",
+                        "shasum": shasum,
+                        "timestamp": "2026-01-01T00:00:00.000000Z",  # Placeholder
+                        "session": "backfill",
+                        "src_ip": "127.0.0.1",
+                    }
+                    self._detect_file_metadata(mock_event)
+                    processed += 1
+
+                print(f"[EventIndexer] Processed {processed}/{len(missing_shasums)} missing metadata entries")
+                self.conn.commit()  # Commit batch
+
+            print(f"[EventIndexer] Metadata backfill complete: {processed} entries processed")
+
+        except Exception as e:
+            print(f"[!] Error during metadata backfill: {e}")
 
     def _tail_file(self, filepath: str):
         """

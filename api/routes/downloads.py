@@ -8,6 +8,10 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+import sqlite3
+import subprocess
+from datetime import datetime, timedelta
+from pathlib import Path
 from config import config
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -78,7 +82,9 @@ def get_safe_download_path(sha256: str) -> Path:
 
 
 @router.get("/downloads")
-async def get_downloads(limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0)):
+async def get_downloads(
+    limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0), hours: int = Query(24, ge=1)
+):
     """
     Get list of downloaded files with VT and YARA metadata
 
@@ -89,46 +95,66 @@ async def get_downloads(limit: int = Query(100, ge=1, le=1000), offset: int = Qu
     if not downloads_path.exists():
         return {"total": 0, "downloads": []}
 
-    # Initialize cache readers (for YARA data only)
-    yara_cache = YARACache(config.YARA_CACHE_DB)
+    # Query downloads with metadata directly from database
+    if not sqlite_parser.available:
+        return {"total": 0, "downloads": []}
 
-    # Get all files
-    files = []
-    for filepath in downloads_path.iterdir():
-        if filepath.is_file():
-            sha256 = filepath.name
-            stat = filepath.stat()
+    # Create database connection
+    db_path = sqlite_parser.db_path
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
 
-            file_info = {
-                "sha256": sha256,
-                "size": stat.st_size,
-                "first_seen": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "exists": True,
-            }
+    try:
+        # Get downloads with metadata in the time range
+        cutoff = datetime.now() - timedelta(hours=hours)
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
 
+        cursor.execute(
+            """
+            SELECT d.shasum, d.timestamp, d.url, d.outfile,
+                   m.file_size, m.file_type, m.file_category, m.is_previewable
+            FROM downloads d
+            LEFT JOIN download_meta m ON d.shasum = m.shasum
+            WHERE d.timestamp >= ?
+            ORDER BY d.timestamp DESC
+            """,
+            (cutoff_str,),
+        )
+
+        # Aggregate by SHA256 and add VT data
+        download_map = {}
+        for row in cursor.fetchall():
+            shasum = row["shasum"]
+            if shasum not in download_map:
+                download_map[shasum] = {
+                    "sha256": shasum,
+                    "size": row["file_size"],
+                    "file_type": row["file_type"],
+                    "file_category": row["file_category"] or "unknown",
+                    "is_previewable": bool(row["is_previewable"]),
+                    "first_seen": row["timestamp"],
+                    "exists": True,
+                }
+
+        # Add VT data for each download
+        files = []
+        for shasum, file_info in download_map.items():
             # Add VT data from database
-            vt_data = sqlite_parser.get_vt_results(sha256)
+            vt_data = sqlite_parser.get_vt_results(shasum)
             if vt_data:
                 file_info["vt_detections"] = vt_data.get("detections", 0)
                 file_info["vt_total"] = vt_data.get("total", 0)
                 file_info["vt_threat_label"] = vt_data.get("threat_label", "")
-                print(f"[DEBUG] API: Found VT data for {sha256}: {vt_data}")
             else:
-                print(f"[DEBUG] API: No VT data for {sha256}")
-
-            # Add YARA data
-            yara_data = yara_cache.get_result(sha256)
-            if yara_data:
-                file_info["yara_matches"] = yara_data.get("matches", [])
-                file_info["file_type"] = yara_data.get("file_type")
-                file_info["file_category"] = yara_data.get("file_category")
-                file_info["is_previewable"] = yara_data.get("is_previewable", False)
-                print(f"[DEBUG] API YARA found for {sha256[:16]}...: {yara_data.get('file_category')}")
-            else:
-                print(f"[DEBUG] API YARA not found for {sha256[:16]}...")
+                file_info["vt_detections"] = 0
+                file_info["vt_total"] = 0
+                file_info["vt_threat_label"] = ""
 
             files.append(file_info)
+
+    finally:
+        conn.close()
 
     # Sort by first seen (newest first)
     files.sort(key=lambda x: x["first_seen"], reverse=True)

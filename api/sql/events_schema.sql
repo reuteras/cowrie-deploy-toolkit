@@ -31,3 +31,18 @@ CREATE TABLE IF NOT EXISTS log_files (
     last_inode INTEGER,
     last_processed DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Download metadata for file type detection and caching
+-- Stores pre-computed file metadata to avoid on-demand detection
+CREATE TABLE IF NOT EXISTS download_meta (
+    shasum TEXT PRIMARY KEY,
+    file_size INTEGER,
+    file_type TEXT,
+    file_category TEXT,
+    is_previewable BOOLEAN DEFAULT 0,
+    detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index for fast metadata lookups
+CREATE INDEX IF NOT EXISTS idx_download_meta_category ON download_meta(file_category);
