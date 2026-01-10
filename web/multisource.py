@@ -525,10 +525,7 @@ class MultiSourceDataSource:
         for source_name, source in available_sources.items():
             try:
                 # Call the new aggregated endpoint
-                params = f"/dashboard/overview?hours={hours}"
-                if force_refresh:
-                    params += "&force_refresh=true"
-                data = source.datasource._call_api("GET", params)
+                data = source.datasource.get_dashboard_overview(hours=hours, force_refresh=force_refresh)
                 self.backoff.record_success(source.name)
 
                 # Merge the pre-aggregated data

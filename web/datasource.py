@@ -372,6 +372,44 @@ class DataSource:
                 },
             }
 
+    def get_dashboard_overview(self, hours: int = 24, force_refresh: bool = False) -> dict:
+        """
+        Get complete dashboard data in one request.
+
+        Args:
+            hours: Number of hours to include in statistics
+            force_refresh: Force cache refresh
+
+        Returns:
+            Complete dashboard data dict
+        """
+        if self.mode == "local":
+            return self._get_dashboard_overview_local(hours, force_refresh)
+        else:
+            return self._get_dashboard_overview_remote(hours, force_refresh)
+
+    def _get_dashboard_overview_local(self, hours: int, force_refresh: bool) -> dict:
+        """Get dashboard overview from local SQLite database."""
+        # For local mode, we'd need to implement the aggregation logic here
+        # For now, return empty - local mode should use the old method
+        return {}
+
+    def _get_dashboard_overview_remote(self, hours: int, force_refresh: bool) -> dict:
+        """Get dashboard overview from remote API."""
+        params = f"hours={hours}"
+        if force_refresh:
+            params += "&force_refresh=true"
+
+        try:
+            response = self.session.get(
+                f"{self.api_base_url}/dashboard/overview?{params}",
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            raise Exception(f"Failed to fetch dashboard overview: {e}")
+
     def get_downloads(
         self,
         hours: int = 168,
