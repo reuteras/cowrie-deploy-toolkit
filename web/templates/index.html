@@ -220,8 +220,6 @@
                         <th>SHA256</th>
                         <th>File Type</th>
                         <th>VT Score</th>
-                        <th>Threat Label</th>
-                        <th>First Seen</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -235,22 +233,19 @@
                             </a>
                         </td>
                         <td>
-                            {% set file_category = dl.get('file_category') %}
-                            {% if file_category %}
-                                {% set category_colors = {
-                                    'executable': 'badge-danger',
-                                    'script': 'badge-warning',
-                                    'archive': 'badge-info',
-                                    'document': 'badge-primary',
-                                    'data': 'badge-secondary'
-                                } %}
-                                <span class="badge {{ category_colors.get(file_category, 'badge-secondary') }}"
-                                      title="{{ dl.get('file_type') or 'Unknown' }}">
-                                    {{ file_category }}
-                                </span>
-                            {% else %}
-                            <span class="text-muted">—</span>
-                            {% endif %}
+                            {% set file_category = dl.get('file_category') or 'unknown' %}
+                            {% set category_colors = {
+                                'executable': 'badge-danger',
+                                'script': 'badge-warning',
+                                'archive': 'badge-info',
+                                'document': 'badge-primary',
+                                'data': 'badge-secondary',
+                                'unknown': 'badge-light'
+                            } %}
+                            <span class="badge {{ category_colors.get(file_category, 'badge-light') }}"
+                                  title="{{ dl.get('file_type') or 'Unknown' }}">
+                                {{ file_category }}
+                            </span>
                         </td>
                         <td>
                             {% set vt_detections = dl.get('vt_detections', 0) %}
@@ -269,17 +264,6 @@
                             <span class="text-muted">—</span>
                             {% endif %}
                         </td>
-                        <td>
-                            {% set vt_threat_label = dl.get('vt_threat_label', '') %}
-                            {% if vt_threat_label %}
-                            <span class="badge badge-warning" style="background: #fff3cd; color: #856404;">
-                                {{ vt_threat_label }}
-                            </span>
-                            {% else %}
-                            <span class="text-muted">—</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ dl.get('timestamp') | format_timestamp }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

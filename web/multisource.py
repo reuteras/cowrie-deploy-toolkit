@@ -768,8 +768,10 @@ class MultiSourceDataSource:
                     if new_detections > existing_detections:
                         dl_dict[shasum] = dl
 
-        # Filter out any None values that might have slipped through
-        valid_downloads = [dl for dl in dl_dict.values() if dl is not None and isinstance(dl, dict)]
+        # Filter out any None values and unscanned files (vt_total == 0)
+        valid_downloads = [
+            dl for dl in dl_dict.values() if dl is not None and isinstance(dl, dict) and dl.get("vt_total", 0) > 0
+        ]
         aggregated["top_downloads_with_vt"] = sorted(
             valid_downloads, key=lambda x: x.get("vt_detections", 0), reverse=True
         )[:10]
