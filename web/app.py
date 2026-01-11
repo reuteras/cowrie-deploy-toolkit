@@ -1862,7 +1862,11 @@ _DOWNLOADS_CACHE_TTL = 300  # 5 minutes
 
 @app.route("/api/downloads-data")
 def downloads_data():
-    """API endpoint for downloads data - called via AJAX from downloads page."""
+    """
+    API endpoint for downloads data - called via AJAX from downloads page.
+
+    This now uses the optimized SQLite query via the API layer for much faster loading.
+    """
     global _downloads_cache, _downloads_cache_time
 
     hours = request.args.get("hours", 24, type=int)
@@ -1875,80 +1879,74 @@ def downloads_data():
     if cache_key in _downloads_cache and current_time - _downloads_cache_time < _DOWNLOADS_CACHE_TTL:
         return jsonify(_downloads_cache[cache_key])
 
-    # Extract downloads from sessions (they include database metadata)
-    # Limit to 5000 most recent sessions per source for performance
-    all_sessions = session_parser.parse_all(
-        hours=hours, source_filter=source_filter if source_filter else None, max_sessions=0
-    )
+    # Use API layer to get downloads (much faster than parsing sessions)
+    # This works for both local and remote sources
+    if isinstance(session_parser, MultiSourceDataSource):
+        # Multi-source mode: aggregate from all sources
+        all_downloads = []
 
-    # Collect all downloads from sessions
-    all_downloads = []
-    for session in all_sessions.values():
-        for download in session.get("downloads", []):
-            # Add session context to each download
-            download_with_context = download.copy()
-            download_with_context["session_id"] = session["id"]
-            download_with_context["src_ip"] = session.get("src_ip")
-            download_with_context["_source"] = session.get("_source", "local")
-            all_downloads.append(download_with_context)
+        for source_name, source in session_parser.sources.items():
+            # Apply source filter if specified
+            if source_filter and source_name != source_filter:
+                continue
 
-    # Deduplicate by shasum
-    unique_downloads = {}
-    for dl in all_downloads:
-        shasum = dl.get("shasum")
-        if not shasum:
-            continue
-
-        if shasum not in unique_downloads:
-            unique_downloads[shasum] = dl
-            unique_downloads[shasum]["count"] = 1
-        else:
-            unique_downloads[shasum]["count"] += 1
-
-    # Check which files exist on disk and get VT/YARA scores
-    download_path = CONFIG["download_path"]
-    for shasum, dl in unique_downloads.items():
-        file_path = os.path.join(download_path, shasum)
-        dl["exists"] = os.path.exists(file_path)
-
-        # Get VT data from database (using the same logic as API)
-        # Import here to avoid circular imports
-        try:
-            from services.sqlite_parser import sqlite_parser
-
-            vt_data = sqlite_parser.get_vt_results(shasum)
-            if vt_data:
-                dl["vt_detections"] = vt_data.get("detections", 0)
-                dl["vt_total"] = vt_data.get("total", 0)
-                dl["vt_threat_label"] = vt_data.get("threat_label", "")
-            else:
-                dl["vt_detections"] = 0
-                dl["vt_total"] = 0
-                dl["vt_threat_label"] = ""
-        except Exception:
-            # Fallback if database query fails
-            dl["vt_detections"] = 0
-            dl["vt_total"] = 0
-            dl["vt_threat_label"] = ""
-
-        yara_data = yara_cache.get_result(shasum)
-        if yara_data:
-            dl["yara_matches"] = yara_data.get("matches", [])
-            dl["file_type"] = yara_data.get("file_type")
-            dl["file_category"] = yara_data.get("file_category")
-            dl["is_previewable"] = yara_data.get("is_previewable", False)
-
-        # Set file size from filesystem if file exists
-        if dl["exists"]:
             try:
-                dl["size"] = os.path.getsize(file_path)
-            except OSError:
-                dl["size"] = 0
-        else:
-            dl["size"] = 0
+                # Call the API endpoint
+                response = source.datasource.session.get(
+                    f"{source.datasource.api_base_url}/api/v1/downloads",
+                    params={"hours": hours, "limit": 10000, "offset": 0},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                data = response.json()
 
-    # Sort by timestamp (most recent first)
-    sorted_downloads = sorted(unique_downloads.values(), key=lambda x: x.get("timestamp") or "", reverse=True)
+                # Add source tag to each download
+                for dl in data.get("downloads", []):
+                    dl["_source"] = source_name
+                    all_downloads.append(dl)
+
+            except Exception as e:
+                print(f"[Downloads] Failed to fetch from {source_name}: {e}")
+                continue
+
+        # Deduplicate across sources (same file downloaded by multiple honeypots)
+        unique_downloads = {}
+        for dl in all_downloads:
+            shasum = dl.get("shasum") or dl.get("sha256")
+            if not shasum:
+                continue
+
+            if shasum not in unique_downloads:
+                unique_downloads[shasum] = dl
+            else:
+                # Merge data (keep most recent, sum counts)
+                existing = unique_downloads[shasum]
+                if dl.get("timestamp", "") > existing.get("timestamp", ""):
+                    existing["timestamp"] = dl["timestamp"]
+                existing["count"] = existing.get("count", 1) + dl.get("count", 1)
+
+        sorted_downloads = sorted(unique_downloads.values(), key=lambda x: x.get("timestamp", ""), reverse=True)
+
+    else:
+        # Single source mode: call local or remote API
+        try:
+            api_url = session_parser.api_base_url if hasattr(session_parser, "api_base_url") else "http://cowrie-api:8000"
+            session_obj = session_parser.session if hasattr(session_parser, "session") else requests.Session()
+
+            response = session_obj.get(
+                f"{api_url}/api/v1/downloads",
+                params={"hours": hours, "limit": 10000, "offset": 0},
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            sorted_downloads = data.get("downloads", [])
+
+        except Exception as e:
+            print(f"[Downloads] Failed to fetch downloads from API: {e}")
+            # Fallback to empty list
+            sorted_downloads = []
 
     # Cache the result
     result = {"downloads": sorted_downloads, "count": len(sorted_downloads)}

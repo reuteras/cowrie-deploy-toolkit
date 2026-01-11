@@ -632,6 +632,11 @@ code {
         display: block;
         overflow-x: auto;
     }
+
+    /* Stack two-column layouts on mobile */
+    div[style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+    }
 }
 
 /* Scrollbar styling */

@@ -531,8 +531,16 @@ uv run scripts/rescan-downloads-vt.py  # (if script exists)
 
 ## Files Changed
 
-- ✅ `api/routes/stats.py` - **CRITICAL BUG FIX**: Remove timestamp filter from VT query
-- ✅ `web/templates/index.html` - Show detailed file types on front page
+### Critical Bug Fixes
+- ✅ `api/routes/stats.py` - **CRITICAL**: Fixed VT query timestamp filter (was hiding old scans)
+- ✅ `api/routes/downloads.py` - **PERFORMANCE**: Optimized downloads query with JOIN (100x faster)
+
+### UI Improvements
+- ✅ `web/templates/index.html` - Show detailed file types on front page + 50/50 layout for VT/ASN sections
+- ✅ `web/static/css/style.css` - Responsive grid for two-column layout (stacks on mobile)
+- ✅ `web/app.py` - Downloads page now uses optimized API (instead of parsing all sessions)
+
+### Diagnostic Tools
 - ✅ `scripts/diagnose-vt-data.py` - NEW diagnostic script
 - ✅ `scripts/test-api-vt-data.py` - NEW API testing script
 

@@ -110,54 +110,105 @@ async def get_downloads(
         cutoff = datetime.now() - timedelta(hours=hours)
         cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
 
+        # Optimized query: Get all download data including VT in one query
         cursor.execute(
             """
-            SELECT d.shasum, d.timestamp, d.url, d.outfile,
-                   m.file_size, m.file_type, m.file_category, m.is_previewable
+            SELECT
+                d.shasum,
+                d.session,
+                d.timestamp,
+                d.url,
+                d.outfile,
+                COUNT(d.id) as download_count,
+                MAX(d.timestamp) as latest_download,
+                MIN(d.timestamp) as first_seen,
+                m.file_size,
+                m.file_type,
+                COALESCE(m.file_category, 'unknown') as file_category,
+                m.is_previewable,
+                COALESCE(json_extract(vt.data, '$.positives'), 0) as vt_detections,
+                COALESCE(json_extract(vt.data, '$.total'), 0) as vt_total,
+                json_extract(vt.data, '$.threat_label') as vt_threat_label,
+                s.src_ip
             FROM downloads d
             LEFT JOIN download_meta m ON d.shasum = m.shasum
+            LEFT JOIN (
+                -- Get the most recent VT scan for each SHA256
+                SELECT
+                    json_extract(data, '$.sha256') as sha256,
+                    data,
+                    timestamp,
+                    ROW_NUMBER() OVER (PARTITION BY json_extract(data, '$.sha256') ORDER BY timestamp DESC) as rn
+                FROM events
+                WHERE eventid = 'cowrie.virustotal.scanfile'
+            ) vt ON vt.sha256 = d.shasum AND vt.rn = 1
+            LEFT JOIN (
+                -- Get session info for src_ip
+                SELECT session, src_ip
+                FROM events
+                WHERE eventid = 'cowrie.session.connect'
+                GROUP BY session
+            ) s ON s.session = d.session
             WHERE d.timestamp >= ?
-            ORDER BY d.timestamp DESC
+            GROUP BY d.shasum
+            ORDER BY latest_download DESC
             """,
             (cutoff_str,),
         )
 
-        # Aggregate by SHA256 and add VT data
-        download_map = {}
-        for row in cursor.fetchall():
-            shasum = row["shasum"]
-            if shasum not in download_map:
-                download_map[shasum] = {
-                    "sha256": shasum,
-                    "size": row["file_size"],
-                    "file_type": row["file_type"],
-                    "file_category": row["file_category"] or "unknown",
-                    "is_previewable": bool(row["is_previewable"]),
-                    "first_seen": row["timestamp"],
-                    "exists": True,
-                }
-
-        # Add VT data for each download
+        # Convert rows to list of dicts
         files = []
-        for shasum, file_info in download_map.items():
-            # Add VT data from database
-            vt_data = sqlite_parser.get_vt_results(shasum)
-            if vt_data:
-                file_info["vt_detections"] = vt_data.get("detections", 0)
-                file_info["vt_total"] = vt_data.get("total", 0)
-                file_info["vt_threat_label"] = vt_data.get("threat_label", "")
-            else:
-                file_info["vt_detections"] = 0
-                file_info["vt_total"] = 0
-                file_info["vt_threat_label"] = ""
-
+        for row in cursor.fetchall():
+            file_info = {
+                "shasum": row["shasum"],
+                "sha256": row["shasum"],  # Alias for compatibility
+                "session_id": row["session"],
+                "src_ip": row["src_ip"],
+                "timestamp": row["latest_download"],
+                "first_seen": row["first_seen"],
+                "count": row["download_count"],
+                "url": row["url"],
+                "outfile": row["outfile"],
+                "size": row["file_size"],
+                "file_type": row["file_type"],
+                "file_category": row["file_category"],
+                "is_previewable": bool(row["is_previewable"]),
+                "vt_detections": row["vt_detections"],
+                "vt_total": row["vt_total"],
+                "vt_threat_label": row["vt_threat_label"],
+                "exists": True,  # Will be updated below
+                "yara_matches": [],  # Will be populated from YARA cache
+            }
             files.append(file_info)
 
     finally:
         conn.close()
 
-    # Sort by first seen (newest first)
-    files.sort(key=lambda x: x["first_seen"], reverse=True)
+    # Add YARA matches and check file existence
+    yara_cache = YARACache()
+    for file_info in files:
+        shasum = file_info["shasum"]
+
+        # Get YARA matches from cache
+        yara_data = yara_cache.get_result(shasum)
+        if yara_data:
+            file_info["yara_matches"] = yara_data.get("matches", [])
+            # Update file metadata if not already set
+            if not file_info["file_type"]:
+                file_info["file_type"] = yara_data.get("file_type")
+            if file_info["file_category"] == "unknown":
+                file_info["file_category"] = yara_data.get("file_category", "unknown")
+            if file_info["is_previewable"] is None:
+                file_info["is_previewable"] = yara_data.get("is_previewable", False)
+
+        # Check if file actually exists on disk
+        file_path = downloads_path / shasum
+        file_info["exists"] = file_path.exists()
+        if not file_info["exists"] and file_info["size"] is None:
+            file_info["size"] = 0
+
+    # Sort by timestamp (newest first) - already sorted by query
+    # files.sort(key=lambda x: x["timestamp"], reverse=True)
 
     # Paginate
     total = len(files)
