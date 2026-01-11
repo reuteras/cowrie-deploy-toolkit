@@ -1186,15 +1186,11 @@ def index():
     hours = request.args.get("hours", 24, type=int)
     source_filter = request.args.get("source", None)
 
-    # Use new dashboard overview endpoint if available
-    if hasattr(session_parser, "get_dashboard_overview"):
-        dashboard_data = session_parser.get_dashboard_overview(hours=hours)
-        stats = dashboard_data.get("stats", {})
-        stats["top_downloads_with_vt"] = dashboard_data.get("top_downloads_with_vt", [])
-    else:
-        # Fallback to old method
-        stats = session_parser.get_stats(hours=hours, source_filter=source_filter)
-        stats["top_downloads_with_vt"] = []
+    # Get dashboard data using the new unified endpoint
+    dashboard_data = session_parser.get_dashboard_overview(hours=hours)
+    stats = dashboard_data.get("stats", {})
+    stats["top_downloads_with_vt"] = dashboard_data.get("top_downloads_with_vt", [])
+    # Note: hourly_activity not included in new API - chart will be hidden
 
     # Get honeypot locations for map markers
     honeypot_locations = []

@@ -112,10 +112,10 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for country, count in stats.top_countries %}
+                    {% for item in stats.top_countries %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', country=country, **filter_params) }}">{{ country }}</a></td>
-                        <td>{{ count }}</td>
+                        <td><a href="{{ url_for('sessions', country=item.country, **filter_params) }}">{{ item.country }}</a></td>
+                        <td>{{ item.count }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -138,12 +138,12 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for cred, count in stats.top_credentials %}
+                    {% for item in stats.top_credentials %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', credentials=cred, **filter_params) }}"><code>{{ cred }}</code></a></td>
-                        <td>{{ count }}</td>
+                        <td><a href="{{ url_for('sessions', credentials=item.username ~ ':' ~ item.password, **filter_params) }}"><code>{{ item.username }}:{{ item.password }}</code></a></td>
+                        <td>{{ item.count }}</td>
                         <td>
-                            {% if cred in stats.successful_credentials %}
+                            {% if item.username ~ ':' ~ item.password in stats.successful_credentials %}
                             <span class="badge badge-success">✓ Success</span>
                             {% else %}
                             <span class="badge badge-failed">Failed</span>
@@ -170,10 +170,10 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for client, count in stats.top_clients %}
+                    {% for item in stats.top_clients %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', client_version=client, **filter_params) }}"><code>{{ client }}</code></a></td>
-                        <td>{{ count }}</td>
+                        <td><a href="{{ url_for('sessions', client_version=item.client, **filter_params) }}"><code>{{ item.client }}</code></a></td>
+                        <td>{{ item.count }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -195,10 +195,10 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for command, count in stats.top_commands %}
+                    {% for item in stats.top_commands %}
                     <tr>
-                        <td><a href="{{ url_for('sessions', command=command, **filter_params) }}">{{ count }}</a></td>
-                        <td><code class="command-text">{{ command }}</code></td>
+                        <td><a href="{{ url_for('sessions', command=item.command, **filter_params) }}">{{ item.count }}</a></td>
+                        <td><code class="command-text">{{ item.command }}</code></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -289,11 +289,11 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for asn_data in stats.top_asns %}
+                    {% for item in stats.top_asns %}
                     <tr>
-                        <td><a href="{{ url_for('ip_list', asn=asn_data.asn, **filter_params) }}"><code>{{ asn_data.asn }}</code></a></td>
-                        <td>{{ asn_data.asn_org }}</td>
-                        <td>{{ asn_data.count }}</td>
+                        <td><a href="{{ url_for('ip_list', asn=item.asn, **filter_params) }}"><code>{{ item.asn }}</code></a></td>
+                        <td>{{ item.organization }}</td>
+                        <td>{{ item.count }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
