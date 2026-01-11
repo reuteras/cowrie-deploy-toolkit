@@ -540,6 +540,10 @@ uv run scripts/rescan-downloads-vt.py  # (if script exists)
 - ✅ `web/static/css/style.css` - Responsive grid for two-column layout (stacks on mobile)
 - ✅ `web/app.py` - Downloads page now uses optimized API (instead of parsing all sessions)
 
+### System Info Improvements
+- ✅ `api/routes/health.py` - Parse Cowrie version from logs (not static metadata file)
+- ✅ `api/routes/system.py` - Parse Cowrie version from logs (not static metadata file)
+
 ### Diagnostic Tools
 - ✅ `scripts/diagnose-vt-data.py` - NEW diagnostic script
 - ✅ `scripts/test-api-vt-data.py` - NEW API testing script
