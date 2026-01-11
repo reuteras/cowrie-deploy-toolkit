@@ -402,7 +402,7 @@ class DataSource:
 
         try:
             response = self.session.get(
-                f"{self.api_base_url}/dashboard/overview?{params}",
+                f"{self.api_base_url}/api/v1/dashboard/overview?{params}",
                 timeout=30,
             )
             response.raise_for_status()
