@@ -40,12 +40,12 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/stats/overview")
-async def get_stats_overview(days: int = Query(7, ge=1, le=365)):
+async def get_stats_overview(hours: int = Query(168, ge=1, le=8760)):  # Default 1 week, max ~1 year
     """
     Get overview statistics for the dashboard
 
     Args:
-        days: Number of days to include in statistics
+        hours: Number of hours to include in statistics
 
     Returns:
         Comprehensive statistics including:
@@ -62,7 +62,9 @@ async def get_stats_overview(days: int = Query(7, ge=1, le=365)):
             "Please enable SQLite output in Cowrie configuration."
         )
 
-    logger.info(f"Using SQLite parser for stats (days={days})")
+    # Convert hours to days for the SQLite parser (which expects days)
+    days = max(1, hours // 24)
+    logger.info(f"Using SQLite parser for stats (hours={hours}, converted to days={days})")
     return sqlite_parser.get_stats_overview(days=days)
 
 

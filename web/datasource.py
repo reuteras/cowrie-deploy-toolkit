@@ -7,10 +7,13 @@ Provides a unified interface for accessing Cowrie data in two modes:
 - Remote mode: API calls via HTTP (multi-host deployment)
 """
 
+import logging
 import os
 from typing import Optional
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 class DataSource:
@@ -292,17 +295,19 @@ class DataSource:
 
     def _get_stats_remote(self, hours: int) -> dict:
         """Get stats from remote API."""
-        # API uses days parameter, convert hours to days
-        days = max(1, hours // 24)  # At least 1 day
-
+        # Send hours parameter directly to API
         try:
+            logger.info(f"[DataSource] Calling API: {self.api_base_url}/api/v1/stats/overview?hours={hours}")
             response = self.session.get(
                 f"{self.api_base_url}/api/v1/stats/overview",
-                params={"days": days},
+                params={"hours": hours},
                 timeout=30,
             )
             response.raise_for_status()
             api_data = response.json()
+            logger.info(
+                f"[DataSource] API Response: {response.status_code}, sessions: {api_data.get('total_sessions', 0)}, downloads: {len(api_data.get('top_downloads_with_vt', []))}"
+            )
 
             # Normalize API response to match dashboard format
             # The API now includes GeoIP enrichment and additional data

@@ -529,6 +529,12 @@ class MultiSourceDataSource:
                 data = source.datasource.get_dashboard_overview(hours=hours, force_refresh=force_refresh)
                 self.backoff.record_success(source.name)
 
+                # Debug logging
+                stats = data.get("stats", {})
+                print(
+                    f"[MultiSource] Source '{source_name}' returned: sessions={stats.get('total_sessions', 0)}, downloads={len(data.get('top_downloads_with_vt', []))}"
+                )
+
                 # Merge the pre-aggregated data
                 aggregated["total_sessions"] += data.get("stats", {}).get("total_sessions", 0)
                 aggregated["unique_ips"] += data.get("stats", {}).get("unique_ips", 0)
@@ -651,8 +657,8 @@ class MultiSourceDataSource:
                     if current > existing:
                         dl_dict[shasum] = dl
 
-        # Filter to only VT-scanned files and sort
-        valid_downloads = [dl for dl in dl_dict.values() if dl.get("vt_total", 0) > 0]
+        # Filter to only VT-scanned files (include 0/X scores, exclude unscanned) and sort
+        valid_downloads = [dl for dl in dl_dict.values() if dl.get("vt_detections") is not None]
         return sorted(valid_downloads, key=lambda x: x.get("vt_detections", 0), reverse=True)[:10]
 
     def get_available_sources(self) -> list[dict]:
