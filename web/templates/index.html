@@ -234,6 +234,7 @@
                         </td>
                         <td>
                             {% set file_category = dl.get('file_category') or 'unknown' %}
+                            {% set file_type = dl.get('file_type') or 'unknown' %}
                             {% set category_colors = {
                                 'executable': 'badge-danger',
                                 'script': 'badge-warning',
@@ -243,9 +244,13 @@
                                 'unknown': 'badge-light'
                             } %}
                             <span class="badge {{ category_colors.get(file_category, 'badge-light') }}"
-                                  title="{{ dl.get('file_type') or 'Unknown' }}">
+                                  title="{{ file_type }}">
                                 {{ file_category }}
                             </span>
+                            <br>
+                            <small style="color: var(--text-secondary); font-size: 0.85em;" title="{{ file_type }}">
+                                {{ file_type | truncate(40, True, '...') }}
+                            </small>
                         </td>
                         <td>
                             {% set vt_detections = dl.get('vt_detections', 0) %}
