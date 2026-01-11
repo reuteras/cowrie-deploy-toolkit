@@ -311,7 +311,9 @@ class DataSource:
 
             # Normalize API response to match dashboard format
             # The API now includes GeoIP enrichment and additional data
-            totals = api_data.get("totals", {})
+            # NOTE: API returns stats in nested structure: {"stats": {"totals": {...}}}
+            stats_data = api_data.get("stats", {})
+            totals = stats_data.get("totals", {})
 
             # Convert top_ips to ip_list format (now enriched with geo, ASN, and login data by API)
             ip_list = []
