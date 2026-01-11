@@ -155,15 +155,22 @@ def get_top_downloads_with_vt(hours: int) -> list:
                 json_extract(vt.data, '$.threat_label') as vt_threat_label
             FROM downloads d
             LEFT JOIN download_meta m ON d.shasum = m.shasum
-            LEFT JOIN events vt ON vt.eventid = 'cowrie.virustotal.scanfile'
-                AND json_extract(vt.data, '$.sha256') = d.shasum
-                AND vt.timestamp >= ?
+            LEFT JOIN (
+                -- Get the most recent VT scan for each SHA256
+                SELECT
+                    json_extract(data, '$.sha256') as sha256,
+                    data,
+                    timestamp,
+                    ROW_NUMBER() OVER (PARTITION BY json_extract(data, '$.sha256') ORDER BY timestamp DESC) as rn
+                FROM events
+                WHERE eventid = 'cowrie.virustotal.scanfile'
+            ) vt ON vt.sha256 = d.shasum AND vt.rn = 1
             WHERE d.timestamp >= ?
             GROUP BY d.shasum
             ORDER BY vt_detections DESC, download_count DESC
             LIMIT 10
             """,
-            (cutoff_str, cutoff_str),
+            (cutoff_str,),
         )
 
         downloads = []
