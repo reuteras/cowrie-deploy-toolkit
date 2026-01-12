@@ -531,19 +531,23 @@ class MultiSourceDataSource:
 
                 # Debug logging
                 stats = data.get("stats", {})
+                stats_totals = stats.get("totals", {})
                 print(
-                    f"[MultiSource] Source '{source_name}' returned: sessions={stats.get('total_sessions', 0)}, downloads={len(data.get('top_downloads_with_vt', []))}"
+                    f"[MultiSource] Source '{source_name}' returned: sessions={stats_totals.get('total_sessions', 0)}, downloads={len(data.get('top_downloads_with_vt', []))}"
                 )
 
                 # Merge the pre-aggregated data
-                aggregated["total_sessions"] += data.get("stats", {}).get("total_sessions", 0)
-                aggregated["unique_ips"] += data.get("stats", {}).get("unique_ips", 0)
-                aggregated["sessions_with_commands"] += data.get("stats", {}).get("sessions_with_commands", 0)
-                aggregated["total_downloads"] += data.get("stats", {}).get("total_downloads", 0)
-                aggregated["unique_downloads"] += data.get("stats", {}).get("unique_downloads", 0)
+                # Stats are nested inside "totals" from the API
+                totals = data.get("stats", {}).get("totals", {})
+                aggregated["total_sessions"] += totals.get("total_sessions", 0)
+                aggregated["unique_ips"] += totals.get("unique_ips", 0)
+                aggregated["sessions_with_commands"] += totals.get("sessions_with_commands", 0)
+                aggregated["total_downloads"] += totals.get("downloads", 0)
+                aggregated["unique_downloads"] += totals.get("unique_downloads", 0)
 
                 # Merge lists (extend for multi-source)
-                aggregated["ip_list"].extend(data.get("stats", {}).get("ip_list", []))
+                # Note: API returns "top_ips" but we store as "ip_list" for consistency
+                aggregated["ip_list"].extend(data.get("stats", {}).get("top_ips", []))
                 aggregated["top_countries"].extend(data.get("stats", {}).get("top_countries", []))
                 aggregated["top_credentials"].extend(data.get("stats", {}).get("top_credentials", []))
                 aggregated["top_commands"].extend(data.get("stats", {}).get("top_commands", []))
@@ -568,12 +572,12 @@ class MultiSourceDataSource:
                 aggregated["source_stats"][source_name] = {
                     "type": source.type,
                     "status": "success",
-                    "sessions": data.get("stats", {}).get("total_sessions", 0),
+                    "sessions": totals.get("total_sessions", 0),
                     "downloads": len(downloads),
                 }
 
                 print(
-                    f"[MultiSource] Merged data from '{source_name}': {data.get('stats', {}).get('total_sessions', 0)} sessions, {len(downloads)} downloads"
+                    f"[MultiSource] Merged data from '{source_name}': {totals.get('total_sessions', 0)} sessions, {len(downloads)} downloads"
                 )
 
             except Exception as e:
