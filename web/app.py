@@ -1658,12 +1658,28 @@ def api_sessions():
     """API endpoint for sessions list."""
     hours = request.args.get("hours", 168, type=int)
     limit = request.args.get("limit", 100, type=int)
+    offset = request.args.get("offset", 0, type=int)
+    source_filter = request.args.get("source", None)
 
-    # Fetch up to 1000 sessions (more than requested limit for sorting)
-    all_sessions = session_parser.parse_all(hours=hours, max_sessions=0)
-    sorted_sessions = sorted(all_sessions.values(), key=lambda x: x["start_time"] or "", reverse=True)[:limit]
+    # Use the DataSource/MultiSource API layer for efficient querying
+    # This queries SQLite via API instead of parsing JSON logs
+    try:
+        result = session_parser.get_sessions(
+            hours=hours,
+            limit=limit,
+            offset=offset,
+            source_filter=source_filter,
+        )
+        sessions = result.get("sessions", [])
+        total = result.get("total", len(sessions))
 
-    return jsonify(sorted_sessions)
+        print(f"[/api/sessions] Fetched {len(sessions)} sessions (limit={limit}, offset={offset}, total={total})")
+
+        return jsonify(sessions)
+    except Exception as e:
+        print(f"[/api/sessions] Error fetching sessions: {e}")
+        # Fallback to empty list
+        return jsonify([])
 
 
 @app.route("/api/system-info")
@@ -2191,12 +2207,45 @@ def sessions_data():
     has_tty = request.args.get("has_tty", "")
     successful_login = request.args.get("successful_login", "")
 
-    # Fetch sessions with limit for performance
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
+    # Use the DataSource/MultiSource API layer instead of parse_all()
+    # Fetch sessions in batches from SQLite via API
+    batch_size = 500
+    offset = 0
+    all_sessions_list = []
 
-    # Apply filters
+    while True:
+        try:
+            result = session_parser.get_sessions(
+                hours=hours,
+                limit=batch_size,
+                offset=offset,
+                src_ip=ip_filter if ip_filter else None,
+                source_filter=source_filter if source_filter else None,
+            )
+            batch = result.get("sessions", [])
+            if not batch:
+                break
+
+            all_sessions_list.extend(batch)
+            offset += batch_size
+
+            # If we got fewer than batch_size, we've reached the end
+            if len(batch) < batch_size:
+                break
+
+            # Stop fetching if we have enough for 10 pages (optimization)
+            if len(all_sessions_list) >= per_page * 10:
+                break
+
+        except Exception as e:
+            print(f"[/api/sessions-data] Error fetching sessions: {e}")
+            break
+
+    print(f"[/api/sessions-data] Fetched {len(all_sessions_list)} sessions from API (hours={hours}, source={source_filter})")
+
+    # Apply client-side filters (filters not supported by API)
     filtered_sessions = []
-    for session in all_sessions.values():
+    for session in all_sessions_list:
         # IP filter
         if ip_filter and ip_filter not in session.get("src_ip", ""):
             continue

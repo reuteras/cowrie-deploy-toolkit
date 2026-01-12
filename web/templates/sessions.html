@@ -222,7 +222,7 @@ function loadSessions(page = 1) {
                     (session.downloads && session.downloads.length > 0 ?
                         ' <span class="badge badge-warning" title="Downloaded ' + session.downloads.length + ' file(s)">' + session.downloads.length + '</span>' : '');
                 const actionsCell = '<a href="/session/' + session.id + '" class="btn btn-sm">View</a>' +
-                    (session.tty_log ? ' <a href="/playback/' + session.id + '" class="btn btn-sm btn-primary">Play</a>' : '');
+                    (session.tty_log ? ' <a href="/session/' + session.id + '/playback" class="btn btn-sm btn-primary">Play</a>' : '');
 
                 row.innerHTML =
                     '<td>' + sessionLink + '</td>' +
