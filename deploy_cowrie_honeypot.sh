@@ -1615,6 +1615,14 @@ source /opt/cowrie/scripts/common.sh
 # Ensure GeoIP directory exists (web dashboard needs it even if reporting is disabled)
 mkdir -p /var/lib/GeoIP
 
+# CRITICAL: Stop the existing Cowrie container BEFORE overwriting docker-compose.yml
+# The cowrie container was started in STEP 8 with a different docker-compose.yml
+# If we overwrite first, docker compose can't properly stop the old container
+echo "[remote] Stopping Cowrie container before reconfiguring..."
+cd /opt/cowrie
+docker compose down --remove-orphans 2>/dev/null || true
+docker rm -f cowrie 2>/dev/null || true
+
 # Create web dashboard docker-compose file
 # Use quoted heredoc to prevent variable expansion, then do manual substitution
 cat > /opt/cowrie/docker-compose.yml << 'DOCKEREOF'
@@ -1731,18 +1739,15 @@ if ! docker compose pull > /dev/null 2>&1 ; then
 fi
 
 echo "[remote] Starting services..."
-# Clean up any existing containers (proper order: compose down first, then force remove)
-echo "[remote] Cleaning up any existing Cowrie deployments..."
+# Safety cleanup: ensure no leftover containers or networks exist
+# (Primary cleanup already done before overwriting docker-compose.yml)
+echo "[remote] Final safety check for leftover resources..."
 
-# First, try docker compose down (proper cleanup)
-if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
-  docker compose -f docker-compose.yml -f docker-compose.api.yml down --remove-orphans 2>/dev/null || true
-else
-  docker compose down --remove-orphans 2>/dev/null || true
-fi
-
-# Then force remove any stubborn containers
+# Remove any remaining containers (should already be gone from earlier cleanup)
 docker rm -f cowrie cowrie-web cowrie-api 2>/dev/null || true
+
+# Remove any remaining networks (should already be gone from earlier cleanup)
+docker network rm cowrie-internal 2>/dev/null || true
 
 # Include API compose file if API is enabled to avoid network conflicts
 if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
