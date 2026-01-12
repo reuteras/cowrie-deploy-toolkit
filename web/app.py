@@ -981,9 +981,14 @@ class TTYLogParser:
         """
         tty_logs = session.get("tty_logs", [])
         commands = session.get("commands", [])
-        session.get("username", "root")
+        username = session.get("username", "root")
 
         print(f"[DEBUG] merge_tty_logs: Found {len(tty_logs)} TTY logs and {len(commands)} commands")
+
+        # If we have commands but no TTY logs, synthesize from commands
+        if commands and not tty_logs:
+            print("[DEBUG] merge_tty_logs: No TTY logs but have commands, synthesizing asciicast")
+            return self._synthesize_asciicast_from_commands(commands, username, hostname)
 
         if not tty_logs:
             print("[DEBUG] merge_tty_logs: No TTY logs found, returning None")
@@ -997,9 +1002,8 @@ class TTYLogParser:
         # Sort TTY logs by timestamp for proper chronological order
         sorted_ttys = sorted(tty_logs, key=lambda x: x.get("timestamp", ""))
 
-        # Simply concatenate all TTY logs in order
-        # Don't inject prompts/commands - they're already in the TTY logs from TYPE_OUTPUT
-        # TYPE_OUTPUT contains everything shown on terminal: prompts, echoed commands, output
+        # Parse all TTY logs and check if they contain prompts
+        has_prompts = False
         for tty_entry in sorted_ttys:
             tty_log_name = tty_entry.get("ttylog")
             if tty_log_name:
@@ -1009,11 +1013,21 @@ class TTYLogParser:
                     width = max(width, asciicast.get("width", 120))
                     height = max(height, asciicast.get("height", 30))
 
+                    # Check if this TTY log contains prompts (look for # or $)
+                    for event in asciicast.get("stdout", []):
+                        if "#" in event[1] or "$" in event[1]:
+                            has_prompts = True
+                            break
+
                     # Add all events from this TTY log
-                    # Don't modify the data - asciinema player handles it correctly
                     for event in asciicast.get("stdout", []):
                         merged_stdout.append([event[0], event[1]])
                         total_duration += event[0]
+
+        # If TTY logs don't contain prompts, we need to enhance them with commands
+        if not has_prompts and commands:
+            print("[DEBUG] merge_tty_logs: TTY logs don't contain prompts, enhancing with commands")
+            return self._enhance_tty_with_commands(merged_stdout, commands, username, hostname, width, height)
 
         print(
             f"[DEBUG] merge_tty_logs: Created asciicast with {len(merged_stdout)} events, duration={total_duration:.2f}s"
@@ -1028,6 +1042,83 @@ class TTYLogParser:
             "title": "Cowrie Recording (Merged)",
             "env": {"SHELL": "/bin/bash", "TERM": "xterm256-color"},
             "stdout": merged_stdout,
+        }
+
+    def _synthesize_asciicast_from_commands(self, commands: list, username: str, hostname: str) -> dict:
+        """Create an asciicast from commands when no TTY logs are available."""
+        stdout = []
+        prompt = f"{username}@{hostname}:~# "
+
+        for cmd_dict in commands:
+            cmd = cmd_dict.get("command", "")
+            # Add prompt
+            stdout.append([0.5, prompt])
+            # Add command with newline
+            stdout.append([0.1, cmd + "\r\n"])
+            # Add a placeholder output message
+            stdout.append([0.2, "(output not captured)\r\n"])
+
+        return {
+            "version": 1,
+            "width": 120,
+            "height": 30,
+            "duration": len(commands) * 0.8,
+            "command": "/bin/bash",
+            "title": "Cowrie Recording (Synthesized)",
+            "env": {"SHELL": "/bin/bash", "TERM": "xterm256-color"},
+            "stdout": stdout,
+        }
+
+    def _enhance_tty_with_commands(self, tty_events: list, commands: list, username: str, hostname: str, width: int, height: int) -> dict:
+        """Enhance TTY log events with prompts and commands."""
+        enhanced_stdout = []
+        prompt = f"{username}@{hostname}:~# "
+        total_duration = 0.0
+
+        # If we have both TTY events and commands, try to merge them intelligently
+        if tty_events and commands:
+            # Insert prompts before chunks of output
+            cmd_index = 0
+            current_time = 0.0
+
+            # Add initial prompt
+            enhanced_stdout.append([0.5, prompt])
+            current_time += 0.5
+
+            # Group TTY events by chunks (assuming each chunk is output from one command)
+            chunk_size = max(1, len(tty_events) // max(1, len(commands)))
+
+            for i, (delay, text) in enumerate(tty_events):
+                # Add command before this chunk
+                if i % chunk_size == 0 and cmd_index < len(commands):
+                    cmd = commands[cmd_index].get("command", "")
+                    enhanced_stdout.append([0.1, cmd + "\r\n"])
+                    current_time += 0.1
+                    cmd_index += 1
+
+                # Add the output
+                enhanced_stdout.append([delay, text])
+                current_time += delay
+
+            total_duration = current_time
+        else:
+            # No TTY events, just use commands
+            for cmd_dict in commands:
+                cmd = cmd_dict.get("command", "")
+                enhanced_stdout.append([0.5, prompt])
+                enhanced_stdout.append([0.1, cmd + "\r\n"])
+                enhanced_stdout.append([0.2, "(output not captured)\r\n"])
+                total_duration += 0.8
+
+        return {
+            "version": 1,
+            "width": width,
+            "height": height,
+            "duration": total_duration,
+            "command": "/bin/bash",
+            "title": "Cowrie Recording (Enhanced)",
+            "env": {"SHELL": "/bin/bash", "TERM": "xterm256-color"},
+            "stdout": enhanced_stdout,
         }
 
 
