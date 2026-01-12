@@ -827,25 +827,40 @@ class TTYLogParser:
         """
         import re
 
-        # Remove ANSI escape sequences (except basic color codes which asciinema handles)
-        # Keep color codes (\x1b[...m) but remove cursor positioning (\x1b[...H, \x1b[...A, etc)
-        text = re.sub(r'\x1b\[[0-9;]*[HJKABCDEFGsu]', '', text)
-
-        # Handle carriage returns properly - convert \r\n to \n, standalone \r to \n
-        # This prevents the "overwrite previous line" behavior that causes misalignment
+        # First, handle carriage returns before other processing
+        # Convert \r\n to \n, and standalone \r to \n
+        # This prevents the "overwrite previous line" behavior
         text = text.replace('\r\n', '\n')
         text = text.replace('\r', '\n')
 
+        # Remove ALL ANSI escape sequences EXCEPT basic color codes
+        # Keep only SGR (Select Graphic Rendition) sequences: \x1b[...m
+        # Remove everything else: cursor movement, clear screen, etc.
+        # Match: \x1b[ followed by optional digits/semicolons/?, ending in any letter EXCEPT 'm'
+        text = re.sub(r'\x1b\[[0-9;?]*[a-ln-zA-LN-Z]', '', text)
+
+        # Also remove CSI sequences without the bracket (like \x1b= or \x1b>)
+        text = re.sub(r'\x1b[=>]', '', text)
+
+        # Remove OSC (Operating System Command) sequences: \x1b]...\x07 or \x1b]...\x1b\\
+        text = re.sub(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)', '', text)
+
         # Remove backspace characters and what they delete
-        # Pattern: match any char followed by backspace, remove both
-        while '\x08' in text or '\x7f' in text:
+        # Do this in multiple passes to handle multiple backspaces
+        for _ in range(10):  # Max 10 passes
+            old_text = text
             text = re.sub(r'.\x08', '', text)
             text = re.sub(r'.\x7f', '', text)
-            # Also handle case where backspace is at start
-            text = text.replace('\x08', '')
-            text = text.replace('\x7f', '')
+            if text == old_text:
+                break
 
-        # Remove other control characters except newlines and tabs
+        # Remove any remaining backspace/delete chars
+        text = text.replace('\x08', '')
+        text = text.replace('\x7f', '')
+
+        # Remove other control characters except newlines (\n) and tabs (\t)
+        # Keep: \x09 (tab), \x0A (newline)
+        # Remove: \x00-\x08, \x0B-\x0C, \x0E-\x1F, \x7F
         text = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', text)
 
         return text
@@ -1038,9 +1053,9 @@ class TTYLogParser:
         # Sort TTY logs by timestamp for proper chronological order
         sorted_ttys = sorted(tty_logs, key=lambda x: x.get("timestamp", ""))
 
-        # Parse all TTY logs and check if they contain prompts
-        has_prompts = False
+        # Parse all TTY logs
         total_events = 0
+
         for tty_entry in sorted_ttys:
             tty_log_name = tty_entry.get("ttylog")
             if tty_log_name:
@@ -1050,15 +1065,6 @@ class TTYLogParser:
                     width = max(width, asciicast.get("width", 120))
                     height = max(height, asciicast.get("height", 30))
 
-                    # Check if this TTY log contains prompts (look for #, $, or @)
-                    # More robust detection: check for common prompt patterns
-                    for event in asciicast.get("stdout", []):
-                        text = event[1]
-                        # Look for prompt indicators: #, $, @ (for user@host patterns)
-                        if any(pattern in text for pattern in ["# ", "$ ", "@", "root@", "~#", "~$"]):
-                            has_prompts = True
-                            break
-
                     # Add all events from this TTY log
                     events_in_log = len(asciicast.get("stdout", []))
                     total_events += events_in_log
@@ -1066,12 +1072,17 @@ class TTYLogParser:
                         merged_stdout.append([event[0], event[1]])
                         total_duration += event[0]
 
-        print(f"[DEBUG] merge_tty_logs: Parsed {len(sorted_ttys)} TTY files with {total_events} total events, has_prompts={has_prompts}")
+        print(f"[DEBUG] merge_tty_logs: Parsed {len(sorted_ttys)} TTY files with {total_events} total events")
 
-        # If TTY logs don't contain prompts, we need to enhance them with commands
-        if not has_prompts and commands:
-            print("[DEBUG] merge_tty_logs: TTY logs don't contain prompts, enhancing with commands")
-            return self._enhance_tty_with_commands(merged_stdout, commands, username, hostname, width, height)
+        # If we have TTY log events, trust them and don't add synthetic prompts
+        # The TTY logs capture everything that appeared on the terminal, including prompts
+        # Adding synthetic prompts on top would create duplicates and misalignment
+        if total_events > 0:
+            print("[DEBUG] merge_tty_logs: Using TTY logs as-is (they contain prompts and commands)")
+        elif commands:
+            # No TTY events at all, synthesize from commands
+            print("[DEBUG] merge_tty_logs: No TTY events, synthesizing from commands")
+            return self._synthesize_asciicast_from_commands(commands, username, hostname)
 
         print(
             f"[DEBUG] merge_tty_logs: Created asciicast with {len(merged_stdout)} events, duration={total_duration:.2f}s"
