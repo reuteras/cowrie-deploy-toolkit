@@ -542,8 +542,12 @@ class MultiSourceDataSource:
                 aggregated["total_sessions"] += totals.get("total_sessions", 0)
                 aggregated["unique_ips"] += totals.get("unique_ips", 0)
                 aggregated["sessions_with_commands"] += totals.get("sessions_with_commands", 0)
-                aggregated["total_downloads"] += totals.get("downloads", 0)
-                aggregated["unique_downloads"] += totals.get("unique_downloads", 0)
+                downloads_count = totals.get("downloads", 0)
+                unique_downloads_count = totals.get("unique_downloads", 0)
+                aggregated["total_downloads"] += downloads_count
+                aggregated["unique_downloads"] += unique_downloads_count
+
+                print(f"[MultiSource] Source '{source_name}' downloads: {downloads_count} total, {unique_downloads_count} unique")
 
                 # Merge lists (extend for multi-source)
                 # Note: API returns "top_ips" but we store as "ip_list" for consistency
@@ -610,7 +614,7 @@ class MultiSourceDataSource:
         )[:10]
 
         print(
-            f"[MultiSource] Final aggregation: {len(aggregated['top_downloads_with_vt'])} unique downloads with VT data"
+            f"[MultiSource] Final aggregation: {aggregated['total_downloads']} total downloads, {aggregated['unique_downloads']} unique downloads, {len(aggregated['top_downloads_with_vt'])} with VT data"
         )
 
         # Cache the result

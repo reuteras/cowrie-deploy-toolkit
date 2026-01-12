@@ -1004,6 +1004,7 @@ class TTYLogParser:
 
         # Parse all TTY logs and check if they contain prompts
         has_prompts = False
+        total_events = 0
         for tty_entry in sorted_ttys:
             tty_log_name = tty_entry.get("ttylog")
             if tty_log_name:
@@ -1013,16 +1014,23 @@ class TTYLogParser:
                     width = max(width, asciicast.get("width", 120))
                     height = max(height, asciicast.get("height", 30))
 
-                    # Check if this TTY log contains prompts (look for # or $)
+                    # Check if this TTY log contains prompts (look for #, $, or @)
+                    # More robust detection: check for common prompt patterns
                     for event in asciicast.get("stdout", []):
-                        if "#" in event[1] or "$" in event[1]:
+                        text = event[1]
+                        # Look for prompt indicators: #, $, @ (for user@host patterns)
+                        if any(pattern in text for pattern in ["# ", "$ ", "@", "root@", "~#", "~$"]):
                             has_prompts = True
                             break
 
                     # Add all events from this TTY log
+                    events_in_log = len(asciicast.get("stdout", []))
+                    total_events += events_in_log
                     for event in asciicast.get("stdout", []):
                         merged_stdout.append([event[0], event[1]])
                         total_duration += event[0]
+
+        print(f"[DEBUG] merge_tty_logs: Parsed {len(sorted_ttys)} TTY files with {total_events} total events, has_prompts={has_prompts}")
 
         # If TTY logs don't contain prompts, we need to enhance them with commands
         if not has_prompts and commands:
@@ -1077,20 +1085,21 @@ class TTYLogParser:
 
         # If we have both TTY events and commands, try to merge them intelligently
         if tty_events and commands:
-            # Insert prompts before chunks of output
+            # Insert prompts and commands before chunks of output
             cmd_index = 0
             current_time = 0.0
-
-            # Add initial prompt
-            enhanced_stdout.append([0.5, prompt])
-            current_time += 0.5
 
             # Group TTY events by chunks (assuming each chunk is output from one command)
             chunk_size = max(1, len(tty_events) // max(1, len(commands)))
 
             for i, (delay, text) in enumerate(tty_events):
-                # Add command before this chunk
+                # Add prompt + command before this chunk
                 if i % chunk_size == 0 and cmd_index < len(commands):
+                    # Add prompt
+                    enhanced_stdout.append([0.5, prompt])
+                    current_time += 0.5
+
+                    # Add command with newline
                     cmd = commands[cmd_index].get("command", "")
                     enhanced_stdout.append([0.1, cmd + "\r\n"])
                     current_time += 0.1
