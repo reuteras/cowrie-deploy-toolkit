@@ -614,7 +614,7 @@ class MultiSourceDataSource:
 
         return aggregated
 
-    def get_dashboard_overview(self, hours: int = 24, force_refresh: bool = False) -> dict:
+    def get_dashboard_overview(self, hours: int = 24, source_filter: Optional[str] = None, force_refresh: bool = False) -> dict:
         """
         Get complete dashboard data in one request (multi-source compatible).
 
@@ -622,13 +622,14 @@ class MultiSourceDataSource:
 
         Args:
             hours: Number of hours to include in statistics
+            source_filter: Filter by specific source (None = all sources)
             force_refresh: Force cache refresh
 
         Returns:
             Complete dashboard data dict with stats and downloads
         """
         # Get aggregated stats
-        aggregated_stats = self.get_stats(hours=hours, force_refresh=force_refresh)
+        aggregated_stats = self.get_stats(hours=hours, source_filter=source_filter, force_refresh=force_refresh)
 
         # Return in dashboard overview format
         return {

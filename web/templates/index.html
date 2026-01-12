@@ -211,9 +211,10 @@
 
 
         <!-- Two-column layout for VirusTotal and ASNs -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+        <div class="dashboard-card full-width" style="margin-bottom: 24px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
             <!-- Threat Intelligence: VirusTotal -->
-            <div class="dashboard-card" style="margin-bottom: 0;">
+            <div style="background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px;">
                 <h2>🔍 VirusTotal Intelligence <a href="{{ url_for('downloads', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
                 {% if stats.top_downloads_with_vt and stats.top_downloads_with_vt|length > 0 %}
                 <table class="data-table">
@@ -284,7 +285,7 @@
             </div>
 
             <!-- Top Attacking ASNs -->
-            <div class="dashboard-card" style="margin-bottom: 0;">
+            <div style="background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px;">
                 <h2>🌐 Top Attacking ASNs <a href="{{ url_for('asns', **filter_params) }}" style="font-size: 0.7em; font-weight: normal; float: right;">View All →</a></h2>
                 {% if stats.top_asns %}
                 <table class="data-table">
@@ -311,6 +312,7 @@
                     ASN (Autonomous System Number) identifies the network organization hosting the attacking IP.
                 </p>
                 {% endif %}
+            </div>
             </div>
         </div>
     </div>

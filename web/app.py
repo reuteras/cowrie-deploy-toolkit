@@ -1187,7 +1187,7 @@ def index():
     source_filter = request.args.get("source", None)
 
     # Get dashboard data using the new unified endpoint
-    dashboard_data = session_parser.get_dashboard_overview(hours=hours)
+    dashboard_data = session_parser.get_dashboard_overview(hours=hours, source_filter=source_filter)
     stats = dashboard_data.get("stats", {})
     stats["top_downloads_with_vt"] = dashboard_data.get("top_downloads_with_vt", [])
     # Note: hourly_activity not included in new API - chart will be hidden

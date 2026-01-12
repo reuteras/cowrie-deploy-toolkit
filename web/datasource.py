@@ -379,17 +379,19 @@ class DataSource:
                 },
             }
 
-    def get_dashboard_overview(self, hours: int = 24, force_refresh: bool = False) -> dict:
+    def get_dashboard_overview(self, hours: int = 24, source_filter: Optional[str] = None, force_refresh: bool = False) -> dict:
         """
         Get complete dashboard data in one request.
 
         Args:
             hours: Number of hours to include in statistics
+            source_filter: Not used for single-source mode (for API compatibility)
             force_refresh: Force cache refresh
 
         Returns:
             Complete dashboard data dict
         """
+        # source_filter ignored for single-source datasources
         if self.mode == "local":
             return self._get_dashboard_overview_local(hours, force_refresh)
         else:
