@@ -838,10 +838,18 @@ class TTYLogParser:
         if os.path.exists(direct_path):
             return direct_path
 
+        # Try with .log extension (Cowrie sometimes uses this)
+        direct_path_with_log = os.path.join(self.tty_path, tty_log_name + ".log")
+        if os.path.exists(direct_path_with_log):
+            return direct_path_with_log
+
         # Try with various date-based subdirectories
         for root, _, files in os.walk(self.tty_path):
             if tty_log_name in files:
                 return os.path.join(root, tty_log_name)
+            # Also try with .log extension in subdirectories
+            if tty_log_name + ".log" in files:
+                return os.path.join(root, tty_log_name + ".log")
 
         print(
             f"[!] TTY file lookup failed. Searched for '{tty_log_name}' (from '{original_tty_log_name}') in '{self.tty_path}' but it was not found."
@@ -1891,10 +1899,10 @@ def downloads_data():
                 continue
 
             try:
-                # Call the API endpoint
+                # Call the API endpoint (API max limit is 1000)
                 response = source.datasource.session.get(
                     f"{source.datasource.api_base_url}/api/v1/downloads",
-                    params={"hours": hours, "limit": 10000, "offset": 0},
+                    params={"hours": hours, "limit": 1000, "offset": 0},
                     timeout=30,
                 )
                 response.raise_for_status()
