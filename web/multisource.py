@@ -549,7 +549,7 @@ class MultiSourceDataSource:
                 aggregated["top_commands"].extend(data.get("stats", {}).get("top_commands", []))
                 aggregated["top_clients"].extend(data.get("stats", {}).get("top_clients", []))
                 aggregated["top_asns"].extend(data.get("stats", {}).get("top_asns", []))
-                aggregated["ip_locations"].extend(data.get("ip_locations", []))
+                aggregated["ip_locations"].extend(data.get("stats", {}).get("ip_locations", []))
 
                 # Merge VT stats
                 vt_stats = data.get("stats", {}).get("vt_stats", {})
