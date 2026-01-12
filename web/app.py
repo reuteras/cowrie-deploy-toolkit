@@ -820,6 +820,36 @@ class TTYLogParser:
     def __init__(self, tty_path: str):
         self.tty_path = tty_path
 
+    def clean_terminal_output(self, text: str) -> str:
+        """Clean terminal control sequences that cause display issues.
+
+        Removes problematic sequences while preserving basic formatting.
+        """
+        import re
+
+        # Remove ANSI escape sequences (except basic color codes which asciinema handles)
+        # Keep color codes (\x1b[...m) but remove cursor positioning (\x1b[...H, \x1b[...A, etc)
+        text = re.sub(r'\x1b\[[0-9;]*[HJKABCDEFGsu]', '', text)
+
+        # Handle carriage returns properly - convert \r\n to \n, standalone \r to \n
+        # This prevents the "overwrite previous line" behavior that causes misalignment
+        text = text.replace('\r\n', '\n')
+        text = text.replace('\r', '\n')
+
+        # Remove backspace characters and what they delete
+        # Pattern: match any char followed by backspace, remove both
+        while '\x08' in text or '\x7f' in text:
+            text = re.sub(r'.\x08', '', text)
+            text = re.sub(r'.\x7f', '', text)
+            # Also handle case where backspace is at start
+            text = text.replace('\x08', '')
+            text = text.replace('\x7f', '')
+
+        # Remove other control characters except newlines and tabs
+        text = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', text)
+
+        return text
+
     def find_tty_file(self, tty_log_name: str) -> Optional[str]:
         """Find a TTY log file by name."""
         if not tty_log_name:
@@ -934,12 +964,18 @@ class TTYLogParser:
                                     sleeptime = 0.0
                                 prevtime = curtime
 
-                                # Decode the data without modifying newlines
-                                # Asciinema player handles terminal control characters correctly
+                                # Decode the data
                                 try:
                                     text = data.decode("utf-8", errors="replace")
                                 except Exception:
                                     text = data.decode("latin-1", errors="replace")
+
+                                # Clean terminal control sequences that cause display issues
+                                text = self.clean_terminal_output(text)
+
+                                # Skip empty events after cleaning
+                                if not text or text.isspace():
+                                    continue
 
                                 # Add to stdout (v1 format uses [time, data])
                                 stdout.append([sleeptime, text])
@@ -960,7 +996,7 @@ class TTYLogParser:
         # Return asciicast v1 format (matches Cowrie's asciinema.py)
         return {
             "version": 1,
-            "width": min(width, 200),
+            "width": max(min(width, 200), 160),  # Use at least 160 columns to reduce wrapping
             "height": min(height, 50),
             "duration": duration,
             "command": "/bin/bash",
@@ -996,7 +1032,7 @@ class TTYLogParser:
 
         merged_stdout = []
         total_duration = 0.0
-        width = 120
+        width = 160  # Start with wider width to reduce wrapping
         height = 30
 
         # Sort TTY logs by timestamp for proper chronological order
@@ -1043,7 +1079,7 @@ class TTYLogParser:
 
         return {
             "version": 1,
-            "width": min(width, 200),
+            "width": max(min(width, 200), 160),  # Use at least 160 columns
             "height": min(height, 50),
             "duration": total_duration,
             "command": "/bin/bash",
@@ -1061,14 +1097,14 @@ class TTYLogParser:
             cmd = cmd_dict.get("command", "")
             # Add prompt
             stdout.append([0.5, prompt])
-            # Add command with newline
-            stdout.append([0.1, cmd + "\r\n"])
+            # Add command with newline (use \n instead of \r\n for clean display)
+            stdout.append([0.1, cmd + "\n"])
             # Add a placeholder output message
-            stdout.append([0.2, "(output not captured)\r\n"])
+            stdout.append([0.2, "(output not captured)\n"])
 
         return {
             "version": 1,
-            "width": 120,
+            "width": 160,  # Wider width to reduce wrapping
             "height": 30,
             "duration": len(commands) * 0.8,
             "command": "/bin/bash",
@@ -1099,13 +1135,13 @@ class TTYLogParser:
                     enhanced_stdout.append([0.5, prompt])
                     current_time += 0.5
 
-                    # Add command with newline
+                    # Add command with newline (use \n for clean display)
                     cmd = commands[cmd_index].get("command", "")
-                    enhanced_stdout.append([0.1, cmd + "\r\n"])
+                    enhanced_stdout.append([0.1, cmd + "\n"])
                     current_time += 0.1
                     cmd_index += 1
 
-                # Add the output
+                # Add the output (already cleaned in parse_tty_log)
                 enhanced_stdout.append([delay, text])
                 current_time += delay
 
@@ -1115,13 +1151,13 @@ class TTYLogParser:
             for cmd_dict in commands:
                 cmd = cmd_dict.get("command", "")
                 enhanced_stdout.append([0.5, prompt])
-                enhanced_stdout.append([0.1, cmd + "\r\n"])
-                enhanced_stdout.append([0.2, "(output not captured)\r\n"])
+                enhanced_stdout.append([0.1, cmd + "\n"])
+                enhanced_stdout.append([0.2, "(output not captured)\n"])
                 total_duration += 0.8
 
         return {
             "version": 1,
-            "width": width,
+            "width": max(width, 160),  # Ensure at least 160 columns
             "height": height,
             "duration": total_duration,
             "command": "/bin/bash",
