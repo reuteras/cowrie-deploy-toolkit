@@ -1014,12 +1014,23 @@ class TTYLogParser:
                                 # Debug: log first few events to understand the data
                                 if len(stdout) < 3 and text:
                                     sample = text[:80].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
-                                    print(f"[DEBUG] TTY event #{len(stdout)}: {sample}")
+                                    print(f"[DEBUG] TTY event #{len(stdout)} (before): {sample}")
 
-                                # IMPORTANT: Do NOT modify TTY data!
-                                # Asciinema player is designed to handle raw TTY output with all
-                                # escape sequences, carriage returns, and cursor positioning intact.
-                                # Cleaning or modifying this data breaks terminal emulation.
+                                # FIX: Normalize line endings for asciinema terminal emulation
+                                # In raw terminal mode, \n (LF) moves cursor down but NOT to column 0
+                                # We need \r (CR) to reset to column 0
+                                # Solution: Ensure every \n has \r\n (Windows-style, but works in terminal emulators)
+
+                                # Normalize all line endings to \r\n
+                                text = text.replace('\r\n', '\n')  # First normalize \r\n to \n
+                                text = text.replace('\n\r', '\n')  # Also normalize \n\r to \n
+                                text = text.replace('\r', '\n')     # Normalize standalone \r to \n
+                                text = text.replace('\n', '\r\n')   # Then convert all \n to \r\n
+
+                                # Debug: log after normalization
+                                if len(stdout) < 3 and text:
+                                    sample = text[:80].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
+                                    print(f"[DEBUG] TTY event #{len(stdout)} (after):  {sample}")
 
                                 # Skip completely empty events
                                 if not text:
