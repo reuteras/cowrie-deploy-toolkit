@@ -935,8 +935,8 @@ class TTYLogParser:
             return None
 
         stdout = []
-        width = 80
-        height = 24
+        width = 160  # Default to wider terminal to handle most cases
+        height = 40   # Taller default too
         duration = 0.0
         currtty = 0
         prevtime = 0
@@ -985,8 +985,10 @@ class TTYLogParser:
                             try:
                                 if len(data) >= 8:
                                     width, height = struct.unpack("<II", data[:8])
+                                    print(f"[DEBUG] TTY dimensions from OP_OPEN: {width}x{height}")
                             except struct.error:
                                 # Ignore if terminal size parsing fails
+                                print(f"[DEBUG] Failed to parse terminal dimensions from OP_OPEN")
                                 pass
 
                         elif op == self.OP_WRITE:
@@ -1065,9 +1067,10 @@ class TTYLogParser:
 
         # Return asciicast v1 format (matches Cowrie's asciinema.py)
         # Use the original terminal dimensions from the TTY log
+        print(f"[DEBUG] Final asciicast dimensions: {width}x{height}, {len(stdout)} events, {duration:.2f}s")
         return {
             "version": 1,
-            "width": width,  # Use original width from TTY log, don't force wider
+            "width": width,  # Use width from TTY log or default
             "height": height,
             "duration": duration,
             "command": "/bin/bash",
