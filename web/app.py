@@ -1011,28 +1011,38 @@ class TTYLogParser:
                                 except Exception:
                                     text = data.decode("latin-1", errors="replace")
 
-                                # Debug: log first few events to understand the data
-                                if len(stdout) < 3 and text:
+                                # Debug: log first 5 events
+                                if len(stdout) < 5 and text:
                                     sample = text[:80].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
-                                    print(f"[DEBUG] TTY event #{len(stdout)} (before): {sample}")
+                                    print(f"[DEBUG] TTY event #{len(stdout)} RAW: {sample}")
+
+                                # Filter out events that are ONLY control sequences
+                                # These are terminal mode changes (like \x1b[4h) that shouldn't be displayed
+                                import re
+                                # Remove all ANSI escape sequences temporarily to check if anything is left
+                                text_without_escapes = re.sub(r'\x1b\[[0-9;?]*[a-zA-Z]', '', text)
+                                text_without_escapes = re.sub(r'\x1b[=>()]', '', text_without_escapes)
+
+                                # If nothing left after removing escapes, skip this event entirely
+                                if not text_without_escapes.strip():
+                                    if len(stdout) < 5:
+                                        print(f"[DEBUG] TTY event #{len(stdout)} SKIPPED: only control sequences")
+                                    continue
 
                                 # FIX: Normalize line endings for asciinema terminal emulation
-                                # In raw terminal mode, \n (LF) moves cursor down but NOT to column 0
-                                # We need \r (CR) to reset to column 0
-                                # Solution: Ensure every \n has \r\n (Windows-style, but works in terminal emulators)
+                                # \n alone moves cursor down but NOT to column 0
+                                # We need \r\n (CR+LF) to reset to column 0 AND move down
+                                text = text.replace('\r\n', '\n')  # Normalize to \n first
+                                text = text.replace('\n\r', '\n')
+                                text = text.replace('\r', '\n')
+                                text = text.replace('\n', '\r\n')  # Then add CR before each LF
 
-                                # Normalize all line endings to \r\n
-                                text = text.replace('\r\n', '\n')  # First normalize \r\n to \n
-                                text = text.replace('\n\r', '\n')  # Also normalize \n\r to \n
-                                text = text.replace('\r', '\n')     # Normalize standalone \r to \n
-                                text = text.replace('\n', '\r\n')   # Then convert all \n to \r\n
-
-                                # Debug: log after normalization
-                                if len(stdout) < 3 and text:
+                                # Debug: log after processing
+                                if len(stdout) < 5 and text:
                                     sample = text[:80].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
-                                    print(f"[DEBUG] TTY event #{len(stdout)} (after):  {sample}")
+                                    print(f"[DEBUG] TTY event #{len(stdout)} PROCESSED: {sample}")
 
-                                # Skip completely empty events
+                                # Skip empty events
                                 if not text:
                                     continue
 
