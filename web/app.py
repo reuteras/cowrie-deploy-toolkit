@@ -1016,15 +1016,16 @@ class TTYLogParser:
                                     sample = text[:80].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
                                     print(f"[DEBUG] TTY event #{len(stdout)} RAW: {sample}")
 
-                                # Filter out events that are ONLY control sequences
-                                # These are terminal mode changes (like \x1b[4h) that shouldn't be displayed
+                                # Filter out events that are ONLY ANSI escape sequences
+                                # Keep events with actual content (including whitespace like \n, spaces, tabs)
                                 import re
-                                # Remove all ANSI escape sequences temporarily to check if anything is left
+                                # Remove all ANSI escape sequences temporarily
                                 text_without_escapes = re.sub(r'\x1b\[[0-9;?]*[a-zA-Z]', '', text)
                                 text_without_escapes = re.sub(r'\x1b[=>()]', '', text_without_escapes)
 
-                                # If nothing left after removing escapes, skip this event entirely
-                                if not text_without_escapes.strip():
+                                # Skip ONLY if completely empty after removing escapes
+                                # Don't use .strip() - we want to keep whitespace like \n, spaces, etc.
+                                if len(text_without_escapes) == 0:
                                     if len(stdout) < 5:
                                         print(f"[DEBUG] TTY event #{len(stdout)} SKIPPED: only control sequences")
                                     continue
