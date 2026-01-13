@@ -833,17 +833,43 @@ class TTYLogParser:
         text = text.replace('\r\n', '\n')
         text = text.replace('\r', '\n')
 
-        # Remove ALL ANSI escape sequences EXCEPT basic color codes
-        # Keep only SGR (Select Graphic Rendition) sequences: \x1b[...m
-        # Remove everything else: cursor movement, clear screen, etc.
-        # Match: \x1b[ followed by optional digits/semicolons/?, ending in any letter EXCEPT 'm'
-        text = re.sub(r'\x1b\[[0-9;?]*[a-ln-zA-LN-Z]', '', text)
+        # Remove ANSI CSI (Control Sequence Introducer) sequences
+        # CSI sequences start with \x1b[ (ESC [) and end with a command letter
+        # We want to KEEP color codes (ending in 'm') but remove everything else
+
+        # Remove cursor positioning: \x1b[<n>;<m>H or \x1b[<n>;<m>f
+        text = re.sub(r'\x1b\[\d*;\d*[Hf]', '', text)
+        text = re.sub(r'\x1b\[\d+[Hf]', '', text)
+        text = re.sub(r'\x1b\[[Hf]', '', text)
+
+        # Remove cursor movement: \x1b[<n>A/B/C/D/E/F/G (up/down/forward/back)
+        text = re.sub(r'\x1b\[\d*[ABCDEFG]', '', text)
+
+        # Remove erase commands: \x1b[<n>J (erase display) and \x1b[<n>K (erase line)
+        text = re.sub(r'\x1b\[\d*[JK]', '', text)
+
+        # Remove scroll commands: \x1b[<n>S/T
+        text = re.sub(r'\x1b\[\d*[ST]', '', text)
+
+        # Remove other common CSI sequences (NOT ending in 'm')
+        # This catches: h, l, n, p, q, r, s, u, and more
+        text = re.sub(r'\x1b\[\??\d*[hlnpqrsu]', '', text)
+
+        # Remove any remaining CSI sequences that aren't color codes
+        # Match: ESC [ followed by any params (digits, semicolons, ?), ending in a letter that's NOT 'm'
+        # Be very explicit: match any letter A-Z and a-z EXCEPT m and M
+        text = re.sub(r'\x1b\[[0-9;?]*[ABCDEFGHIJKLNOPQRSTUVWXYZabcdefghijklnopqrstuvwxyz]', '', text)
 
         # Also remove CSI sequences without the bracket (like \x1b= or \x1b>)
-        text = re.sub(r'\x1b[=>]', '', text)
+        text = re.sub(r'\x1b[=><()]', '', text)
+        text = re.sub(r'\x1b\(B', '', text)  # G0 charset selection
 
         # Remove OSC (Operating System Command) sequences: \x1b]...\x07 or \x1b]...\x1b\\
         text = re.sub(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)', '', text)
+
+        # Remove incomplete or malformed escape sequences (ESC followed by anything that's not [)
+        # But don't remove the ESC that starts color codes
+        text = re.sub(r'\x1b(?![[])', '', text)
 
         # Remove backspace characters and what they delete
         # Do this in multiple passes to handle multiple backspaces
@@ -986,7 +1012,17 @@ class TTYLogParser:
                                     text = data.decode("latin-1", errors="replace")
 
                                 # Clean terminal control sequences that cause display issues
+                                # Debug: log first event to see what we're cleaning
+                                if len(stdout) == 0 and text:
+                                    sample = text[:100].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
+                                    print(f"[DEBUG] TTY raw sample (first 100 chars): {sample}")
+
                                 text = self.clean_terminal_output(text)
+
+                                # Debug: log cleaned version
+                                if len(stdout) == 0 and text:
+                                    sample = text[:100].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
+                                    print(f"[DEBUG] TTY cleaned sample (first 100 chars): {sample}")
 
                                 # Skip empty events after cleaning
                                 if not text or text.isspace():
