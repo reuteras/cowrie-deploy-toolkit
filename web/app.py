@@ -1011,21 +1011,18 @@ class TTYLogParser:
                                 except Exception:
                                     text = data.decode("latin-1", errors="replace")
 
-                                # Clean terminal control sequences that cause display issues
-                                # Debug: log first event to see what we're cleaning
-                                if len(stdout) == 0 and text:
-                                    sample = text[:100].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
-                                    print(f"[DEBUG] TTY raw sample (first 100 chars): {sample}")
+                                # Debug: log first few events to understand the data
+                                if len(stdout) < 3 and text:
+                                    sample = text[:80].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
+                                    print(f"[DEBUG] TTY event #{len(stdout)}: {sample}")
 
-                                text = self.clean_terminal_output(text)
+                                # IMPORTANT: Do NOT modify TTY data!
+                                # Asciinema player is designed to handle raw TTY output with all
+                                # escape sequences, carriage returns, and cursor positioning intact.
+                                # Cleaning or modifying this data breaks terminal emulation.
 
-                                # Debug: log cleaned version
-                                if len(stdout) == 0 and text:
-                                    sample = text[:100].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
-                                    print(f"[DEBUG] TTY cleaned sample (first 100 chars): {sample}")
-
-                                # Skip empty events after cleaning
-                                if not text or text.isspace():
+                                # Skip completely empty events
+                                if not text:
                                     continue
 
                                 # Add to stdout (v1 format uses [time, data])
@@ -1045,10 +1042,11 @@ class TTYLogParser:
             return None
 
         # Return asciicast v1 format (matches Cowrie's asciinema.py)
+        # Use the original terminal dimensions from the TTY log
         return {
             "version": 1,
-            "width": max(min(width, 200), 160),  # Use at least 160 columns to reduce wrapping
-            "height": min(height, 50),
+            "width": width,  # Use original width from TTY log, don't force wider
+            "height": height,
             "duration": duration,
             "command": "/bin/bash",
             "title": "Cowrie Recording",
@@ -1083,8 +1081,8 @@ class TTYLogParser:
 
         merged_stdout = []
         total_duration = 0.0
-        width = 160  # Start with wider width to reduce wrapping
-        height = 30
+        width = 80  # Default terminal width, will be updated from TTY logs
+        height = 24  # Default terminal height, will be updated from TTY logs
 
         # Sort TTY logs by timestamp for proper chronological order
         sorted_ttys = sorted(tty_logs, key=lambda x: x.get("timestamp", ""))
@@ -1126,8 +1124,8 @@ class TTYLogParser:
 
         return {
             "version": 1,
-            "width": max(min(width, 200), 160),  # Use at least 160 columns
-            "height": min(height, 50),
+            "width": width,  # Use original width from TTY logs
+            "height": height,  # Use original height from TTY logs
             "duration": total_duration,
             "command": "/bin/bash",
             "title": "Cowrie Recording (Merged)",
@@ -1151,8 +1149,8 @@ class TTYLogParser:
 
         return {
             "version": 1,
-            "width": 160,  # Wider width to reduce wrapping
-            "height": 30,
+            "width": 80,  # Standard terminal width
+            "height": 24,  # Standard terminal height
             "duration": len(commands) * 0.8,
             "command": "/bin/bash",
             "title": "Cowrie Recording (Synthesized)",
@@ -1204,8 +1202,8 @@ class TTYLogParser:
 
         return {
             "version": 1,
-            "width": max(width, 160),  # Ensure at least 160 columns
-            "height": height,
+            "width": width,  # Use original width from TTY logs
+            "height": height,  # Use original height from TTY logs
             "duration": total_duration,
             "command": "/bin/bash",
             "title": "Cowrie Recording (Enhanced)",
