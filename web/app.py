@@ -1106,8 +1106,8 @@ class TTYLogParser:
 
         merged_stdout = []
         total_duration = 0.0
-        width = 80  # Default terminal width, will be updated from TTY logs
-        height = 24  # Default terminal height, will be updated from TTY logs
+        width = 160  # Default terminal width (wider to prevent wrapping)
+        height = 40  # Default terminal height
 
         # Sort TTY logs by timestamp for proper chronological order
         sorted_ttys = sorted(tty_logs, key=lambda x: x.get("timestamp", ""))
@@ -1133,11 +1133,38 @@ class TTYLogParser:
 
         print(f"[DEBUG] merge_tty_logs: Parsed {len(sorted_ttys)} TTY files with {total_events} total events")
 
-        # If we have TTY log events, trust them and don't add synthetic prompts
-        # The TTY logs capture everything that appeared on the terminal, including prompts
-        # Adding synthetic prompts on top would create duplicates and misalignment
+        # Check if TTY logs actually contain prompts (interactive sessions)
+        # For automated/non-interactive sessions, TTY logs only have output, no prompts
+        has_prompts = False
         if total_events > 0:
-            print("[DEBUG] merge_tty_logs: Using TTY logs as-is (they contain prompts and commands)")
+            # Look for common prompt patterns: username@hostname, # or $ at line start
+            for event in merged_stdout[:10]:  # Check first 10 events
+                if len(event) >= 2:
+                    text = event[1]
+                    # Check for username@hostname:~# or username@hostname:~$
+                    if f"{username}@" in text and ("#" in text or "$" in text):
+                        has_prompts = True
+                        break
+                    # Check for root@, admin@, etc.
+                    if "@" in text and ("~#" in text or "~$" in text):
+                        has_prompts = True
+                        break
+
+        # If we have TTY events with prompts, use them as-is
+        if total_events > 0 and has_prompts:
+            print("[DEBUG] merge_tty_logs: Using TTY logs as-is (interactive session with prompts)")
+        elif total_events > 0 and not has_prompts and commands:
+            # TTY logs exist but no prompts - automated session
+            # Synthesize from commands for better presentation, including the TTY output
+            print(f"[DEBUG] merge_tty_logs: TTY logs have no prompts (automated session), synthesizing from {len(commands)} commands with {total_events} output events")
+            return self._synthesize_asciicast_from_commands(commands, username, hostname, tty_output=merged_stdout)
+        elif total_events > 0 and not has_prompts:
+            # TTY logs exist, no prompts, no commands - use raw output with timing
+            print("[DEBUG] merge_tty_logs: No prompts found, adding synthetic timing to raw output")
+            # Add small delays between events for readability (0.05s per line)
+            for i, event in enumerate(merged_stdout):
+                event[0] = 0.05  # 50ms between each line
+                total_duration += 0.05
         elif commands:
             # No TTY events at all, synthesize from commands
             print("[DEBUG] merge_tty_logs: No TTY events, synthesizing from commands")
@@ -1158,25 +1185,72 @@ class TTYLogParser:
             "stdout": merged_stdout,
         }
 
-    def _synthesize_asciicast_from_commands(self, commands: list, username: str, hostname: str) -> dict:
-        """Create an asciicast from commands when no TTY logs are available."""
+    def _synthesize_asciicast_from_commands(self, commands: list, username: str, hostname: str, tty_output: list = None) -> dict:
+        """Create an asciicast from commands, optionally with TTY output.
+
+        Args:
+            commands: List of command dicts
+            username: Username for prompt
+            hostname: Hostname for prompt
+            tty_output: Optional list of [delay, text] events from TTY logs
+        """
         stdout = []
         prompt = f"{username}@{hostname}:~# "
+        total_duration = 0.0
 
-        for cmd_dict in commands:
-            cmd = cmd_dict.get("command", "")
-            # Add prompt
-            stdout.append([0.5, prompt])
-            # Add command with newline (use \n instead of \r\n for clean display)
-            stdout.append([0.1, cmd + "\n"])
-            # Add a placeholder output message
-            stdout.append([0.2, "(output not captured)\n"])
+        # If we have TTY output, try to distribute it across commands
+        if tty_output and len(tty_output) > 0:
+            # Divide TTY output roughly equally among commands
+            events_per_command = max(1, len(tty_output) // len(commands))
+            tty_index = 0
+
+            for i, cmd_dict in enumerate(commands):
+                cmd = cmd_dict.get("command", "")
+
+                # Add prompt
+                stdout.append([0.5, prompt])
+                total_duration += 0.5
+
+                # Add command with newline
+                stdout.append([0.1, cmd + "\r\n"])
+                total_duration += 0.1
+
+                # Add corresponding TTY output for this command
+                # Take events_per_command events, or remaining events for last command
+                if i == len(commands) - 1:
+                    # Last command gets all remaining output
+                    cmd_output = tty_output[tty_index:]
+                else:
+                    cmd_output = tty_output[tty_index:tty_index + events_per_command]
+
+                for delay, text in cmd_output:
+                    # Use small fixed delay for readability
+                    stdout.append([0.05, text])
+                    total_duration += 0.05
+
+                tty_index += len(cmd_output)
+        else:
+            # No TTY output, just show commands
+            for cmd_dict in commands:
+                cmd = cmd_dict.get("command", "")
+
+                # Add prompt
+                stdout.append([0.5, prompt])
+                total_duration += 0.5
+
+                # Add command with newline
+                stdout.append([0.1, cmd + "\r\n"])
+                total_duration += 0.1
+
+                # Add placeholder
+                stdout.append([0.2, "(output not captured)\r\n"])
+                total_duration += 0.2
 
         return {
             "version": 1,
-            "width": 80,  # Standard terminal width
-            "height": 24,  # Standard terminal height
-            "duration": len(commands) * 0.8,
+            "width": 160,  # Use wider default like other playbacks
+            "height": 40,  # Use taller default like other playbacks
+            "duration": total_duration,
             "command": "/bin/bash",
             "title": "Cowrie Recording (Synthesized)",
             "env": {"SHELL": "/bin/bash", "TERM": "xterm256-color"},
