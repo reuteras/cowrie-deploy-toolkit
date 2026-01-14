@@ -267,7 +267,7 @@
                                 {% elif vt_total > 0 %}
                                 <span class="badge badge-success">0/{{ vt_total }}</span>
                                 {% elif vt_total == 0 and vt_detections == 0 %}
-                                <span class="badge badge-secondary">0/0</span>
+                                <span class="badge badge-secondary" title="File not yet scanned by VirusTotal">Not scanned</span>
                                 {% else %}
                                 <span class="text-muted">—</span>
                                 {% endif %}

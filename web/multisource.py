@@ -623,10 +623,12 @@ class MultiSourceDataSource:
             aggregated["top_clients"], key=lambda x: x[1] if isinstance(x, list) else 0, reverse=True
         )[:10]
 
+        # Count how many downloads actually have VT scan results (vt_total > 0)
+        vt_scanned_count = sum(1 for dl in aggregated['top_downloads_with_vt'] if (dl.get('vt_total') or 0) > 0)
         print(
             f"[MultiSource] Final aggregation: {aggregated['total_downloads']} total downloads, "
             f"{aggregated['unique_downloads']} unique downloads (cross-honeypot deduplicated from {len(all_unique_hashes)} hashes), "
-            f"{len(aggregated['top_downloads_with_vt'])} with VT data"
+            f"{len(aggregated['top_downloads_with_vt'])} in top list ({vt_scanned_count} VT-scanned)"
         )
 
         # Cache the result

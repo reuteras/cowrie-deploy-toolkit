@@ -218,14 +218,16 @@ function loadDownloads() {
 
                 // VT Score column
                 let vtScoreCol = '<td>';
-                if (dl.vt_detections !== undefined) {
+                if (dl.vt_detections !== undefined && dl.vt_total !== undefined) {
                     if (dl.vt_detections > 0) {
                         vtScoreCol += '<span class="badge badge-danger">' + dl.vt_detections + '/' + dl.vt_total + '</span>';
-                    } else {
+                    } else if (dl.vt_total > 0) {
                         vtScoreCol += '<span class="badge badge-success">0/' + dl.vt_total + '</span>';
+                    } else {
+                        vtScoreCol += '<span class="badge badge-secondary" title="File not yet scanned by VirusTotal">Not scanned</span>';
                     }
                 } else {
-                    vtScoreCol += '<span class="text-muted">—</span>';
+                    vtScoreCol += '<span class="badge badge-secondary" title="File not yet scanned by VirusTotal">Not scanned</span>';
                 }
                 vtScoreCol += '</td>';
 
