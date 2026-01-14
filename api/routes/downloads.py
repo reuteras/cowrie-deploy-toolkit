@@ -4,6 +4,7 @@ Downloads endpoints
 Provides access to downloaded files (malware samples)
 """
 
+import logging
 import re
 import sqlite3
 import subprocess
@@ -15,6 +16,7 @@ from fastapi.responses import FileResponse
 from services.cache import CacheDB, YARACache
 from services.sqlite_parser import sqlite_parser
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # SECURITY: SHA256 validation regex (exactly 64 hexadecimal characters)
@@ -78,6 +80,15 @@ def get_safe_download_path(sha256: str) -> Path:
     return filepath
 
 
+def _table_exists(cursor, table_name: str) -> bool:
+    """Check if a table exists in the database."""
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,)
+    )
+    return cursor.fetchone() is not None
+
+
 @router.get("/downloads")
 async def get_downloads(
     limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0), hours: int = Query(24, ge=1)
@@ -107,51 +118,94 @@ async def get_downloads(
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
 
-        # Optimized query: Get all download data including VT in one query
-        cursor.execute(
-            """
-            SELECT
-                d.shasum,
-                d.session,
-                d.timestamp,
-                d.url,
-                d.outfile,
-                COUNT(d.id) as download_count,
-                MAX(d.timestamp) as latest_download,
-                MIN(d.timestamp) as first_seen,
-                m.file_size,
-                m.file_type,
-                COALESCE(m.file_category, 'unknown') as file_category,
-                m.is_previewable,
-                COALESCE(json_extract(vt.data, '$.positives'), 0) as vt_detections,
-                COALESCE(json_extract(vt.data, '$.total'), 0) as vt_total,
-                json_extract(vt.data, '$.threat_label') as vt_threat_label,
-                s.src_ip
-            FROM downloads d
-            LEFT JOIN download_meta m ON d.shasum = m.shasum
-            LEFT JOIN (
-                -- Get the most recent VT scan for each SHA256
+        # Check which optional tables exist
+        has_download_meta = _table_exists(cursor, "download_meta")
+
+        # Build query based on available tables
+        if has_download_meta:
+            # Full query with metadata
+            query = """
                 SELECT
-                    json_extract(data, '$.sha256') as sha256,
-                    data,
-                    timestamp,
-                    ROW_NUMBER() OVER (PARTITION BY json_extract(data, '$.sha256') ORDER BY timestamp DESC) as rn
-                FROM events
-                WHERE eventid = 'cowrie.virustotal.scanfile'
-            ) vt ON vt.sha256 = d.shasum AND vt.rn = 1
-            LEFT JOIN (
-                -- Get session info for src_ip (src_ip is in JSON data column)
-                SELECT session, json_extract(data, '$.src_ip') as src_ip
-                FROM events
-                WHERE eventid = 'cowrie.session.connect'
-                GROUP BY session
-            ) s ON s.session = d.session
-            WHERE d.timestamp >= ?
-            GROUP BY d.shasum
-            ORDER BY latest_download DESC
-            """,
-            (cutoff_str,),
-        )
+                    d.shasum,
+                    d.session,
+                    d.timestamp,
+                    d.url,
+                    d.outfile,
+                    COUNT(d.id) as download_count,
+                    MAX(d.timestamp) as latest_download,
+                    MIN(d.timestamp) as first_seen,
+                    m.file_size,
+                    m.file_type,
+                    COALESCE(m.file_category, 'unknown') as file_category,
+                    m.is_previewable,
+                    COALESCE(json_extract(vt.data, '$.positives'), 0) as vt_detections,
+                    COALESCE(json_extract(vt.data, '$.total'), 0) as vt_total,
+                    json_extract(vt.data, '$.threat_label') as vt_threat_label,
+                    s.src_ip
+                FROM downloads d
+                LEFT JOIN download_meta m ON d.shasum = m.shasum
+                LEFT JOIN (
+                    SELECT
+                        json_extract(data, '$.sha256') as sha256,
+                        data,
+                        timestamp,
+                        ROW_NUMBER() OVER (PARTITION BY json_extract(data, '$.sha256') ORDER BY timestamp DESC) as rn
+                    FROM events
+                    WHERE eventid = 'cowrie.virustotal.scanfile'
+                ) vt ON vt.sha256 = d.shasum AND vt.rn = 1
+                LEFT JOIN (
+                    SELECT session, json_extract(data, '$.src_ip') as src_ip
+                    FROM events
+                    WHERE eventid = 'cowrie.session.connect'
+                    GROUP BY session
+                ) s ON s.session = d.session
+                WHERE d.timestamp >= ? AND d.shasum IS NOT NULL
+                GROUP BY d.shasum
+                ORDER BY latest_download DESC
+            """
+        else:
+            # Simplified query without download_meta table
+            logger.info("download_meta table not found, using simplified query")
+            query = """
+                SELECT
+                    d.shasum,
+                    d.session,
+                    d.timestamp,
+                    d.url,
+                    d.outfile,
+                    COUNT(d.id) as download_count,
+                    MAX(d.timestamp) as latest_download,
+                    MIN(d.timestamp) as first_seen,
+                    NULL as file_size,
+                    NULL as file_type,
+                    'unknown' as file_category,
+                    0 as is_previewable,
+                    COALESCE(json_extract(vt.data, '$.positives'), 0) as vt_detections,
+                    COALESCE(json_extract(vt.data, '$.total'), 0) as vt_total,
+                    json_extract(vt.data, '$.threat_label') as vt_threat_label,
+                    s.src_ip
+                FROM downloads d
+                LEFT JOIN (
+                    SELECT
+                        json_extract(data, '$.sha256') as sha256,
+                        data,
+                        timestamp,
+                        ROW_NUMBER() OVER (PARTITION BY json_extract(data, '$.sha256') ORDER BY timestamp DESC) as rn
+                    FROM events
+                    WHERE eventid = 'cowrie.virustotal.scanfile'
+                ) vt ON vt.sha256 = d.shasum AND vt.rn = 1
+                LEFT JOIN (
+                    SELECT session, json_extract(data, '$.src_ip') as src_ip
+                    FROM events
+                    WHERE eventid = 'cowrie.session.connect'
+                    GROUP BY session
+                ) s ON s.session = d.session
+                WHERE d.timestamp >= ? AND d.shasum IS NOT NULL
+                GROUP BY d.shasum
+                ORDER BY latest_download DESC
+            """
+
+        cursor.execute(query, (cutoff_str,))
 
         # Convert rows to list of dicts
         files = []
