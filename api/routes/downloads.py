@@ -236,7 +236,7 @@ async def get_downloads(
         conn.close()
 
     # Add YARA matches and check file existence
-    yara_cache = YARACache()
+    yara_cache = YARACache(config.YARA_CACHE_DB)
     for file_info in files:
         shasum = file_info["shasum"]
 
