@@ -5,12 +5,9 @@ Provides access to downloaded files (malware samples)
 """
 
 import re
-from datetime import datetime
-from pathlib import Path
-
 import sqlite3
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from config import config
 from fastapi import APIRouter, HTTPException, Query
@@ -107,8 +104,8 @@ async def get_downloads(
 
     try:
         # Get downloads with metadata in the time range
-        cutoff = datetime.now() - timedelta(hours=hours)
-        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
 
         # Optimized query: Get all download data including VT in one query
         cursor.execute(

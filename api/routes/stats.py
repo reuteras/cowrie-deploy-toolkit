@@ -5,7 +5,7 @@ Provides aggregated statistics from Cowrie data
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import time
 from fastapi import APIRouter, Query
@@ -136,8 +136,8 @@ def get_top_downloads_with_vt(hours: int) -> list:
     cursor = conn.cursor()
 
     try:
-        cutoff = datetime.now() - timedelta(hours=hours)
-        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
 
         # Aggregate downloads by SHA256 with VT data and metadata
         cursor.execute(
@@ -165,7 +165,7 @@ def get_top_downloads_with_vt(hours: int) -> list:
                 FROM events
                 WHERE eventid = 'cowrie.virustotal.scanfile'
             ) vt ON vt.sha256 = d.shasum AND vt.rn = 1
-            WHERE d.timestamp >= ?
+            WHERE d.timestamp >= ? AND d.shasum IS NOT NULL
             GROUP BY d.shasum
             ORDER BY vt_detections DESC, download_count DESC
             LIMIT 10

@@ -517,6 +517,9 @@ class MultiSourceDataSource:
             "failed_sources": [],
         }
 
+        # Set to collect all unique download hashes for cross-honeypot deduplication
+        all_unique_hashes: set[str] = set()
+
         if not available_sources:
             print("[MultiSource] No sources available (all in backoff)")
             self.stats_cache.set(cache_key, aggregated, ttl=5)
@@ -545,9 +548,13 @@ class MultiSourceDataSource:
                 downloads_count = totals.get("downloads", 0)
                 unique_downloads_count = totals.get("unique_downloads", 0)
                 aggregated["total_downloads"] += downloads_count
-                aggregated["unique_downloads"] += unique_downloads_count
+                # Note: unique_downloads will be recalculated after deduplication across all sources
 
-                print(f"[MultiSource] Source '{source_name}' downloads: {downloads_count} total, {unique_downloads_count} unique")
+                # Collect unique download hashes for cross-honeypot deduplication
+                source_hashes = totals.get("unique_download_hashes", [])
+                all_unique_hashes.update(source_hashes)
+
+                print(f"[MultiSource] Source '{source_name}' downloads: {downloads_count} total, {unique_downloads_count} unique, {len(source_hashes)} hashes")
 
                 # Merge lists (extend for multi-source)
                 # Note: API returns "top_ips" but we store as "ip_list" for consistency
@@ -593,6 +600,9 @@ class MultiSourceDataSource:
         # Final processing: deduplicate and sort
         aggregated["top_downloads_with_vt"] = self._deduplicate_and_sort_downloads(aggregated["top_downloads_with_vt"])
 
+        # Update unique_downloads to reflect cross-honeypot deduplication
+        aggregated["unique_downloads"] = len(all_unique_hashes)
+
         # Calculate VT averages
         if aggregated["vt_stats"]["total_scanned"] > 0:
             aggregated["vt_stats"]["avg_detection_rate"] = (
@@ -614,7 +624,9 @@ class MultiSourceDataSource:
         )[:10]
 
         print(
-            f"[MultiSource] Final aggregation: {aggregated['total_downloads']} total downloads, {aggregated['unique_downloads']} unique downloads, {len(aggregated['top_downloads_with_vt'])} with VT data"
+            f"[MultiSource] Final aggregation: {aggregated['total_downloads']} total downloads, "
+            f"{aggregated['unique_downloads']} unique downloads (cross-honeypot deduplicated from {len(all_unique_hashes)} hashes), "
+            f"{len(aggregated['top_downloads_with_vt'])} with VT data"
         )
 
         # Cache the result
@@ -660,15 +672,15 @@ class MultiSourceDataSource:
                 if shasum not in dl_dict:
                     dl_dict[shasum] = dl
                 else:
-                    # Keep the one with higher VT detections
-                    existing = dl_dict[shasum].get("vt_detections", 0)
-                    current = dl.get("vt_detections", 0)
+                    # Keep the one with higher VT detections (treat None as 0)
+                    existing = dl_dict[shasum].get("vt_detections") or 0
+                    current = dl.get("vt_detections") or 0
                     if current > existing:
                         dl_dict[shasum] = dl
 
-        # Filter to only VT-scanned files (include 0/X scores, exclude unscanned) and sort
-        valid_downloads = [dl for dl in dl_dict.values() if dl.get("vt_detections") is not None]
-        return sorted(valid_downloads, key=lambda x: x.get("vt_detections", 0), reverse=True)[:10]
+        # Include all downloads (VT-scanned and unscanned), sorted by detections (high to low)
+        # Treat None/missing vt_detections as 0
+        return sorted(dl_dict.values(), key=lambda x: x.get("vt_detections") or 0, reverse=True)[:10]
 
     def get_available_sources(self) -> list[dict]:
         """
