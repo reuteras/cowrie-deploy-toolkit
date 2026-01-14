@@ -140,8 +140,8 @@ async def get_downloads(
                 WHERE eventid = 'cowrie.virustotal.scanfile'
             ) vt ON vt.sha256 = d.shasum AND vt.rn = 1
             LEFT JOIN (
-                -- Get session info for src_ip
-                SELECT session, src_ip
+                -- Get session info for src_ip (src_ip is in JSON data column)
+                SELECT session, json_extract(data, '$.src_ip') as src_ip
                 FROM events
                 WHERE eventid = 'cowrie.session.connect'
                 GROUP BY session
