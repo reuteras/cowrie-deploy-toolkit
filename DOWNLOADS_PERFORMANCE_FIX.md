@@ -74,7 +74,7 @@ GROUP BY d.shasum
 
 ### Before (Session Parsing)
 
-```
+```text
 1. Read JSON logs: 5-10 seconds
 2. Parse sessions: 3-5 seconds
 3. Extract downloads: 1-2 seconds
@@ -85,7 +85,7 @@ TOTAL: 12-23 seconds
 
 ### After (SQLite Query)
 
-```
+```text
 1. Single SQL query: 0.1-0.5 seconds
 2. YARA cache lookups: 0.5 seconds
 3. File existence checks: 0.1 seconds
@@ -257,7 +257,7 @@ CREATE INDEX idx_download_meta_shasum ON download_meta(shasum);  -- Primary key
 
 SQLite uses this execution plan:
 
-```
+```text
 1. Scan downloads WHERE timestamp >= ? (uses idx_downloads_timestamp)
 2. Hash aggregate GROUP BY shasum (in memory)
 3. Lookup download_meta ON shasum (uses primary key)

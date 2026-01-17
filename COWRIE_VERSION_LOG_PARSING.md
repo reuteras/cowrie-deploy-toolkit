@@ -14,7 +14,7 @@ The Cowrie version displayed on the dashboard was previously read from a static 
 **Parse version directly from Cowrie's log file at runtime.**
 
 Cowrie logs its version on every startup:
-```
+```bash
 2026-01-11T09:12:37+0000 [-] Cowrie Version 2.9.6.dev6+ge73958d3e
 ```
 
@@ -109,7 +109,7 @@ The function checks these paths in order:
 The regex pattern captures these version formats:
 
 | Example | Description |
-|---------|-------------|
+| ------- | ----------- |
 | `2.5.0` | Release version |
 | `2.9.6` | Release version |
 | `2.9.6.dev6` | Development build (6th commit after 2.9.6) |
@@ -132,7 +132,7 @@ The version is displayed in multiple places:
 ### 1. System Info Page
 
 **Single-source mode:**
-```
+```text
 Basic Information
 ─────────────────
 Server IP: 1.2.3.4
@@ -141,7 +141,7 @@ Cowrie Version: 2.9.6.dev6+ge73958d3e  ← Parsed from log
 ```
 
 **Multi-source mode:**
-```
+```text
 Honeypot: chp-1
 Cowrie Version: 2.9.6.dev6+ge73958d3e  ← Parsed from log
 Server IP: 1.2.3.4
@@ -186,7 +186,7 @@ Shows version for each honeypot in the info cards.
 4. **Metadata also missing**: Returns "unknown"
 
 **Logging:**
-```
+```text
 [+] Found Cowrie version from log: 2.9.6.dev6+ge73958d3e  ← Success
 [!] Failed to read /cowrie/cowrie-git/var/log/cowrie/cowrie.log: [Errno 2] No such file or directory  ← Fallback
 ```
@@ -248,7 +248,7 @@ EOF
 ```
 
 **Expected output:**
-```
+```text
 ✅ Extracted version: 2.9.6.dev6+ge73958d3e
 ```
 

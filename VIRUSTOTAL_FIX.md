@@ -19,7 +19,7 @@ You reported two issues with the Cowrie honeypot dashboard:
 
 The system architecture works as follows:
 
-```
+```text
 1. Cowrie downloads malware → cowrie.session.file_download event
 2. Cowrie VT plugin scans file → cowrie.virustotal.scanfile event  ← MISSING
 3. Event indexer reads logs → Stores events in SQLite events table
@@ -66,7 +66,7 @@ LEFT JOIN (
 Now we ALWAYS show the latest VT scan for any file, regardless of when it was scanned!
 
 **Evidence from your logs**:
-```
+```text
 [MultiSource] Source 'chp-1' returned: sessions=0, downloads=5
 [MultiSource] Final aggregation: 4 unique downloads with VT data
 ```
@@ -123,7 +123,7 @@ uv run scripts/diagnose-vt-data.py
 5. ✅ Data consistency (downloads vs VT scans)
 
 **Example output**:
-```
+```text
 📊 Downloads table: 1,234 total downloads
    Unique files: 156
 
@@ -204,7 +204,7 @@ scan_url = false
 upload = false
 ```
 
-**Get a free VT API key**: https://www.virustotal.com/gui/join-us
+**Get a free VT API key**: <https://www.virustotal.com/gui/join-us>
 
 ### Step 3: Restart Services
 
@@ -238,7 +238,7 @@ docker compose logs -f cowrie
 ```
 
 Look for events like:
-```
+```text
 [EventIndexer] Stored event: cowrie.virustotal.scanfile (sha256=abc123...)
 ```
 
@@ -271,7 +271,7 @@ docker compose restart cowrie-web
 
 ### Complete System Flow
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │ 1. Cowrie Honeypot (Docker Container)                          │
 │    ├─ Attacker downloads malware                               │
@@ -440,7 +440,7 @@ wget http://example.com/test.sh
 ### Before Fix
 
 **Front Page VT Table**:
-```
+```text
 SHA256              | File Type | VT Score
 --------------------|-----------|----------
 a8460f446be5...     | script    | 0/0
@@ -448,7 +448,7 @@ a8460f446be5...     | script    | 0/0
 ```
 
 **Downloads Page**:
-```
+```text
 SHA256              | Type                                    | VT Score
 --------------------|-----------------------------------------|----------
 a8460f446be5...     | script                                  | 0/0
@@ -458,7 +458,7 @@ a8460f446be5...     | script                                  | 0/0
 ### After Fix
 
 **Front Page VT Table**:
-```
+```text
 SHA256              | File Type                        | VT Score
 --------------------|----------------------------------|----------
 a8460f446be5...     | script                           | 3/62
@@ -468,7 +468,7 @@ a8460f446be5...     | script                           | 3/62
 ```
 
 **Downloads Page**:
-```
+```text
 SHA256              | Type                                    | VT Score
 --------------------|-----------------------------------------|----------
 a8460f446be5...     | script                                  | 3/62
@@ -476,7 +476,7 @@ a8460f446be5...     | script                                  | 3/62
 ```
 
 **Threat Intelligence** (if malicious):
-```
+```text
 SHA256              | File Type                        | VT Score
 --------------------|----------------------------------|----------
 51dbe032d7ef...     | executable                       | 48/62
@@ -501,7 +501,7 @@ journalctl -u cowrie-event-indexer -f
 **Symptom**: Cowrie logs show VT API errors
 
 **Fix**:
-1. Get new API key from https://www.virustotal.com/gui/my-apikey
+1. Get new API key from <https://www.virustotal.com/gui/my-apikey>
 2. Update `etc/cowrie.cfg`
 3. Restart: `docker compose restart`
 
