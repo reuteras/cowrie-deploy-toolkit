@@ -46,7 +46,7 @@ CONFIG = {
     "server_ip": os.getenv("SERVER_IP", ""),
     "honeypot_hostname": os.getenv("HONEYPOT_HOSTNAME", "cowrie"),
     "metadata_path": os.getenv("COWRIE_METADATA_PATH", "/cowrie-metadata/metadata.json"),
-    "canary_webhook_db_path": os.getenv("CANARY_WEBHOOKS_DB", "/opt/cowrie/var/canary-webhooks.db"),
+    "canary_webhook_db_path": os.getenv("CANARY_WEBHOOK_DB_PATH", "/canary-webhooks/canary-webhooks.db"),
 }
 
 
