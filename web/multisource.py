@@ -554,7 +554,9 @@ class MultiSourceDataSource:
                 source_hashes = totals.get("unique_download_hashes", [])
                 all_unique_hashes.update(source_hashes)
 
-                print(f"[MultiSource] Source '{source_name}' downloads: {downloads_count} total, {unique_downloads_count} unique, {len(source_hashes)} hashes")
+                print(
+                    f"[MultiSource] Source '{source_name}' downloads: {downloads_count} total, {unique_downloads_count} unique, {len(source_hashes)} hashes"
+                )
 
                 # Merge lists (extend for multi-source)
                 # Note: API returns "top_ips" but we store as "ip_list" for consistency
@@ -624,7 +626,7 @@ class MultiSourceDataSource:
         )[:10]
 
         # Count how many downloads actually have VT scan results (vt_total > 0)
-        vt_scanned_count = sum(1 for dl in aggregated['top_downloads_with_vt'] if (dl.get('vt_total') or 0) > 0)
+        vt_scanned_count = sum(1 for dl in aggregated["top_downloads_with_vt"] if (dl.get("vt_total") or 0) > 0)
         print(
             f"[MultiSource] Final aggregation: {aggregated['total_downloads']} total downloads, "
             f"{aggregated['unique_downloads']} unique downloads (cross-honeypot deduplicated from {len(all_unique_hashes)} hashes), "
@@ -636,7 +638,9 @@ class MultiSourceDataSource:
 
         return aggregated
 
-    def get_dashboard_overview(self, hours: int = 24, source_filter: Optional[str] = None, force_refresh: bool = False) -> dict:
+    def get_dashboard_overview(
+        self, hours: int = 24, source_filter: Optional[str] = None, force_refresh: bool = False
+    ) -> dict:
         """
         Get complete dashboard data in one request (multi-source compatible).
 

@@ -82,10 +82,7 @@ def get_safe_download_path(sha256: str) -> Path:
 
 def _table_exists(cursor, table_name: str) -> bool:
     """Check if a table exists in the database."""
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,)
-    )
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
     return cursor.fetchone() is not None
 
 

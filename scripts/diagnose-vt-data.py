@@ -18,7 +18,6 @@ import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timedelta
-from pathlib import Path
 
 
 def print_header(title):
@@ -34,10 +33,7 @@ def check_event_indexer():
 
     try:
         result = subprocess.run(
-            ["systemctl", "status", "cowrie-event-indexer"],
-            capture_output=True,
-            text=True,
-            timeout=5
+            ["systemctl", "status", "cowrie-event-indexer"], capture_output=True, text=True, timeout=5
         )
 
         if "active (running)" in result.stdout:
@@ -57,7 +53,7 @@ def check_event_indexer():
             ["journalctl", "-u", "cowrie-event-indexer", "-n", "10", "--no-pager"],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
         )
         print(log_result.stdout)
 
@@ -136,23 +132,27 @@ def check_database(db_path):
             print("\n   Sample VT scan results:")
             for (data_json,) in cursor.fetchall():
                 data = json.loads(data_json)
-                sha = data.get('sha256', 'unknown')[:16]
-                pos = data.get('positives', 0)
-                tot = data.get('total', 0)
+                sha = data.get("sha256", "unknown")[:16]
+                pos = data.get("positives", 0)
+                tot = data.get("total", 0)
                 print(f"     {sha}... | {pos}/{tot} detections")
 
         # Check recent downloads (last 24h)
         cutoff = (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT COUNT(*)
             FROM downloads
             WHERE timestamp >= ?
-        """, (cutoff,))
+        """,
+            (cutoff,),
+        )
         recent_downloads = cursor.fetchone()[0]
         print(f"\n📅 Downloads in last 24 hours: {recent_downloads:,}")
 
         # Check if recent downloads have VT data
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT d.shasum,
                    m.file_category,
                    m.file_type,
@@ -165,7 +165,9 @@ def check_database(db_path):
             WHERE d.timestamp >= ?
             GROUP BY d.shasum
             LIMIT 10
-        """, (cutoff,))
+        """,
+            (cutoff,),
+        )
 
         print("\n   Recent downloads with metadata:")
         print("   SHA256           | Category     | VT Score | File Type")
@@ -206,37 +208,37 @@ def check_cowrie_config():
     print(f"✅ Found config: {config_path}")
 
     try:
-        with open(config_path, 'r') as f:
+        with open(config_path) as f:
             content = f.read()
 
         # Check for VirusTotal section
-        if '[output_virustotal]' in content:
+        if "[output_virustotal]" in content:
             print("\n✅ VirusTotal output plugin section found")
 
             # Extract key settings
-            lines = content.split('\n')
+            lines = content.split("\n")
             in_vt_section = False
             for line in lines:
-                if '[output_virustotal]' in line:
+                if "[output_virustotal]" in line:
                     in_vt_section = True
-                elif line.startswith('['):
+                elif line.startswith("["):
                     in_vt_section = False
-                elif in_vt_section and '=' in line and not line.strip().startswith('#'):
-                    key, value = line.split('=', 1)
+                elif in_vt_section and "=" in line and not line.strip().startswith("#"):
+                    key, value = line.split("=", 1)
                     key = key.strip()
                     value = value.strip()
 
-                    if key == 'enabled':
-                        if value.lower() == 'true':
+                    if key == "enabled":
+                        if value.lower() == "true":
                             print(f"   ✅ enabled = {value}")
                         else:
                             print(f"   ❌ enabled = {value} (should be 'true')")
-                    elif key == 'api_key':
-                        if value and value != 'YOUR_API_KEY_HERE':
+                    elif key == "api_key":
+                        if value and value != "YOUR_API_KEY_HERE":
                             print(f"   ✅ api_key = {value[:8]}... (configured)")
                         else:
                             print(f"   ❌ api_key = {value} (not configured!)")
-                    elif key in ['upload', 'debug', 'scan_file', 'scan_url']:
+                    elif key in ["upload", "debug", "scan_file", "scan_url"]:
                         print(f"   {key} = {value}")
         else:
             print("\n❌ No [output_virustotal] section found in config")
@@ -269,7 +271,7 @@ def check_cowrie_logs():
 
     try:
         # Read last 100 lines
-        with open(log_path, 'rb') as f:
+        with open(log_path, "rb") as f:
             # Seek to end and read backwards
             f.seek(0, 2)  # End of file
             file_size = f.tell()
@@ -277,7 +279,7 @@ def check_cowrie_logs():
             # Read last 50KB (should contain many events)
             read_size = min(50000, file_size)
             f.seek(file_size - read_size)
-            lines = f.read().decode('utf-8', errors='ignore').split('\n')
+            lines = f.read().decode("utf-8", errors="ignore").split("\n")
 
         # Count event types
         event_counts = {}
@@ -289,17 +291,17 @@ def check_cowrie_logs():
                 continue
             try:
                 event = json.loads(line)
-                eventid = event.get('eventid', 'unknown')
+                eventid = event.get("eventid", "unknown")
                 event_counts[eventid] = event_counts.get(eventid, 0) + 1
 
-                if eventid == 'cowrie.virustotal.scanfile':
+                if eventid == "cowrie.virustotal.scanfile":
                     vt_events.append(event)
-                elif eventid == 'cowrie.session.file_download':
+                elif eventid == "cowrie.session.file_download":
                     download_events.append(event)
             except json.JSONDecodeError:
                 continue
 
-        print(f"\n📊 Event types in last 1000 log lines:")
+        print("\n📊 Event types in last 1000 log lines:")
         for eventid, count in sorted(event_counts.items(), key=lambda x: x[1], reverse=True)[:15]:
             print(f"   {eventid:40} | {count:,}")
 
@@ -313,9 +315,9 @@ def check_cowrie_logs():
         if vt_events:
             print("\n   Recent VT scans:")
             for event in vt_events[-5:]:
-                sha = event.get('sha256', 'unknown')[:16]
-                pos = event.get('positives', 0)
-                tot = event.get('total', 0)
+                sha = event.get("sha256", "unknown")[:16]
+                pos = event.get("positives", 0)
+                tot = event.get("total", 0)
                 print(f"     {sha}... | {pos}/{tot} detections")
 
     except Exception as e:

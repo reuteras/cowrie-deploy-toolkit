@@ -379,7 +379,9 @@ class DataSource:
                 },
             }
 
-    def get_dashboard_overview(self, hours: int = 24, source_filter: Optional[str] = None, force_refresh: bool = False) -> dict:
+    def get_dashboard_overview(
+        self, hours: int = 24, source_filter: Optional[str] = None, force_refresh: bool = False
+    ) -> dict:
         """
         Get complete dashboard data in one request.
 
@@ -417,7 +419,7 @@ class DataSource:
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
-            raise Exception(f"Failed to fetch dashboard overview: {e}")
+            raise Exception(f"Failed to fetch dashboard overview: {e}") from e
 
     def get_downloads(
         self,

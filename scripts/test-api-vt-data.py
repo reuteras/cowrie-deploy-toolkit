@@ -6,12 +6,14 @@ Run this on the honeypot to see what data the API returns vs what's in the datab
 """
 
 import json
-import requests
 import sqlite3
 from datetime import datetime, timedelta
 
+import requests
+
 DB_PATH = "/var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/cowrie.db"
 API_URL = "http://cowrie-api:8000"
+
 
 def check_api_response():
     """Check what the API returns for dashboard overview."""
@@ -28,12 +30,12 @@ def check_api_response():
         print(f"\nTop downloads with VT data ({len(data.get('top_downloads_with_vt', []))} items):")
         print("-" * 80)
 
-        for dl in data.get('top_downloads_with_vt', []):
-            shasum = dl.get('shasum', 'unknown')[:16]
-            file_cat = dl.get('file_category', 'unknown')
-            file_type = dl.get('file_type', 'unknown')[:40]
-            vt_det = dl.get('vt_detections', 0)
-            vt_tot = dl.get('vt_total', 0)
+        for dl in data.get("top_downloads_with_vt", []):
+            shasum = dl.get("shasum", "unknown")[:16]
+            file_cat = dl.get("file_category", "unknown")
+            file_type = dl.get("file_type", "unknown")[:40]
+            vt_det = dl.get("vt_detections", 0)
+            vt_tot = dl.get("vt_total", 0)
 
             print(f"SHA: {shasum}... | {file_cat:12} | VT: {vt_det}/{vt_tot:2} | {file_type}")
 
@@ -43,6 +45,7 @@ def check_api_response():
     except requests.RequestException as e:
         print(f"❌ API request failed: {e}")
         return None
+
 
 def check_database_direct():
     """Check what's actually in the database using the same SQL query as the API."""
@@ -84,16 +87,16 @@ def check_database_direct():
             (cutoff, cutoff),
         )
 
-        print(f"\nDirect SQL query results:")
+        print("\nDirect SQL query results:")
         print("-" * 80)
 
         rows = cursor.fetchall()
         for row in rows:
-            shasum = row['shasum'][:16] if row['shasum'] else 'unknown'
-            file_cat = row['file_category']
-            file_type = (row['file_type'] or 'unknown')[:40]
-            vt_det = row['vt_detections']
-            vt_tot = row['vt_total']
+            shasum = row["shasum"][:16] if row["shasum"] else "unknown"
+            file_cat = row["file_category"]
+            file_type = (row["file_type"] or "unknown")[:40]
+            vt_det = row["vt_detections"]
+            vt_tot = row["vt_total"]
 
             print(f"SHA: {shasum}... | {file_cat:12} | VT: {vt_det}/{vt_tot:2} | {file_type}")
 
@@ -103,9 +106,10 @@ def check_database_direct():
     except sqlite3.Error as e:
         print(f"❌ Database query failed: {e}")
 
+
 def check_vt_events_for_hash(shasum):
     """Check if a specific hash has VT events."""
-    print(f"\n" + "=" * 80)
+    print("\n" + "=" * 80)
     print(f"Checking VT events for hash: {shasum}")
     print("=" * 80)
 
@@ -122,7 +126,7 @@ def check_vt_events_for_hash(shasum):
             AND json_extract(data, '$.sha256') = ?
             ORDER BY timestamp DESC
             """,
-            (shasum,)
+            (shasum,),
         )
 
         rows = cursor.fetchall()
@@ -130,9 +134,9 @@ def check_vt_events_for_hash(shasum):
 
         for timestamp, data_json in rows:
             data = json.loads(data_json)
-            positives = data.get('positives', 0)
-            total = data.get('total', 0)
-            scan_date = data.get('scan_date', 'unknown')
+            positives = data.get("positives", 0)
+            total = data.get("total", 0)
+            scan_date = data.get("scan_date", "unknown")
 
             print(f"  Timestamp: {timestamp}")
             print(f"  VT Score: {positives}/{total}")
@@ -149,13 +153,14 @@ def check_vt_events_for_hash(shasum):
     except Exception as e:
         print(f"❌ Error: {e}")
 
+
 def main():
     print("\n" + "=" * 80)
     print("  API VT DATA TEST SCRIPT")
     print("=" * 80)
 
     # Test 1: Check API response
-    api_data = check_api_response()
+    check_api_response()
 
     # Test 2: Check database directly
     check_database_direct()
@@ -194,6 +199,7 @@ If no VT events exist for certain hashes:
   → Those files were never scanned by VirusTotal
   → Check Cowrie logs for why VT scan didn't happen
 """)
+
 
 if __name__ == "__main__":
     main()

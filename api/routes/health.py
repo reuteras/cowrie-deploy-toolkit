@@ -72,7 +72,7 @@ def get_cowrie_version_from_log():
 
         try:
             # Read last 200 lines (version is logged at startup)
-            with open(log_path, 'rb') as f:
+            with open(log_path, "rb") as f:
                 # Seek to near end of file
                 f.seek(0, 2)  # Go to end
                 file_size = f.tell()
@@ -82,11 +82,12 @@ def get_cowrie_version_from_log():
                 f.seek(file_size - read_size)
 
                 # Decode and search for version
-                content = f.read().decode('utf-8', errors='ignore')
+                content = f.read().decode("utf-8", errors="ignore")
 
                 # Look for "Cowrie Version X.Y.Z" pattern
                 import re
-                match = re.search(r'Cowrie Version ([\d\.]+(\.dev\d+)?(\+g[a-f0-9]+)?)', content)
+
+                match = re.search(r"Cowrie Version ([\d\.]+(\.dev\d+)?(\+g[a-f0-9]+)?)", content)
                 if match:
                     return match.group(1)
 

@@ -126,10 +126,7 @@ async def get_dashboard_overview(hours: int = Query(24, ge=1), force_refresh: bo
 
 def _table_exists(cursor, table_name: str) -> bool:
     """Check if a table exists in the database."""
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,)
-    )
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
     return cursor.fetchone() is not None
 
 

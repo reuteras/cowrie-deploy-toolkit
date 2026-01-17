@@ -47,13 +47,6 @@ CONFIG = {
     "honeypot_hostname": os.getenv("HONEYPOT_HOSTNAME", "cowrie"),
     "metadata_path": os.getenv("COWRIE_METADATA_PATH", "/cowrie-metadata/metadata.json"),
     "canary_webhook_db_path": os.getenv("CANARY_WEBHOOKS_DB", "/opt/cowrie/var/canary-webhooks.db"),
-    "metadata_path": os.getenv("COWRIE_METADATA_PATH", "/cowrie-metadata/metadata.json"),
-    "server_ip": os.getenv("SERVER_IP", ""),
-    "honeypot_hostname": os.getenv("HONEYPOT_HOSTNAME", ""),
-    "canary_webhook_db_path": os.getenv("CANARY_WEBHOOK_DB_PATH", "/cowrie-data/var/canary-webhooks.db"),
-    # Dashboard mode configuration (NEW in v2.1)
-    "dashboard_mode": os.getenv("DASHBOARD_MODE", "local"),
-    "dashboard_api_url": os.getenv("DASHBOARD_API_URL", ""),
 }
 
 
@@ -830,64 +823,64 @@ class TTYLogParser:
         # First, handle carriage returns before other processing
         # Convert \r\n to \n, and standalone \r to \n
         # This prevents the "overwrite previous line" behavior
-        text = text.replace('\r\n', '\n')
-        text = text.replace('\r', '\n')
+        text = text.replace("\r\n", "\n")
+        text = text.replace("\r", "\n")
 
         # Remove ANSI CSI (Control Sequence Introducer) sequences
         # CSI sequences start with \x1b[ (ESC [) and end with a command letter
         # We want to KEEP color codes (ending in 'm') but remove everything else
 
         # Remove cursor positioning: \x1b[<n>;<m>H or \x1b[<n>;<m>f
-        text = re.sub(r'\x1b\[\d*;\d*[Hf]', '', text)
-        text = re.sub(r'\x1b\[\d+[Hf]', '', text)
-        text = re.sub(r'\x1b\[[Hf]', '', text)
+        text = re.sub(r"\x1b\[\d*;\d*[Hf]", "", text)
+        text = re.sub(r"\x1b\[\d+[Hf]", "", text)
+        text = re.sub(r"\x1b\[[Hf]", "", text)
 
         # Remove cursor movement: \x1b[<n>A/B/C/D/E/F/G (up/down/forward/back)
-        text = re.sub(r'\x1b\[\d*[ABCDEFG]', '', text)
+        text = re.sub(r"\x1b\[\d*[ABCDEFG]", "", text)
 
         # Remove erase commands: \x1b[<n>J (erase display) and \x1b[<n>K (erase line)
-        text = re.sub(r'\x1b\[\d*[JK]', '', text)
+        text = re.sub(r"\x1b\[\d*[JK]", "", text)
 
         # Remove scroll commands: \x1b[<n>S/T
-        text = re.sub(r'\x1b\[\d*[ST]', '', text)
+        text = re.sub(r"\x1b\[\d*[ST]", "", text)
 
         # Remove other common CSI sequences (NOT ending in 'm')
         # This catches: h, l, n, p, q, r, s, u, and more
-        text = re.sub(r'\x1b\[\??\d*[hlnpqrsu]', '', text)
+        text = re.sub(r"\x1b\[\??\d*[hlnpqrsu]", "", text)
 
         # Remove any remaining CSI sequences that aren't color codes
         # Match: ESC [ followed by any params (digits, semicolons, ?), ending in a letter that's NOT 'm'
         # Be very explicit: match any letter A-Z and a-z EXCEPT m and M
-        text = re.sub(r'\x1b\[[0-9;?]*[ABCDEFGHIJKLNOPQRSTUVWXYZabcdefghijklnopqrstuvwxyz]', '', text)
+        text = re.sub(r"\x1b\[[0-9;?]*[ABCDEFGHIJKLNOPQRSTUVWXYZabcdefghijklnopqrstuvwxyz]", "", text)
 
         # Also remove CSI sequences without the bracket (like \x1b= or \x1b>)
-        text = re.sub(r'\x1b[=><()]', '', text)
-        text = re.sub(r'\x1b\(B', '', text)  # G0 charset selection
+        text = re.sub(r"\x1b[=><()]", "", text)
+        text = re.sub(r"\x1b\(B", "", text)  # G0 charset selection
 
         # Remove OSC (Operating System Command) sequences: \x1b]...\x07 or \x1b]...\x1b\\
-        text = re.sub(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)', '', text)
+        text = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", text)
 
         # Remove incomplete or malformed escape sequences (ESC followed by anything that's not [)
         # But don't remove the ESC that starts color codes
-        text = re.sub(r'\x1b(?![[])', '', text)
+        text = re.sub(r"\x1b(?![[])", "", text)
 
         # Remove backspace characters and what they delete
         # Do this in multiple passes to handle multiple backspaces
         for _ in range(10):  # Max 10 passes
             old_text = text
-            text = re.sub(r'.\x08', '', text)
-            text = re.sub(r'.\x7f', '', text)
+            text = re.sub(r".\x08", "", text)
+            text = re.sub(r".\x7f", "", text)
             if text == old_text:
                 break
 
         # Remove any remaining backspace/delete chars
-        text = text.replace('\x08', '')
-        text = text.replace('\x7f', '')
+        text = text.replace("\x08", "")
+        text = text.replace("\x7f", "")
 
         # Remove other control characters except newlines (\n) and tabs (\t)
         # Keep: \x09 (tab), \x0A (newline)
         # Remove: \x00-\x08, \x0B-\x0C, \x0E-\x1F, \x7F
-        text = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', text)
+        text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
         return text
 
@@ -936,7 +929,7 @@ class TTYLogParser:
 
         stdout = []
         width = 160  # Default to wider terminal to handle most cases
-        height = 40   # Taller default too
+        height = 40  # Taller default too
         duration = 0.0
         currtty = 0
         prevtime = 0
@@ -988,7 +981,7 @@ class TTYLogParser:
                                     print(f"[DEBUG] TTY dimensions from OP_OPEN: {width}x{height}")
                             except struct.error:
                                 # Ignore if terminal size parsing fails
-                                print(f"[DEBUG] Failed to parse terminal dimensions from OP_OPEN")
+                                print("[DEBUG] Failed to parse terminal dimensions from OP_OPEN")
                                 pass
 
                         elif op == self.OP_WRITE:
@@ -1015,15 +1008,18 @@ class TTYLogParser:
 
                                 # Debug: log first 5 events
                                 if len(stdout) < 5 and text:
-                                    sample = text[:80].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
+                                    sample = (
+                                        text[:80].replace("\x1b", "\\x1b").replace("\r", "\\r").replace("\n", "\\n")
+                                    )
                                     print(f"[DEBUG] TTY event #{len(stdout)} RAW: {sample}")
 
                                 # Filter out events that are ONLY ANSI escape sequences
                                 # Keep events with actual content (including whitespace like \n, spaces, tabs)
                                 import re
+
                                 # Remove all ANSI escape sequences temporarily
-                                text_without_escapes = re.sub(r'\x1b\[[0-9;?]*[a-zA-Z]', '', text)
-                                text_without_escapes = re.sub(r'\x1b[=>()]', '', text_without_escapes)
+                                text_without_escapes = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", text)
+                                text_without_escapes = re.sub(r"\x1b[=>()]", "", text_without_escapes)
 
                                 # Skip ONLY if completely empty after removing escapes
                                 # Don't use .strip() - we want to keep whitespace like \n, spaces, etc.
@@ -1035,14 +1031,16 @@ class TTYLogParser:
                                 # FIX: Normalize line endings for asciinema terminal emulation
                                 # \n alone moves cursor down but NOT to column 0
                                 # We need \r\n (CR+LF) to reset to column 0 AND move down
-                                text = text.replace('\r\n', '\n')  # Normalize to \n first
-                                text = text.replace('\n\r', '\n')
-                                text = text.replace('\r', '\n')
-                                text = text.replace('\n', '\r\n')  # Then add CR before each LF
+                                text = text.replace("\r\n", "\n")  # Normalize to \n first
+                                text = text.replace("\n\r", "\n")
+                                text = text.replace("\r", "\n")
+                                text = text.replace("\n", "\r\n")  # Then add CR before each LF
 
                                 # Debug: log after processing
                                 if len(stdout) < 5 and text:
-                                    sample = text[:80].replace('\x1b', '\\x1b').replace('\r', '\\r').replace('\n', '\\n')
+                                    sample = (
+                                        text[:80].replace("\x1b", "\\x1b").replace("\r", "\\r").replace("\n", "\\n")
+                                    )
                                     print(f"[DEBUG] TTY event #{len(stdout)} PROCESSED: {sample}")
 
                                 # Skip empty events
@@ -1156,13 +1154,15 @@ class TTYLogParser:
         elif total_events > 0 and not has_prompts and commands:
             # TTY logs exist but no prompts - automated session
             # Synthesize from commands for better presentation, including the TTY output
-            print(f"[DEBUG] merge_tty_logs: TTY logs have no prompts (automated session), synthesizing from {len(commands)} commands with {total_events} output events")
+            print(
+                f"[DEBUG] merge_tty_logs: TTY logs have no prompts (automated session), synthesizing from {len(commands)} commands with {total_events} output events"
+            )
             return self._synthesize_asciicast_from_commands(commands, username, hostname, tty_output=merged_stdout)
         elif total_events > 0 and not has_prompts:
             # TTY logs exist, no prompts, no commands - use raw output with timing
             print("[DEBUG] merge_tty_logs: No prompts found, adding synthetic timing to raw output")
             # Add small delays between events for readability (0.05s per line)
-            for i, event in enumerate(merged_stdout):
+            for _i, event in enumerate(merged_stdout):
                 event[0] = 0.05  # 50ms between each line
                 total_duration += 0.05
         elif commands:
@@ -1185,7 +1185,9 @@ class TTYLogParser:
             "stdout": merged_stdout,
         }
 
-    def _synthesize_asciicast_from_commands(self, commands: list, username: str, hostname: str, tty_output: list = None) -> dict:
+    def _synthesize_asciicast_from_commands(
+        self, commands: list, username: str, hostname: str, tty_output: list = None
+    ) -> dict:
         """Create an asciicast from commands, optionally with TTY output.
 
         Args:
@@ -1221,9 +1223,9 @@ class TTYLogParser:
                     # Last command gets all remaining output
                     cmd_output = tty_output[tty_index:]
                 else:
-                    cmd_output = tty_output[tty_index:tty_index + events_per_command]
+                    cmd_output = tty_output[tty_index : tty_index + events_per_command]
 
-                for delay, text in cmd_output:
+                for _delay, text in cmd_output:
                     # Use small fixed delay for readability
                     stdout.append([0.05, text])
                     total_duration += 0.05
@@ -1257,7 +1259,9 @@ class TTYLogParser:
             "stdout": stdout,
         }
 
-    def _enhance_tty_with_commands(self, tty_events: list, commands: list, username: str, hostname: str, width: int, height: int) -> dict:
+    def _enhance_tty_with_commands(
+        self, tty_events: list, commands: list, username: str, hostname: str, width: int, height: int
+    ) -> dict:
         """Enhance TTY log events with prompts and commands."""
         enhanced_stdout = []
         prompt = f"{username}@{hostname}:~# "
@@ -2234,7 +2238,9 @@ def downloads_data():
     else:
         # Single source mode: call local or remote API
         try:
-            api_url = session_parser.api_base_url if hasattr(session_parser, "api_base_url") else "http://cowrie-api:8000"
+            api_url = (
+                session_parser.api_base_url if hasattr(session_parser, "api_base_url") else "http://cowrie-api:8000"
+            )
             session_obj = session_parser.session if hasattr(session_parser, "session") else requests.Session()
 
             response = session_obj.get(
@@ -2385,7 +2391,9 @@ def sessions_data():
             print(f"[/api/sessions-data] Error fetching sessions: {e}")
             break
 
-    print(f"[/api/sessions-data] Fetched {len(all_sessions_list)} sessions from API (hours={hours}, source={source_filter})")
+    print(
+        f"[/api/sessions-data] Fetched {len(all_sessions_list)} sessions from API (hours={hours}, source={source_filter})"
+    )
 
     # Apply client-side filters (filters not supported by API)
     filtered_sessions = []
