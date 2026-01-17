@@ -5,9 +5,9 @@ Provides aggregated statistics from Cowrie data
 """
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
-import time
 from fastapi import APIRouter, Query
 from services.sqlite_parser import sqlite_parser
 

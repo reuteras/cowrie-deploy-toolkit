@@ -7,13 +7,13 @@ Provides access to downloaded files (malware samples)
 import logging
 import re
 import sqlite3
-import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
 from config import config
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from services.cache import CacheDB, YARACache
+from services.cache import YARACache
 from services.sqlite_parser import sqlite_parser
 
 logger = logging.getLogger(__name__)
