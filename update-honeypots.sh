@@ -43,6 +43,7 @@ SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLeve
 # Update modes
 UPDATE_CODE=false
 UPDATE_FILESYSTEM=false
+UPDATE_CONFIG=false
 UPDATE_AUTO=false
 
 # Logging functions
@@ -80,7 +81,8 @@ Unified update script for Cowrie honeypots - handles code AND filesystem updates
 UPDATE MODES:
     --code                  Update code only (scripts, web, API) [default]
     --filesystem            Update filesystem only (fs.pickle, identity, contents)
-    --full                  Update both code and filesystem
+    --config                Update configuration only (report.env with API keys, email settings)
+    --full                  Update code, filesystem, and configuration
     --auto                  Smart mode - auto-detect what needs updating
 
 HONEYPOT SELECTION:
@@ -91,7 +93,7 @@ OTHER OPTIONS:
     --status                Show version information for all honeypots
     --rollback NAME         Rollback specific honeypot to previous state
     --parallel              Update multiple honeypots in parallel (default: sequential)
-    --config FILE           Use alternative config file (default: master-config.toml)
+    --config-file FILE      Use alternative config file (default: master-config.toml)
     --help                  Show this help message
 
 EXAMPLES:
@@ -102,7 +104,10 @@ EXAMPLES:
     # Filesystem updates (after regenerating fs.pickle)
     $0 --all --filesystem              # Update filesystem on all
 
-    # Full update (both code and filesystem)
+    # Configuration updates (after changing API keys, email settings)
+    $0 --all --config                  # Update report.env on all honeypots
+
+    # Full update (code, filesystem, and configuration)
     $0 --all --full                    # Update everything
 
     # Smart mode (auto-detects what changed)
@@ -115,7 +120,8 @@ EXAMPLES:
 UPDATE MODES EXPLAINED:
     --code:       Git pull + Docker pull from GHCR (fast, atomic)
     --filesystem: Rsync fs.pickle, identity, contents (for new snapshots)
-    --full:       Both code and filesystem
+    --config:     Process master-config.toml and upload report.env (API keys, email)
+    --full:       All of the above (code, filesystem, and config)
     --auto:       Detects which is needed based on file timestamps
 
 DEFAULT: If no mode specified, --code is assumed (most common use case)
@@ -126,7 +132,7 @@ EOF
 
 # Check dependencies
 check_dependencies() {
-    local deps=("python3" "jq" "ssh" "tailscale" "rsync" "scp")
+    local deps=("python3" "jq" "ssh" "tailscale" "rsync" "scp" "uv")
     local missing=()
 
     for dep in "${deps[@]}"; do
@@ -466,6 +472,65 @@ sync_filesystem() {
     return 0
 }
 
+# Sync configuration (report.env) to honeypot
+sync_config() {
+    local name="$1"
+    local ts_host="$2"
+    local ssh_port="$3"
+
+    log_info "Processing configuration for ${name}..."
+
+    # Check if uv is available
+    if ! command -v uv &> /dev/null; then
+        log_error "uv not found. Please install uv to process configuration."
+        return 1
+    fi
+
+    # Generate report.env from master-config.toml
+    local temp_report_env
+    temp_report_env=$(mktemp)
+
+    log_info "  - Generating report.env from ${CONFIG_FILE}..."
+    if ! uv run --quiet "${SCRIPT_DIR}/scripts/process-config.py" "${CONFIG_FILE}" > "${temp_report_env}" 2>/dev/null; then
+        log_error "Failed to process config file"
+        rm -f "${temp_report_env}"
+        return 1
+    fi
+
+    # Verify report.env was generated (should have content)
+    if [ ! -s "${temp_report_env}" ]; then
+        log_error "Generated report.env is empty"
+        rm -f "${temp_report_env}"
+        return 1
+    fi
+
+    # Upload report.env to honeypot
+    log_info "  - Uploading report.env to ${name}..."
+    if ! scp_copy "${temp_report_env}" "root@${ts_host}:/opt/cowrie/etc/report.env" "${ssh_port}" > /dev/null 2>&1; then
+        log_error "Failed to upload report.env"
+        rm -f "${temp_report_env}"
+        return 1
+    fi
+
+    # Set permissions
+    ssh_exec "${ts_host}" "chmod 600 /opt/cowrie/etc/report.env" "${ssh_port}" > /dev/null 2>&1
+
+    # Clean up temp file
+    rm -f "${temp_report_env}"
+
+    log_success "Configuration synced successfully"
+
+    # Restart event-indexer to pick up new VT API key
+    log_info "Restarting event-indexer service..."
+    if ssh_exec "${ts_host}" "systemctl restart cowrie-event-indexer 2>/dev/null || true" "${ssh_port}" > /dev/null 2>&1; then
+        log_success "Event-indexer service restarted"
+    else
+        log_warning "Could not restart event-indexer (may not be installed)"
+    fi
+
+    return 0
+}
+
 # Update honeypot code (via update-agent.sh)
 update_code() {
     local name="$1"
@@ -613,6 +678,15 @@ update_honeypot() {
 
     # Manual mode - update based on flags
     local updated=false
+
+    if [ "${UPDATE_CONFIG}" = "true" ]; then
+        log_mode "Configuration update mode"
+        if sync_config "${name}" "${ts_host}" "${ssh_port}"; then
+            updated=true
+        else
+            return 1
+        fi
+    fi
 
     if [ "${UPDATE_FILESYSTEM}" = "true" ]; then
         log_mode "Filesystem update mode"
@@ -782,6 +856,12 @@ main() {
             --full)
                 UPDATE_CODE=true
                 UPDATE_FILESYSTEM=true
+                UPDATE_CONFIG=true
+                mode_specified=true
+                shift
+                ;;
+            --config)
+                UPDATE_CONFIG=true
                 mode_specified=true
                 shift
                 ;;
@@ -794,7 +874,7 @@ main() {
                 parallel="true"
                 shift
                 ;;
-            --config)
+            --config-file)
                 CONFIG_FILE="$2"
                 shift 2
                 ;;

@@ -106,56 +106,61 @@ def generate_env_file(config: dict) -> str:
     """Generate environment variable file for server."""
     lines = ["#!/bin/bash", "# Cowrie Daily Report Configuration", "# Generated from master-config.toml", ""]
 
+    # Handle both direct config and shared.* prefixed config
+    # The config structure is: config["shared"]["reporting"], config["shared"]["email"], etc.
+    shared = config.get("shared", {})
+    reporting = shared.get("reporting", config.get("reporting", {}))
+    email = shared.get("email", config.get("email", {}))
+    advanced = shared.get("advanced", config.get("advanced", {}))
+
     # Paths
-    if "advanced" in config:
+    if advanced:
         lines.append("# Paths")
-        for key, value in config["advanced"].items():
+        for key, value in advanced.items():
             env_var = key.upper()
             lines.append(f'export {env_var}="{value}"')
         lines.append("")
 
     # VirusTotal
-    if "reporting" in config and "virustotal_api_key" in config["reporting"]:
+    if reporting and "virustotal_api_key" in reporting:
         lines.append("# VirusTotal")
-        lines.append(f'export VT_API_KEY="{config["reporting"]["virustotal_api_key"]}"')
+        lines.append(f'export VT_API_KEY="{reporting["virustotal_api_key"]}"')
         lines.append('export VT_ENABLED="true"')
         lines.append("")
 
     # Email settings
-    if "reporting" in config:
+    if reporting:
         lines.append("# Email Configuration")
-        r = config["reporting"]
-        if "email_from" in r:
-            lines.append(f'export EMAIL_FROM="{r["email_from"]}"')
-        if "email_to" in r:
-            lines.append(f'export EMAIL_TO="{r["email_to"]}"')
-        if "email_subject_prefix" in r:
-            lines.append(f'export EMAIL_SUBJECT_PREFIX="{r["email_subject_prefix"]}"')
-        if "max_commands_per_session" in r:
-            lines.append(f'export MAX_COMMANDS_PER_SESSION="{r["max_commands_per_session"]}"')
+        if "email_from" in reporting:
+            lines.append(f'export EMAIL_FROM="{reporting["email_from"]}"')
+        if "email_to" in reporting:
+            lines.append(f'export EMAIL_TO="{reporting["email_to"]}"')
+        if "email_subject_prefix" in reporting:
+            lines.append(f'export EMAIL_SUBJECT_PREFIX="{reporting["email_subject_prefix"]}"')
+        if "max_commands_per_session" in reporting:
+            lines.append(f'export MAX_COMMANDS_PER_SESSION="{reporting["max_commands_per_session"]}"')
         lines.append("")
 
     # SMTP settings
-    if "email" in config:
+    if email:
         lines.append("# SMTP Settings")
-        e = config["email"]
-        if "smtp_host" in e:
-            lines.append(f'export SMTP_HOST="{e["smtp_host"]}"')
-        if "smtp_port" in e:
-            lines.append(f'export SMTP_PORT="{e["smtp_port"]}"')
-        if "smtp_user" in e:
-            lines.append(f'export SMTP_USER="{e["smtp_user"]}"')
-        if "smtp_password" in e:
-            lines.append(f'export SMTP_PASSWORD="{e["smtp_password"]}"')
-        if "smtp_tls" in e:
-            lines.append(f'export SMTP_TLS="{"true" if e["smtp_tls"] else "false"}"')
+        if "smtp_host" in email:
+            lines.append(f'export SMTP_HOST="{email["smtp_host"]}"')
+        if "smtp_port" in email:
+            lines.append(f'export SMTP_PORT="{email["smtp_port"]}"')
+        if "smtp_user" in email:
+            lines.append(f'export SMTP_USER="{email["smtp_user"]}"')
+        if "smtp_password" in email:
+            lines.append(f'export SMTP_PASSWORD="{email["smtp_password"]}"')
+        if "smtp_tls" in email:
+            lines.append(f'export SMTP_TLS="{"true" if email["smtp_tls"] else "false"}"')
 
         lines.append("")
 
     # Report settings
-    if "advanced" in config and "report_hours" in config["advanced"]:
+    if advanced and "report_hours" in advanced:
         lines.append("# Report Settings")
-        lines.append(f'export REPORT_HOURS="{config["advanced"]["report_hours"]}"')
+        lines.append(f'export REPORT_HOURS="{advanced["report_hours"]}"')
 
     return "\n".join(lines)
 
