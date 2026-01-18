@@ -757,7 +757,7 @@ class SQLiteStatsParser:
             sha256: SHA256 hash of the file
 
         Returns:
-            Dict with VT results: {"detections": int, "total": int, "threat_label": str, "scan_date": int}
+            Dict with VT results: {"detections": int, "total": int, "threat_label": str, "scan_date": int, "is_new": bool}
             Returns empty dict if no results found
         """
         if not self.available:
@@ -768,11 +768,34 @@ class SQLiteStatsParser:
         cursor = conn.cursor()
 
         try:
+            # Try the new virustotal_scans table first
+            cursor.execute(
+                """
+                SELECT positives, total, scan_date, threat_label, is_new
+                FROM virustotal_scans
+                WHERE shasum = ?
+                """,
+                (sha256,),
+            )
+
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "detections": row["positives"] or 0,
+                    "total": row["total"] or 0,
+                    "threat_label": row["threat_label"] or "",
+                    "scan_date": row["scan_date"] or 0,
+                    "is_new": bool(row["is_new"]) if row["is_new"] is not None else False,
+                }
+
+            # Fallback to events table for legacy data
             cursor.execute(
                 """
                 SELECT json_extract(data, '$.positives') as positives,
                        json_extract(data, '$.total') as total,
-                       json_extract(data, '$.scan_date') as scan_date
+                       json_extract(data, '$.scan_date') as scan_date,
+                       json_extract(data, '$.threat_label') as threat_label,
+                       json_extract(data, '$.is_new') as is_new
                 FROM events
                 WHERE eventid = 'cowrie.virustotal.scanfile'
                 AND json_extract(data, '$.sha256') = ?
@@ -786,19 +809,15 @@ class SQLiteStatsParser:
                 positives = row["positives"] or 0
                 total = row["total"] or 0
                 scan_date = row["scan_date"] or 0
-
-                # Extract threat label from scan results (simplified - most common detection)
-                threat_label = ""
-                if positives > 0:
-                    # In a real implementation, you'd parse the scans object to find the most common threat
-                    # For now, we'll use a placeholder or extract from the data
-                    threat_label = "malicious"  # This would be extracted from scan results
+                threat_label = row["threat_label"] or ""
+                is_new = row["is_new"] == "true" if row["is_new"] else False
 
                 return {
                     "detections": positives,
                     "total": total,
                     "threat_label": threat_label,
                     "scan_date": scan_date,
+                    "is_new": is_new,
                 }
 
             return {}

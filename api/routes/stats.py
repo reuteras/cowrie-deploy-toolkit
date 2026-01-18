@@ -161,20 +161,13 @@ def get_top_downloads_with_vt(hours: int) -> list:
                     m.file_type,
                     COALESCE(m.file_category, 'unknown') as file_category,
                     m.is_previewable,
-                    COALESCE(json_extract(vt.data, '$.positives'), 0) as vt_detections,
-                    COALESCE(json_extract(vt.data, '$.total'), 0) as vt_total,
-                    json_extract(vt.data, '$.threat_label') as vt_threat_label
+                    COALESCE(vt.positives, 0) as vt_detections,
+                    COALESCE(vt.total, 0) as vt_total,
+                    vt.threat_label as vt_threat_label,
+                    vt.is_new as vt_is_new
                 FROM downloads d
                 LEFT JOIN download_meta m ON d.shasum = m.shasum
-                LEFT JOIN (
-                    SELECT
-                        json_extract(data, '$.sha256') as sha256,
-                        data,
-                        timestamp,
-                        ROW_NUMBER() OVER (PARTITION BY json_extract(data, '$.sha256') ORDER BY timestamp DESC) as rn
-                    FROM events
-                    WHERE eventid = 'cowrie.virustotal.scanfile'
-                ) vt ON vt.sha256 = d.shasum AND vt.rn = 1
+                LEFT JOIN virustotal_scans vt ON vt.shasum = d.shasum
                 WHERE d.timestamp >= ? AND d.shasum IS NOT NULL
                 GROUP BY d.shasum
                 ORDER BY vt_detections DESC, download_count DESC
@@ -192,19 +185,12 @@ def get_top_downloads_with_vt(hours: int) -> list:
                     NULL as file_type,
                     'unknown' as file_category,
                     0 as is_previewable,
-                    COALESCE(json_extract(vt.data, '$.positives'), 0) as vt_detections,
-                    COALESCE(json_extract(vt.data, '$.total'), 0) as vt_total,
-                    json_extract(vt.data, '$.threat_label') as vt_threat_label
+                    COALESCE(vt.positives, 0) as vt_detections,
+                    COALESCE(vt.total, 0) as vt_total,
+                    vt.threat_label as vt_threat_label,
+                    vt.is_new as vt_is_new
                 FROM downloads d
-                LEFT JOIN (
-                    SELECT
-                        json_extract(data, '$.sha256') as sha256,
-                        data,
-                        timestamp,
-                        ROW_NUMBER() OVER (PARTITION BY json_extract(data, '$.sha256') ORDER BY timestamp DESC) as rn
-                    FROM events
-                    WHERE eventid = 'cowrie.virustotal.scanfile'
-                ) vt ON vt.sha256 = d.shasum AND vt.rn = 1
+                LEFT JOIN virustotal_scans vt ON vt.shasum = d.shasum
                 WHERE d.timestamp >= ? AND d.shasum IS NOT NULL
                 GROUP BY d.shasum
                 ORDER BY vt_detections DESC, download_count DESC
@@ -227,6 +213,7 @@ def get_top_downloads_with_vt(hours: int) -> list:
                     "vt_detections": row["vt_detections"],
                     "vt_total": row["vt_total"],
                     "vt_threat_label": row["vt_threat_label"],
+                    "vt_is_new": bool(row["vt_is_new"]) if row["vt_is_new"] is not None else None,
                 }
             )
 

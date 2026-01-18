@@ -223,6 +223,8 @@ function loadDownloads() {
                         vtScoreCol += '<span class="badge badge-danger">' + dl.vt_detections + '/' + dl.vt_total + '</span>';
                     } else if (dl.vt_total > 0) {
                         vtScoreCol += '<span class="badge badge-success">0/' + dl.vt_total + '</span>';
+                    } else if (dl.vt_is_new) {
+                        vtScoreCol += '<span class="badge badge-primary" title="File is new to VirusTotal (not in their database yet)">New to VT</span>';
                     } else {
                         vtScoreCol += '<span class="badge badge-secondary" title="File not yet scanned by VirusTotal">Not scanned</span>';
                     }

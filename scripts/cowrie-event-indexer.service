@@ -10,6 +10,9 @@ User=root
 WorkingDirectory=/opt/cowrie
 Environment="PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
+# VT_API_KEY is loaded from /opt/cowrie/etc/report.env by the Python script
+# This enables VirusTotal scanning in the event-indexer
+
 # Run the event indexer with container paths
 ExecStart=UV_PATH_PLACEHOLDER run /opt/cowrie/scripts/event-indexer.py \
     --db /var/lib/docker/volumes/cowrie-var/_data/lib/cowrie/cowrie.db \

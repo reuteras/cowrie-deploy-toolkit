@@ -46,3 +46,34 @@ CREATE TABLE IF NOT EXISTS download_meta (
 
 -- Index for fast metadata lookups
 CREATE INDEX IF NOT EXISTS idx_download_meta_category ON download_meta(file_category);
+
+-- VirusTotal scan results (replaces unreliable Cowrie VT plugin output)
+-- Stores VT scan results from event-indexer's own scanning
+CREATE TABLE IF NOT EXISTS virustotal_scans (
+    shasum TEXT PRIMARY KEY,
+    positives INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    scan_date INTEGER,  -- Unix timestamp from VT
+    threat_label TEXT,
+    threat_categories TEXT,  -- JSON array
+    family_labels TEXT,  -- JSON array
+    permalink TEXT,
+    is_new BOOLEAN DEFAULT 0,  -- True if file was new to VT
+    scanned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Pending VT scans for files that were new to VT and need retry
+-- Persists across daemon restarts
+CREATE TABLE IF NOT EXISTS virustotal_pending (
+    shasum TEXT PRIMARY KEY,
+    first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+    retry_count INTEGER DEFAULT 0,
+    next_retry_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_error TEXT,
+    session TEXT,  -- Original session for context
+    src_ip TEXT    -- Original source IP for context
+);
+
+-- Index for efficient pending scan queries
+CREATE INDEX IF NOT EXISTS idx_vt_pending_retry ON virustotal_pending(next_retry_at);

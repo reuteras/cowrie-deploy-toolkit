@@ -258,6 +258,7 @@
                             <td>
                                 {% set vt_detections = dl.get('vt_detections', 0) %}
                                 {% set vt_total = dl.get('vt_total', 0) %}
+                                {% set vt_is_new = dl.get('vt_is_new', false) %}
                                 {% if vt_detections >= 40 %}
                                 <span class="badge badge-danger">{{ vt_detections }}/{{ vt_total }}</span>
                                 {% elif vt_detections >= 10 %}
@@ -266,6 +267,8 @@
                                 <span class="badge badge-info">{{ vt_detections }}/{{ vt_total }}</span>
                                 {% elif vt_total > 0 %}
                                 <span class="badge badge-success">0/{{ vt_total }}</span>
+                                {% elif vt_is_new %}
+                                <span class="badge badge-primary" title="File is new to VirusTotal (not in their database yet)">New to VT</span>
                                 {% elif vt_total == 0 and vt_detections == 0 %}
                                 <span class="badge badge-secondary" title="File not yet scanned by VirusTotal">Not scanned</span>
                                 {% else %}

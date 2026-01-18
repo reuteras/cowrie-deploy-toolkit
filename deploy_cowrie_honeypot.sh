@@ -1080,24 +1080,14 @@ enabled = true
 db_file = var/lib/cowrie/cowrie.db
 EOFCFG
 
-# Add VirusTotal configuration if API key is available
+# NOTE: Cowrie's built-in VirusTotal plugin is DISABLED
+# VT scanning is now handled by the event-indexer daemon which provides:
+# - Reliable scanning (Cowrie's VT plugin has intermittent JSON logging issues)
+# - Persistent retry queue for files new to VT
+# - Rate limiting and backoff
+# The event-indexer reads VT_API_KEY from /opt/cowrie/etc/report.env
 if [ -n "$VT_API_KEY" ]; then
-    cat >> "$COWRIE_CFG_TMP" << EOFVT
-
-[output_virustotal]
-enabled = true
-api_key = $VT_API_KEY
-upload = true
-scan_file = true
-scan_url = false
-debug = false
-# Optional: Collection name for organizing artifacts
-# If not set, no collection will be created
-#collection = cowrie
-# Optional: Custom comment text (default: Cowrie attribution)
-#commenttext = First seen by #Cowrie SSH/telnet Honeypot http://github.com/cowrie/cowrie
-EOFVT
-    echo_info "VirusTotal integration enabled in cowrie.cfg"
+    echo_info "VirusTotal API key found - VT scanning will be handled by event-indexer daemon"
 fi
 
 # Add AbuseIPDB configuration if enabled
