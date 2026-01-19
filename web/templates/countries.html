@@ -101,7 +101,7 @@ function loadData() {
     document.getElementById('data-table').style.display = 'none';
     document.getElementById('info-box').style.display = 'none';
 
-    let apiUrl = '/api/countries-data?hours=' + hours;
+    let apiUrl = basePath + '/api/countries-data?hours=' + hours;
     if (source) apiUrl += '&source=' + encodeURIComponent(source);
 
     fetch(apiUrl)
@@ -131,8 +131,8 @@ function loadData() {
                     '<td>' + item.country + '</td>' +
                     '<td>' + item.count + '</td>' +
                     '<td>' +
-                    '<a href="/sessions?country=' + encodeURIComponent(item.country) + '&hours=' + hours + '" class="btn btn-sm">View Sessions</a> ' +
-                    '<a href="/ips?country=' + encodeURIComponent(item.country) + '&hours=' + hours + '" class="btn btn-sm">View IPs</a>' +
+                    '<a href="' + basePath + '/sessions?country=' + encodeURIComponent(item.country) + '&hours=' + hours + '" class="btn btn-sm">View Sessions</a> ' +
+                    '<a href="' + basePath + '/ips?country=' + encodeURIComponent(item.country) + '&hours=' + hours + '" class="btn btn-sm">View IPs</a>' +
                     '</td>';
                 tbody.appendChild(row);
             });

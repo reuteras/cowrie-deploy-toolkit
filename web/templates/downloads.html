@@ -135,7 +135,7 @@ function loadDownloads() {
     document.getElementById('downloads-info').style.display = 'none';
 
     // Build API URL
-    let apiUrl = '/api/downloads-data?hours=' + hours;
+    let apiUrl = basePath + '/api/downloads-data?hours=' + hours;
     if (source) {
         apiUrl += '&source=' + encodeURIComponent(source);
     }
@@ -172,7 +172,7 @@ function loadDownloads() {
                 // SHA256 column
                 let shaCol = '<td>';
                 if (dl.exists) {
-                    shaCol += '<a href="/download/' + dl.shasum + '.zip" title="Download as password-protected ZIP (password: infected)&#10;Full hash: ' + dl.shasum + '" style="text-decoration: none; color: inherit;">';
+                    shaCol += '<a href="' + basePath + '/download/' + dl.shasum + '.zip" title="Download as password-protected ZIP (password: infected)&#10;Full hash: ' + dl.shasum + '" style="text-decoration: none; color: inherit;">';
                     shaCol += '<code>' + truncateHash(dl.shasum, 20) + '</code></a>';
                 } else {
                     shaCol += '<code title="' + dl.shasum + '">' + truncateHash(dl.shasum, 20) + '</code>';
@@ -251,10 +251,10 @@ function loadDownloads() {
                 // Actions column
                 let actionsCol = '<td class="actions">';
                 if (dl.is_previewable && dl.exists) {
-                    actionsCol += '<a href="/download/' + dl.shasum + '/preview" class="btn btn-sm btn-preview" title="Preview file content">Preview</a> ';
+                    actionsCol += '<a href="' + basePath + '/download/' + dl.shasum + '/preview" class="btn btn-sm btn-preview" title="Preview file content">Preview</a> ';
                 }
                 actionsCol += '<a href="https://www.virustotal.com/gui/file/' + dl.shasum + '" target="_blank" class="btn btn-sm" title="View on VirusTotal">VT</a> ';
-                actionsCol += '<a href="/session/' + dl.session_id + '" class="btn btn-sm" title="View session">Session</a>';
+                actionsCol += '<a href="' + basePath + '/session/' + dl.session_id + '" class="btn btn-sm" title="View session">Session</a>';
                 actionsCol += '</td>';
 
                 row.innerHTML = shaCol + typeCol + sizeCol + yaraCol + vtScoreCol + vtThreatCol + countCol + timeCol + actionsCol;

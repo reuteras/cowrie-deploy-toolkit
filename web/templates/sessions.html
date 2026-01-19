@@ -169,7 +169,7 @@ function loadSessions(page = 1) {
     document.getElementById('results-info').style.display = 'none';
     document.getElementById('pagination').style.display = 'none';
 
-    let apiUrl = '/api/sessions-data?page=' + page + '&hours=' + hours;
+    let apiUrl = basePath + '/api/sessions-data?page=' + page + '&hours=' + hours;
     if (source) apiUrl += '&source=' + encodeURIComponent(source);
     if (ip) apiUrl += '&ip=' + encodeURIComponent(ip);
     if (country) apiUrl += '&country=' + encodeURIComponent(country);
@@ -205,7 +205,7 @@ function loadSessions(page = 1) {
                     row.className = 'success-login';
                 }
 
-                const sessionLink = '<a href="/session/' + session.id + '">' + truncateHash(session.id) + '</a>';
+                const sessionLink = '<a href="' + basePath + '/session/' + session.id + '">' + truncateHash(session.id) + '</a>';
                 const sourceBadge = session._source ?
                     '<span class="badge badge-info">' + session._source + '</span>' :
                     '<span class="badge">local</span>';
@@ -221,8 +221,8 @@ function loadSessions(page = 1) {
                 const commandsCount = (session.commands ? session.commands.length : 0) +
                     (session.downloads && session.downloads.length > 0 ?
                         ' <span class="badge badge-warning" title="Downloaded ' + session.downloads.length + ' file(s)">' + session.downloads.length + '</span>' : '');
-                const actionsCell = '<a href="/session/' + session.id + '" class="btn btn-sm">View</a>' +
-                    (session.tty_log ? ' <a href="/session/' + session.id + '/playback" class="btn btn-sm btn-primary">Play</a>' : '');
+                const actionsCell = '<a href="' + basePath + '/session/' + session.id + '" class="btn btn-sm">View</a>' +
+                    (session.tty_log ? ' <a href="' + basePath + '/session/' + session.id + '/playback" class="btn btn-sm btn-primary">Play</a>' : '');
 
                 row.innerHTML =
                     '<td>' + sessionLink + '</td>' +

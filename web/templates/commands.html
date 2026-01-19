@@ -103,7 +103,7 @@ function loadCommands() {
     document.getElementById('error-state').style.display = 'none';
     document.getElementById('data-table').style.display = 'none';
 
-    let apiUrl = '/api/commands-data?hours=' + hours;
+    let apiUrl = basePath + '/api/commands-data?hours=' + hours;
     if (source) apiUrl += '&source=' + encodeURIComponent(source);
     if (unique) apiUrl += '&unique=' + unique;
 
@@ -129,8 +129,8 @@ function loadCommands() {
 
                 const timestamp = formatTimestamp(cmd.timestamp);
                 const command = '<code>' + cmd.command + '</code>';
-                const ipLink = '<a href="/sessions?ip=' + encodeURIComponent(cmd.src_ip) + '&hours=' + hours + '" class="ip-link"><code>' + cmd.src_ip + '</code></a>';
-                const sessionLink = '<a href="/session/' + cmd.session_id + '" class="session-link">' + truncateHash(cmd.session_id) + '</a>';
+                const ipLink = '<a href="' + basePath + '/sessions?ip=' + encodeURIComponent(cmd.src_ip) + '&hours=' + hours + '" class="ip-link"><code>' + cmd.src_ip + '</code></a>';
+                const sessionLink = '<a href="' + basePath + '/session/' + cmd.session_id + '" class="session-link">' + truncateHash(cmd.session_id) + '</a>';
 
                 row.innerHTML =
                     '<td>' + timestamp + '</td>' +
