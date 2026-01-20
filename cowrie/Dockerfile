@@ -127,9 +127,10 @@ RUN if [ -d "${COWRIE_HOME}/custom-core/commands" ] && [ -n "$(find ${COWRIE_HOM
 RUN rm -rf ${COWRIE_HOME}/custom-core
 
 # Generate build metadata JSON file
+# Use Cowrie's actual package version (not git describe) for accurate version reporting
 # hadolint ignore=DL3003
-RUN git config --global --add safe.directory ${COWRIE_HOME}/cowrie-git && \
-    version=$(cd ${COWRIE_HOME}/cowrie-git && git describe --tags --always 2>&1) && \
+RUN . ${COWRIE_HOME}/cowrie-env/bin/activate && \
+    version=$(python3 -c "from importlib.metadata import version; print(version('cowrie'))") && \
     python3 -c "import json; from datetime import datetime, timezone; \
 metadata = { \
     'build_date': datetime.now(timezone.utc).isoformat(), \
