@@ -426,7 +426,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Fetch and display system information
-    fetch('/api/system-info')
+    fetch(basePath + '/api/system-info')
         .then(response => response.json())
         .then(data => {
             const container = document.getElementById('system-info-container');
@@ -506,7 +506,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
     // Fetch and display Canary Token information
-    fetch('/api/canary-tokens')
+    fetch(basePath + '/api/canary-tokens')
         .then(response => response.json())
         .then(data => {
             if (data.total > 0) {

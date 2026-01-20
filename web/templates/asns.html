@@ -75,7 +75,7 @@ function loadData() {
     document.getElementById('error-state').style.display = 'none';
     document.getElementById('data-table').style.display = 'none';
     document.getElementById('info-box').style.display = 'none';
-    let apiUrl = '/api/asns-data?hours=' + hours;
+    let apiUrl = basePath + '/api/asns-data?hours=' + hours;
     if (source) apiUrl += '&source=' + encodeURIComponent(source);
     fetch(apiUrl)
         .then(response => { if (!response.ok) throw new Error('Server returned ' + response.status); return response.json(); })
@@ -97,7 +97,7 @@ function loadData() {
                     '<td><code>' + item.asn + '</code></td>' +
                     '<td>' + item.asn_org + '</td>' +
                     '<td>' + item.count + '</td>' +
-                    '<td><a href="/ips?asn=' + encodeURIComponent(item.asn) + '&hours=' + hours + '" class="btn btn-sm">View IPs</a></td>';
+                    '<td><a href="' + basePath + '/ips?asn=' + encodeURIComponent(item.asn) + '&hours=' + hours + '" class="btn btn-sm">View IPs</a></td>';
                 tbody.appendChild(row);
             });
         })

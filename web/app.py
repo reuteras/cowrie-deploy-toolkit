@@ -21,6 +21,7 @@ from typing import Optional
 
 import requests
 from flask import Flask, Response, jsonify, render_template, request, send_file, stream_with_context
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 try:
     import geoip2.database
@@ -30,6 +31,12 @@ except ImportError:
 __version__ = "2.1.0"
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+
+
+@app.context_processor
+def inject_base_path():
+    return {"base_path": request.script_root or ""}
 
 # Configuration from environment variables
 CONFIG = {

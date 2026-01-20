@@ -75,7 +75,7 @@ function loadData() {
     document.getElementById('error-state').style.display = 'none';
     document.getElementById('data-table').style.display = 'none';
     document.getElementById('info-box').style.display = 'none';
-    let apiUrl = '/api/clients-data?hours=' + hours;
+    let apiUrl = basePath + '/api/clients-data?hours=' + hours;
     if (source) apiUrl += '&source=' + encodeURIComponent(source);
     fetch(apiUrl)
         .then(response => { if (!response.ok) throw new Error('Server returned ' + response.status); return response.json(); })
@@ -96,7 +96,7 @@ function loadData() {
                     '<td>' + (index + 1) + '</td>' +
                     '<td><code>' + item.client + '</code></td>' +
                     '<td>' + item.count + '</td>' +
-                    '<td><a href="/sessions?client_version=' + encodeURIComponent(item.client) + '&hours=' + hours + '" class="btn btn-sm">View Sessions</a></td>';
+                    '<td><a href="' + basePath + '/sessions?client_version=' + encodeURIComponent(item.client) + '&hours=' + hours + '" class="btn btn-sm">View Sessions</a></td>';
                 tbody.appendChild(row);
             });
         })

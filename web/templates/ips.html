@@ -102,7 +102,7 @@ function loadIPs() {
     document.getElementById('ips-info').style.display = 'none';
     document.getElementById('filter-badges').style.display = 'none';
 
-    let apiUrl = '/api/ips-data?hours=' + hours;
+    let apiUrl = basePath + '/api/ips-data?hours=' + hours;
     if (source) apiUrl += '&source=' + encodeURIComponent(source);
     if (country) apiUrl += '&country=' + encodeURIComponent(country);
     if (city) apiUrl += '&city=' + encodeURIComponent(city);
@@ -186,7 +186,7 @@ function loadIPs() {
             data.ips.forEach(ip => {
                 const row = document.createElement('tr');
 
-                const ipLink = '<a href="/sessions?ip=' + encodeURIComponent(ip.ip) + '&hours=' + hours + '" class="ip-link"><code>' + ip.ip + '</code></a>';
+                const ipLink = '<a href="' + basePath + '/sessions?ip=' + encodeURIComponent(ip.ip) + '&hours=' + hours + '" class="ip-link"><code>' + ip.ip + '</code></a>';
                 const countryLink = (ip.geo && ip.geo.country) ?
                     '<a href="?country=' + encodeURIComponent(ip.geo.country) + '&city=' + encodeURIComponent(city || '') + '&asn=' + encodeURIComponent(asn || '') + '&hours=' + hours + '" title="Filter by country">' + ip.geo.country + '</a>' :
                     'Unknown';
@@ -197,7 +197,7 @@ function loadIPs() {
                     '<a href="?asn=AS' + ip.geo.asn + '&country=' + encodeURIComponent(country || '') + '&city=' + encodeURIComponent(city || '') + '&hours=' + hours + '" title="Filter by ASN"><code>AS' + ip.geo.asn + '</code></a>' :
                     '<span class="text-muted">-</span>';
                 const asnOrg = (ip.geo && ip.geo.asn_org) ? ip.geo.asn_org : '<span class="text-muted">-</span>';
-                const sessionsLink = '<a href="/sessions?ip=' + encodeURIComponent(ip.ip) + '&hours=' + hours + '" class="badge badge-success">' + (ip.count || 0) + '</a>';
+                const sessionsLink = '<a href="' + basePath + '/sessions?ip=' + encodeURIComponent(ip.ip) + '&hours=' + hours + '" class="badge badge-success">' + (ip.count || 0) + '</a>';
                 const successfulLogins = ip.successful_logins > 0 ?
                     '<span class="badge badge-danger" title="Successful breaches">' + ip.successful_logins + '</span>' :
                     '<span class="text-muted">0</span>';

@@ -665,9 +665,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const targetHoneypotName = targetHoneypot.name || attack._source || 'local';
         arc.bindPopup(`
             <strong>${attack.city}, ${attack.country}</strong> → <strong style="color:#28a745;">🍯 ${targetHoneypotName}</strong><br>
-            IP: <a href="/sessions?ip=${attack.ip}" target="_blank">${attack.ip}</a><br>
+            IP: <a href="${basePath}/sessions?ip=${attack.ip}" target="_blank">${attack.ip}</a><br>
             ${attack.attackCount > 1 ? `<span style="color: #ffc107; font-weight: bold;">⚡ ${attack.attackCount} attacks from this IP</span><br>` : ''}
-            <a href="/session/${attack.sessionId}" target="_blank">View Session →</a>
+            <a href="${basePath}/session/${attack.sessionId}" target="_blank">View Session →</a>
         `);
 
         // Add impact explosion at honeypot location
@@ -809,7 +809,7 @@ document.addEventListener('DOMContentLoaded', function() {
         entry.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                 <strong style="color: var(--accent-color);">
-                    <a href="/session/${attack.sessionId}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a>
+                    <a href="${basePath}/session/${attack.sessionId}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a>
                     <span style="color: var(--text-secondary); font-weight: normal;"> → </span>
                     <span style="color: #28a745;">🍯 ${targetName}</span>
                 </strong>
@@ -911,7 +911,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         try {
             // Create new EventSource connection - use multi-source endpoint if available
-            const streamEndpoint = isMultiSource ? '/api/attack-stream-multi' : '/api/attack-stream';
+            const streamEndpoint = isMultiSource ? (basePath + '/api/attack-stream-multi') : (basePath + '/api/attack-stream');
             console.log(`[SSE] Connecting to ${streamEndpoint}`);
             eventSource = new EventSource(streamEndpoint);
 
@@ -1121,7 +1121,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <span style="color: #ffc107; font-weight: bold;">${data.token_name}</span><br>
             Type: ${data.token_type}<br>
             <strong>${data.city}, ${data.country}</strong><br>
-            IP: <a href="/canary-alerts" target="_blank">${data.ip}</a><br>
+            IP: <a href="${basePath}/canary-alerts" target="_blank">${data.ip}</a><br>
             ${data.asn ? `ASN: AS${data.asn} ${data.asn_org || ''}` : ''}
         `);
 
@@ -1141,7 +1141,7 @@ document.addEventListener('DOMContentLoaded', function() {
         attackerMarker.bindPopup(`
             <strong>🐦 Canary Token Source</strong><br>
             ${data.city}, ${data.country}<br>
-            IP: <a href="/canary-alerts" target="_blank">${data.ip}</a>
+            IP: <a href="${basePath}/canary-alerts" target="_blank">${data.ip}</a>
         `);
 
         arcLayers.push(attackerMarker);
@@ -1223,7 +1223,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         entry.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                <strong style="color: #ffc107;">🐦 <a href="/canary-alerts" target="_blank" class="ip-link" style="color: #ffc107; text-decoration: none; transition: opacity 0.2s;">${data.ip}</a></strong>
+                <strong style="color: #ffc107;">🐦 <a href="${basePath}/canary-alerts" target="_blank" class="ip-link" style="color: #ffc107; text-decoration: none; transition: opacity 0.2s;">${data.ip}</a></strong>
                 <span style="background: #ffc107; color: #000; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-weight: 600;">CANARY TOKEN</span>
             </div>
             <div style="color: var(--text-secondary); font-size: 0.9em;">
@@ -1360,7 +1360,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Bind popup
         arc.bindPopup(`
             <strong>${data.city}, ${data.country}</strong> → <strong style="color:#28a745;">🍯 ${targetHoneypot.name}</strong><br>
-            IP: <a href="/sessions?ip=${data.ip}" target="_blank">${data.ip}</a><br>
+            IP: <a href="${basePath}/sessions?ip=${data.ip}" target="_blank">${data.ip}</a><br>
             Session: ${data.session_id}<br>
             Source: ${targetSource}
         `);
@@ -1609,7 +1609,7 @@ document.addEventListener('DOMContentLoaded', function() {
         session.feedElement.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                 <strong style="color: var(--accent-color);">
-                    ${expandIcon} <a href="/session/${attack.sessionId}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a>${typingIndicator}
+                    ${expandIcon} <a href="${basePath}/session/${attack.sessionId}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a>${typingIndicator}
                     <span style="color: var(--text-secondary); font-weight: normal;"> → </span>
                     <span style="color: #28a745;">🍯 ${targetName}</span>
                 </strong>
