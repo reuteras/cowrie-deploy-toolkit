@@ -326,16 +326,18 @@ class SQLiteStatsParser:
             )
             top_clients = [{"client": row["client"], "count": row["count"]} for row in cursor.fetchall()]
 
-            # Get all unique IPs for GeoIP enrichment
+            # Get IPs with session counts for GeoIP enrichment
+            # Count sessions per IP (not just unique IPs) for accurate ASN/country stats
             cursor.execute(
                 """
-                SELECT DISTINCT ip
+                SELECT ip, COUNT(*) as session_count
                 FROM sessions
                 WHERE starttime >= ?
+                GROUP BY ip
                 """,
                 (cutoff_str,),
             )
-            unique_ips = [row["ip"] for row in cursor.fetchall()]
+            ip_session_counts = {row["ip"]: row["session_count"] for row in cursor.fetchall()}
 
             # Enrich with GeoIP data
             country_counter = Counter()
@@ -343,17 +345,17 @@ class SQLiteStatsParser:
             asn_details = {}
             ip_locations = []
 
-            for ip in unique_ips:
+            for ip, session_count in ip_session_counts.items():
                 geo = self._geoip_lookup(ip)
 
-                # Count by country
+                # Count by country (weighted by session count)
                 if geo["country"] != "-":
-                    country_counter[geo["country"]] += 1
+                    country_counter[geo["country"]] += session_count
 
-                # Count by ASN
+                # Count by ASN (weighted by session count)
                 if geo["asn"]:
                     asn_key = f"AS{geo['asn']}"
-                    asn_counter[asn_key] += 1
+                    asn_counter[asn_key] += session_count
                     asn_details[asn_key] = {
                         "asn": asn_key,
                         "organization": geo["asn_org"],
@@ -397,6 +399,74 @@ class SQLiteStatsParser:
                 "top_asns": top_asns,
                 "ip_locations": ip_locations,
             }
+
+        finally:
+            conn.close()
+
+    def get_all_asns(self, days: int = 7) -> list[dict]:
+        """
+        Get ALL ASNs with session counts (not just top 10).
+
+        This is more efficient than fetching all sessions - it queries
+        unique IPs from SQLite and enriches with GeoIP, counting sessions per ASN.
+
+        Args:
+            days: Number of days to include
+
+        Returns:
+            List of ASN dicts with asn, asn_org, and count (sorted by count desc)
+        """
+        if not self.available:
+            raise FileNotFoundError(f"SQLite database not found at {self.db_path}")
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+            # Get IPs with session counts
+            cursor.execute(
+                """
+                SELECT ip, COUNT(*) as session_count
+                FROM sessions
+                WHERE starttime >= ?
+                GROUP BY ip
+                """,
+                (cutoff_str,),
+            )
+            ip_session_counts = {row["ip"]: row["session_count"] for row in cursor.fetchall()}
+
+            # Aggregate by ASN
+            asn_counter = Counter()
+            asn_details = {}
+
+            for ip, session_count in ip_session_counts.items():
+                geo = self._geoip_lookup(ip)
+                if geo["asn"]:
+                    asn_key = f"AS{geo['asn']}"
+                    asn_counter[asn_key] += session_count
+                    if asn_key not in asn_details:
+                        asn_details[asn_key] = {
+                            "asn": asn_key,
+                            "asn_number": geo["asn"],
+                            "asn_org": geo["asn_org"] or "Unknown",
+                        }
+
+            # Build result list sorted by count
+            result = []
+            for asn_key, count in asn_counter.most_common():
+                details = asn_details.get(asn_key, {})
+                result.append({
+                    "asn": asn_key,
+                    "asn_number": details.get("asn_number", 0),
+                    "asn_org": details.get("asn_org", "Unknown"),
+                    "count": count,
+                })
+
+            return result
 
         finally:
             conn.close()

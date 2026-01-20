@@ -688,6 +688,79 @@ class MultiSourceDataSource:
         # Treat None/missing vt_detections as 0
         return sorted(dl_dict.values(), key=lambda x: x.get("vt_detections") or 0, reverse=True)[:10]
 
+    def get_all_asns(self, hours: int = 168, source_filter: Optional[str] = None) -> dict:
+        """
+        Get ALL ASNs with session counts from all sources via API.
+
+        Aggregates ASN data from each source's /api/v1/asns endpoint,
+        much more efficient than fetching all sessions.
+
+        Args:
+            hours: Time range in hours
+            source_filter: Filter by specific source (None = all sources)
+
+        Returns:
+            Dict with 'asns' list and 'total' count
+        """
+        from collections import Counter
+
+        # Determine which sources to query
+        sources_to_query = self.sources
+        if source_filter and source_filter in self.sources:
+            sources_to_query = {source_filter: self.sources[source_filter]}
+
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
+
+        # Aggregate ASN counts across all sources
+        asn_counter = Counter()
+        asn_details = {}
+
+        # Query sources in parallel
+        max_workers = min(len(available_sources), MAX_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(source.datasource.get_all_asns, hours): source
+                for source in available_sources.values()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    result = future.result(timeout=30)
+                    self.backoff.record_success(source.name)
+
+                    for asn_data in result.get("asns", []):
+                        asn_key = asn_data.get("asn")
+                        if asn_key:
+                            asn_counter[asn_key] += asn_data.get("count", 0)
+                            if asn_key not in asn_details:
+                                asn_details[asn_key] = {
+                                    "asn_number": asn_data.get("asn_number", 0),
+                                    "asn_org": asn_data.get("asn_org", "Unknown"),
+                                }
+
+                    print(f"[MultiSource] Fetched {len(result.get('asns', []))} ASNs from '{source.name}'")
+
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching ASNs from '{source.name}': {e}")
+                    self.backoff.record_failure(source.name)
+
+        # Build result list sorted by count
+        all_asns = []
+        for asn_key, count in asn_counter.most_common():
+            details = asn_details.get(asn_key, {})
+            all_asns.append({
+                "asn": asn_key,
+                "asn_number": details.get("asn_number", 0),
+                "asn_org": details.get("asn_org", "Unknown"),
+                "count": count,
+            })
+
+        return {"asns": all_asns, "total": len(all_asns)}
+
     def get_available_sources(self) -> list[dict]:
         """
         Get list of available data sources.

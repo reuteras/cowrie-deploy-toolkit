@@ -421,6 +421,28 @@ class DataSource:
         except requests.RequestException as e:
             raise Exception(f"Failed to fetch dashboard overview: {e}") from e
 
+    def get_all_asns(self, hours: int = 168) -> dict:
+        """
+        Get ALL ASNs with session counts from API.
+
+        Args:
+            hours: Time range in hours
+
+        Returns:
+            Dict with 'asns' list and 'total' count
+        """
+        try:
+            response = self.session.get(
+                f"{self.api_base_url}/api/v1/asns",
+                params={"hours": hours},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"[DataSource] Failed to fetch ASNs from API: {e}")
+            return {"asns": [], "total": 0}
+
     def get_downloads(
         self,
         hours: int = 168,

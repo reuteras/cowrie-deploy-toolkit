@@ -70,6 +70,39 @@ async def get_stats_overview(hours: int = Query(168, ge=1, le=8760)):  # Default
     return sqlite_parser.get_stats_overview(days=days)
 
 
+@router.get("/asns")
+async def get_all_asns(hours: int = Query(168, ge=1, le=8760)):
+    """
+    Get ALL ASNs with session counts (not just top 10).
+
+    This endpoint returns all ASNs seen in the time period, sorted by session count.
+    Much more efficient than fetching all sessions - uses SQLite + GeoIP lookup.
+
+    Args:
+        hours: Number of hours to include in statistics
+
+    Returns:
+        List of ASN dicts with asn, asn_number, asn_org, and count
+    """
+    if not sqlite_parser.available:
+        logger.error(f"SQLite database not found at {sqlite_parser.db_path}")
+        raise FileNotFoundError(
+            f"SQLite database required but not found at {sqlite_parser.db_path}. "
+            "Please enable SQLite output in Cowrie configuration."
+        )
+
+    days = max(1, hours // 24)
+    logger.info(f"Getting all ASNs (hours={hours}, converted to days={days})")
+
+    asns = sqlite_parser.get_all_asns(days=days)
+
+    return {
+        "asns": asns,
+        "total": len(asns),
+        "hours": hours,
+    }
+
+
 @router.get("/dashboard/overview")
 async def get_dashboard_overview(hours: int = Query(24, ge=1), force_refresh: bool = Query(False)):
     """

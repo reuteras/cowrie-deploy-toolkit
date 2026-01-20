@@ -2547,26 +2547,18 @@ def asns_data():
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
-    # Fetch sessions with limit for performance
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-
-    # Count sessions by ASN
-    asn_counts = {}
-    for session in all_sessions.values():
-        geo = session.get("geo", {})
-        asn = geo.get("asn")
-        asn_org = geo.get("asn_org", "Unknown")
-
-        if asn:
-            key = str(asn)
-            if key not in asn_counts:
-                asn_counts[key] = {"asn": key, "asn_org": asn_org, "count": 0}
-            asn_counts[key]["count"] += 1
-
-    # Sort by count descending
-    all_asns = sorted(asn_counts.values(), key=lambda x: x["count"], reverse=True)
-
-    return jsonify({"asns": all_asns, "total": len(all_asns)})
+    # Use efficient API-based ASN fetching instead of fetching all sessions
+    if hasattr(session_parser, "get_all_asns"):
+        # Multi-source mode
+        result = session_parser.get_all_asns(hours=hours, source_filter=source_filter or None)
+        return jsonify(result)
+    elif datasource and hasattr(datasource, "get_all_asns"):
+        # Single-source mode with datasource
+        result = datasource.get_all_asns(hours=hours)
+        return jsonify(result)
+    else:
+        # Fallback to old method (should not happen with API-based architecture)
+        return jsonify({"asns": [], "total": 0, "error": "ASN API not available"})
 
 
 @app.route("/api/commands-data")
@@ -2948,7 +2940,7 @@ def clients():
 
 @app.route("/asns")
 def asns():
-    """All ASNs listing page. Returns HTML immediately, data loaded via AJAX."""
+    """All ASNs listing page. Uses efficient API-based ASN fetching."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -2957,33 +2949,16 @@ def asns():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Get all ASNs (not just top 10)
-    # Limit to 5000 most recent sessions per source for performance
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-    asn_counter = Counter()
-    asn_details = {}
-    for session in sessions.values():
-        if session.get("src_ip"):
-            asn = session.get("geo", {}).get("asn")
-            asn_org = session.get("geo", {}).get("asn_org")
-            if asn:
-                asn_key = f"AS{asn}"
-                asn_counter[asn_key] += 1
-                if asn_key not in asn_details:
-                    asn_details[asn_key] = {"asn_number": asn, "asn_org": asn_org or "Unknown Organization"}
-
-    # Build full ASNs list with details
+    # Use efficient API-based ASN fetching instead of fetching all sessions
     all_asns = []
-    for asn_key, count in asn_counter.most_common():
-        details = asn_details.get(asn_key, {})
-        all_asns.append(
-            {
-                "asn": asn_key,
-                "asn_number": details.get("asn_number", 0),
-                "asn_org": details.get("asn_org", "Unknown"),
-                "count": count,
-            }
-        )
+    if hasattr(session_parser, "get_all_asns"):
+        # Multi-source mode
+        result = session_parser.get_all_asns(hours=hours, source_filter=source_filter or None)
+        all_asns = result.get("asns", [])
+    elif datasource and hasattr(datasource, "get_all_asns"):
+        # Single-source mode with datasource
+        result = datasource.get_all_asns(hours=hours)
+        all_asns = result.get("asns", [])
 
     return render_template(
         "asns.html",
