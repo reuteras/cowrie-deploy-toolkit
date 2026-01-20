@@ -561,12 +561,20 @@ class MultiSourceDataSource:
                 # Merge lists (extend for multi-source)
                 # Note: API returns "top_ips" but we store as "ip_list" for consistency
                 aggregated["ip_list"].extend(data.get("stats", {}).get("top_ips", []))
-                aggregated["top_countries"].extend(data.get("stats", {}).get("top_countries", []))
-                aggregated["top_credentials"].extend(data.get("stats", {}).get("top_credentials", []))
-                aggregated["top_commands"].extend(data.get("stats", {}).get("top_commands", []))
-                aggregated["top_clients"].extend(data.get("stats", {}).get("top_clients", []))
-                aggregated["top_asns"].extend(data.get("stats", {}).get("top_asns", []))
                 aggregated["ip_locations"].extend(data.get("stats", {}).get("ip_locations", []))
+
+                # Collect raw data for later aggregation (don't extend directly)
+                # These will be properly merged after all sources are fetched
+                for item in data.get("stats", {}).get("top_countries", []):
+                    aggregated["top_countries"].append(item)
+                for item in data.get("stats", {}).get("top_credentials", []):
+                    aggregated["top_credentials"].append(item)
+                for item in data.get("stats", {}).get("top_commands", []):
+                    aggregated["top_commands"].append(item)
+                for item in data.get("stats", {}).get("top_clients", []):
+                    aggregated["top_clients"].append(item)
+                for item in data.get("stats", {}).get("top_asns", []):
+                    aggregated["top_asns"].append(item)
 
                 # Merge VT stats
                 vt_stats = data.get("stats", {}).get("vt_stats", {})
@@ -611,19 +619,73 @@ class MultiSourceDataSource:
                 aggregated["vt_stats"]["total_malicious"] / aggregated["vt_stats"]["total_scanned"]
             ) * 100
 
-        # Sort aggregated lists
-        aggregated["top_countries"] = sorted(
-            aggregated["top_countries"], key=lambda x: x[1] if isinstance(x, list) else 0, reverse=True
-        )[:10]
-        aggregated["top_credentials"] = sorted(
-            aggregated["top_credentials"], key=lambda x: x[1] if isinstance(x, list) else 0, reverse=True
-        )[:10]
-        aggregated["top_commands"] = sorted(
-            aggregated["top_commands"], key=lambda x: x[1] if isinstance(x, list) else 0, reverse=True
-        )[:10]
-        aggregated["top_clients"] = sorted(
-            aggregated["top_clients"], key=lambda x: x[1] if isinstance(x, list) else 0, reverse=True
-        )[:10]
+        # Properly aggregate counts for items from multiple sources
+        # ASNs: merge by ASN key and sum counts
+        asn_merged = {}
+        for item in aggregated["top_asns"]:
+            if isinstance(item, dict):
+                key = item.get("asn")
+                if key:
+                    if key not in asn_merged:
+                        asn_merged[key] = {"asn": key, "count": 0, "organization": item.get("organization", "Unknown")}
+                    asn_merged[key]["count"] += item.get("count", 0)
+        aggregated["top_asns"] = sorted(asn_merged.values(), key=lambda x: x.get("count", 0), reverse=True)[:10]
+
+        # Countries: merge by country name and sum counts
+        country_merged = {}
+        for item in aggregated["top_countries"]:
+            if isinstance(item, dict):
+                key = item.get("country")
+                count = item.get("count", 0)
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                key, count = item[0], item[1]
+            else:
+                continue
+            if key:
+                country_merged[key] = country_merged.get(key, 0) + count
+        aggregated["top_countries"] = sorted(country_merged.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        # Credentials: merge by credential and sum counts
+        cred_merged = {}
+        for item in aggregated["top_credentials"]:
+            if isinstance(item, dict):
+                key = item.get("credential")
+                count = item.get("count", 0)
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                key, count = item[0], item[1]
+            else:
+                continue
+            if key:
+                cred_merged[key] = cred_merged.get(key, 0) + count
+        aggregated["top_credentials"] = sorted(cred_merged.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        # Commands: merge by command and sum counts
+        cmd_merged = {}
+        for item in aggregated["top_commands"]:
+            if isinstance(item, dict):
+                key = item.get("command")
+                count = item.get("count", 0)
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                key, count = item[0], item[1]
+            else:
+                continue
+            if key:
+                cmd_merged[key] = cmd_merged.get(key, 0) + count
+        aggregated["top_commands"] = sorted(cmd_merged.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        # Clients: merge by client and sum counts
+        client_merged = {}
+        for item in aggregated["top_clients"]:
+            if isinstance(item, dict):
+                key = item.get("client")
+                count = item.get("count", 0)
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                key, count = item[0], item[1]
+            else:
+                continue
+            if key:
+                client_merged[key] = client_merged.get(key, 0) + count
+        aggregated["top_clients"] = sorted(client_merged.items(), key=lambda x: x[1], reverse=True)[:10]
 
         # Count how many downloads actually have VT scan results (vt_total > 0)
         vt_scanned_count = sum(1 for dl in aggregated["top_downloads_with_vt"] if (dl.get("vt_total") or 0) > 0)
