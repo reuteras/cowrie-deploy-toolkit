@@ -1869,34 +1869,24 @@ def api_system_info():
 
         return jsonify({"honeypots": honeypots})
     else:
-        # Single source mode - return single honeypot info
-        info = {
+        # Single source mode - fetch from local API
+        api_url = "http://cowrie-api:8000"
+        try:
+            response = requests.get(f"{api_url}/api/v1/system-info", timeout=5)
+            if response.ok:
+                return jsonify(response.json())
+        except Exception as e:
+            app.logger.warning(f"Failed to fetch system info from API: {e}")
+
+        # Fallback to config values if API unavailable
+        return jsonify({
             "server_ip": CONFIG["server_ip"],
             "honeypot_hostname": CONFIG["honeypot_hostname"],
             "cowrie_version": "unknown",
             "git_commit": None,
             "build_date": None,
             "uptime_seconds": None,
-        }
-
-        # Try to read metadata from Cowrie container
-        metadata_path = CONFIG["metadata_path"]
-        if os.path.exists(metadata_path):
-            try:
-                with open(metadata_path) as f:
-                    metadata = json.load(f)
-                    info["cowrie_version"] = metadata.get("cowrie_version", "unknown")
-                    info["git_commit"] = metadata.get("git_commit")
-                    info["build_date"] = metadata.get("build_date")
-
-                    # Calculate uptime from build timestamp
-                    build_ts = metadata.get("build_timestamp")
-                    if build_ts:
-                        info["uptime_seconds"] = int(time.time() - build_ts)
-            except Exception as e:
-                app.logger.warning(f"Failed to read metadata: {e}")
-
-        return jsonify(info)
+        })
 
 
 @app.route("/api/canary-tokens")
@@ -2010,6 +2000,7 @@ def system_info():
         "honeypot_hostname": CONFIG["honeypot_hostname"],
         "cowrie_version": "unknown",
         "build_date": None,
+        "git_commit": None,
         "kernel": None,
         "arch": None,
         "os_release": None,
@@ -2023,16 +2014,17 @@ def system_info():
         "userdb_entries": [],  # User database entries
     }
 
-    # Read metadata
-    metadata_path = CONFIG["metadata_path"]
-    if os.path.exists(metadata_path):
-        try:
-            with open(metadata_path) as f:
-                metadata = json.load(f)
-                system_data["cowrie_version"] = metadata.get("cowrie_version", "unknown")
-                system_data["build_date"] = metadata.get("build_date")
-        except Exception as e:
-            app.logger.warning(f"Failed to read metadata: {e}")
+    # Fetch version info from API (API parses from Cowrie logs for accurate version)
+    api_url = "http://cowrie-api:8000"
+    try:
+        response = requests.get(f"{api_url}/api/v1/system-info", timeout=5)
+        if response.ok:
+            api_info = response.json()
+            system_data["cowrie_version"] = api_info.get("cowrie_version", "unknown")
+            system_data["build_date"] = api_info.get("build_date")
+            system_data["git_commit"] = api_info.get("git_commit")
+    except Exception as e:
+        app.logger.warning(f"Failed to fetch system info from API: {e}")
 
     # Read identity data if available
     def read_identity_file(filename):
