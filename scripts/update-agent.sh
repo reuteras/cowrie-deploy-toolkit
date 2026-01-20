@@ -304,6 +304,14 @@ update_cowrie() {
     log_info "Recreating Cowrie container..."
     docker compose up -d --no-deps --force-recreate cowrie >/dev/null 2>&1
 
+    # Extract updated metadata.json from new image
+    log_info "Extracting metadata.json from updated image..."
+    if docker run --rm --entrypoint python3 ghcr.io/reuteras/cowrie:latest -c "print(open('/cowrie/cowrie-git/metadata.json').read(), end='')" > /opt/cowrie/metadata.json 2>/dev/null; then
+        log_success "metadata.json extracted successfully"
+    else
+        log_warning "Failed to extract metadata.json from image"
+    fi
+
     # Get new image ID
     local new_image_id
     new_image_id=$(docker compose images cowrie --format json 2>/dev/null | jq -r '.[0].ID // "unknown"')
