@@ -746,6 +746,24 @@ class SQLiteStatsParser:
                     }
                     session["downloads"].append(download)
 
+                # Get first and last activity timestamps across all event tables
+                cursor.execute(
+                    """
+                    SELECT MIN(timestamp) as first_ts, MAX(timestamp) as last_ts
+                    FROM (
+                        SELECT timestamp FROM auth WHERE session = ?
+                        UNION ALL
+                        SELECT timestamp FROM input WHERE session = ?
+                        UNION ALL
+                        SELECT timestamp FROM downloads WHERE session = ?
+                    )
+                    """,
+                    (session_id, session_id, session_id),
+                )
+                ts_row = cursor.fetchone()
+                session["first_timestamp"] = ts_row["first_ts"] if ts_row else None
+                session["last_timestamp"] = ts_row["last_ts"] if ts_row else None
+
                 # Calculate duration
                 if session["start_time"] and session["end_time"]:
                     try:
@@ -897,6 +915,24 @@ class SQLiteStatsParser:
                     "is_previewable": bool(dl_row["is_previewable"]),
                 }
                 session["downloads"].append(download)
+
+            # Get first and last activity timestamps across all event tables
+            cursor.execute(
+                """
+                SELECT MIN(timestamp) as first_ts, MAX(timestamp) as last_ts
+                FROM (
+                    SELECT timestamp FROM auth WHERE session = ?
+                    UNION ALL
+                    SELECT timestamp FROM input WHERE session = ?
+                    UNION ALL
+                    SELECT timestamp FROM downloads WHERE session = ?
+                )
+                """,
+                (session_id, session_id, session_id),
+            )
+            ts_row = cursor.fetchone()
+            session["first_timestamp"] = ts_row["first_ts"] if ts_row else None
+            session["last_timestamp"] = ts_row["last_ts"] if ts_row else None
 
             # Calculate duration
             if session["start_time"] and session["end_time"]:
