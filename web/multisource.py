@@ -632,7 +632,7 @@ class MultiSourceDataSource:
         aggregated["top_asns"] = sorted(asn_merged.values(), key=lambda x: x.get("count", 0), reverse=True)[:10]
 
         # Countries: merge by country name and sum counts
-        # Output format: list of [country, count] for template compatibility
+        # Output format: list of {"country": ..., "count": ...} dicts for template
         country_merged = {}
         for item in aggregated["top_countries"]:
             if isinstance(item, dict):
@@ -644,30 +644,38 @@ class MultiSourceDataSource:
                 continue
             if key:
                 country_merged[key] = country_merged.get(key, 0) + count
-        aggregated["top_countries"] = [[k, v] for k, v in sorted(country_merged.items(), key=lambda x: x[1], reverse=True)[:10]]
+        aggregated["top_countries"] = [
+            {"country": k, "count": v}
+            for k, v in sorted(country_merged.items(), key=lambda x: x[1], reverse=True)[:10]
+        ]
 
         # Credentials: merge by credential and sum counts
         # API returns {"username": "...", "password": "...", "count": ...}
-        # Output format: list of [credential, count] for template compatibility
+        # Output format: list of {"username": ..., "password": ..., "count": ...} dicts for template
         cred_merged = {}
+        cred_details = {}
         for item in aggregated["top_credentials"]:
             if isinstance(item, dict):
-                # Handle API format with username/password
-                if "username" in item and "password" in item:
-                    key = f"{item['username']}:{item['password']}"
-                else:
-                    key = item.get("credential")
+                username = item.get("username", "")
+                password = item.get("password", "")
+                key = f"{username}:{password}"
                 count = item.get("count", 0)
+                cred_details[key] = {"username": username, "password": password}
             elif isinstance(item, (list, tuple)) and len(item) >= 2:
                 key, count = item[0], item[1]
+                parts = key.split(":", 1) if ":" in key else [key, ""]
+                cred_details[key] = {"username": parts[0], "password": parts[1] if len(parts) > 1 else ""}
             else:
                 continue
             if key:
                 cred_merged[key] = cred_merged.get(key, 0) + count
-        aggregated["top_credentials"] = [[k, v] for k, v in sorted(cred_merged.items(), key=lambda x: x[1], reverse=True)[:10]]
+        aggregated["top_credentials"] = [
+            {"username": cred_details[k]["username"], "password": cred_details[k]["password"], "count": v}
+            for k, v in sorted(cred_merged.items(), key=lambda x: x[1], reverse=True)[:10]
+        ]
 
         # Commands: merge by command and sum counts
-        # Output format: list of [command, count] for template compatibility
+        # Output format: list of {"command": ..., "count": ...} dicts for template
         cmd_merged = {}
         for item in aggregated["top_commands"]:
             if isinstance(item, dict):
@@ -679,10 +687,13 @@ class MultiSourceDataSource:
                 continue
             if key:
                 cmd_merged[key] = cmd_merged.get(key, 0) + count
-        aggregated["top_commands"] = [[k, v] for k, v in sorted(cmd_merged.items(), key=lambda x: x[1], reverse=True)[:10]]
+        aggregated["top_commands"] = [
+            {"command": k, "count": v}
+            for k, v in sorted(cmd_merged.items(), key=lambda x: x[1], reverse=True)[:10]
+        ]
 
         # Clients: merge by client and sum counts
-        # Output format: list of [client, count] for template compatibility
+        # Output format: list of {"client": ..., "count": ...} dicts for template
         client_merged = {}
         for item in aggregated["top_clients"]:
             if isinstance(item, dict):
@@ -694,7 +705,10 @@ class MultiSourceDataSource:
                 continue
             if key:
                 client_merged[key] = client_merged.get(key, 0) + count
-        aggregated["top_clients"] = [[k, v] for k, v in sorted(client_merged.items(), key=lambda x: x[1], reverse=True)[:10]]
+        aggregated["top_clients"] = [
+            {"client": k, "count": v}
+            for k, v in sorted(client_merged.items(), key=lambda x: x[1], reverse=True)[:10]
+        ]
 
         # Count how many downloads actually have VT scan results (vt_total > 0)
         vt_scanned_count = sum(1 for dl in aggregated["top_downloads_with_vt"] if (dl.get("vt_total") or 0) > 0)
