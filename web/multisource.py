@@ -928,6 +928,87 @@ class MultiSourceDataSource:
 
         return {"asns": all_asns, "total": len(all_asns)}
 
+    def get_all_ips(self, hours: int = 168, source_filter: Optional[str] = None) -> dict:
+        """
+        Get ALL IPs with session counts and GeoIP data from all sources via API.
+
+        Aggregates IP data from each source's /api/v1/ips endpoint,
+        much more efficient than fetching all sessions.
+
+        Args:
+            hours: Time range in hours
+            source_filter: Filter by specific source (None = all sources)
+
+        Returns:
+            Dict with 'ips' list and 'total' count
+        """
+        # Determine which sources to query
+        sources_to_query = self.sources
+        if source_filter and source_filter in self.sources:
+            sources_to_query = {source_filter: self.sources[source_filter]}
+
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
+
+        # Aggregate IP stats across all sources
+        ip_stats = {}
+
+        # Query sources in parallel
+        max_workers = min(len(available_sources), MAX_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(source.datasource.get_all_ips, hours): source
+                for source in available_sources.values()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    result = future.result(timeout=30)
+                    self.backoff.record_success(source.name)
+
+                    for ip_data in result.get("ips", []):
+                        ip = ip_data.get("ip")
+                        if not ip:
+                            continue
+
+                        if ip not in ip_stats:
+                            ip_stats[ip] = {
+                                "ip": ip,
+                                "count": 0,
+                                "successful_logins": 0,
+                                "failed_logins": 0,
+                                "last_seen": ip_data.get("last_seen"),
+                                "geo": ip_data.get("geo", {}),
+                                "sources": [],
+                            }
+
+                        # Aggregate counts
+                        ip_stats[ip]["count"] += ip_data.get("count", 0)
+                        ip_stats[ip]["successful_logins"] += ip_data.get("successful_logins", 0)
+                        ip_stats[ip]["failed_logins"] += ip_data.get("failed_logins", 0)
+                        ip_stats[ip]["sources"].append(source.name)
+
+                        # Update last_seen if newer
+                        new_last_seen = ip_data.get("last_seen")
+                        if new_last_seen:
+                            old_last_seen = ip_stats[ip]["last_seen"]
+                            if not old_last_seen or new_last_seen > old_last_seen:
+                                ip_stats[ip]["last_seen"] = new_last_seen
+
+                    print(f"[MultiSource] Fetched {len(result.get('ips', []))} IPs from '{source.name}'")
+
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching IPs from '{source.name}': {e}")
+                    self.backoff.record_failure(source.name)
+
+        # Build result list sorted by count
+        all_ips = sorted(ip_stats.values(), key=lambda x: x["count"], reverse=True)
+
+        return {"ips": all_ips, "total": len(all_ips)}
+
     def get_available_sources(self) -> list[dict]:
         """
         Get list of available data sources.

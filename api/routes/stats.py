@@ -103,6 +103,39 @@ async def get_all_asns(hours: int = Query(168, ge=1, le=8760)):
     }
 
 
+@router.get("/ips")
+async def get_all_ips(hours: int = Query(168, ge=1, le=8760)):
+    """
+    Get ALL IPs with session counts and GeoIP data.
+
+    This endpoint returns all IPs seen in the time period with aggregated stats.
+    Much more efficient than fetching all sessions - uses SQLite + GeoIP lookup.
+
+    Args:
+        hours: Number of hours to include in statistics
+
+    Returns:
+        List of IP dicts with ip, count, geo data, successful/failed logins, last_seen
+    """
+    if not sqlite_parser.available:
+        logger.error(f"SQLite database not found at {sqlite_parser.db_path}")
+        raise FileNotFoundError(
+            f"SQLite database required but not found at {sqlite_parser.db_path}. "
+            "Please enable SQLite output in Cowrie configuration."
+        )
+
+    days = max(1, hours // 24)
+    logger.info(f"Getting all IPs (hours={hours}, converted to days={days})")
+
+    ips = sqlite_parser.get_all_ips(days=days)
+
+    return {
+        "ips": ips,
+        "total": len(ips),
+        "hours": hours,
+    }
+
+
 @router.get("/attack-map")
 async def get_attack_map_data(hours: int = Query(24, ge=1, le=8760)):
     """

@@ -471,6 +471,75 @@ class SQLiteStatsParser:
         finally:
             conn.close()
 
+    def get_all_ips(self, days: int = 7) -> list[dict]:
+        """
+        Get ALL IPs with session counts and GeoIP data.
+
+        This is much more efficient than fetching all sessions - it queries
+        unique IPs from SQLite with aggregated stats and enriches with GeoIP.
+
+        Args:
+            days: Number of days to include
+
+        Returns:
+            List of IP dicts with ip, count, geo data, etc. (sorted by count desc)
+        """
+        if not self.available:
+            raise FileNotFoundError(f"SQLite database not found at {self.db_path}")
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+            # Get IP stats in a single efficient query
+            cursor.execute(
+                """
+                SELECT
+                    s.ip,
+                    COUNT(*) as session_count,
+                    MAX(s.starttime) as last_seen,
+                    COUNT(CASE WHEN a.success = 1 THEN 1 END) as successful_logins,
+                    COUNT(CASE WHEN a.success = 0 THEN 1 END) as failed_logins
+                FROM sessions s
+                LEFT JOIN auth a ON s.id = a.session
+                WHERE s.starttime >= ?
+                GROUP BY s.ip
+                ORDER BY session_count DESC
+                """,
+                (cutoff_str,),
+            )
+
+            result = []
+            for row in cursor.fetchall():
+                ip = row["ip"]
+                geo = self._geoip_lookup(ip)
+
+                result.append({
+                    "ip": ip,
+                    "count": row["session_count"],
+                    "successful_logins": row["successful_logins"] or 0,
+                    "failed_logins": row["failed_logins"] or 0,
+                    "last_seen": row["last_seen"],
+                    "geo": {
+                        "country": geo["country"],
+                        "country_code": geo["country_code"],
+                        "city": geo["city"],
+                        "latitude": geo["latitude"],
+                        "longitude": geo["longitude"],
+                        "asn": geo["asn"],
+                        "asn_org": geo["asn_org"],
+                    },
+                })
+
+            return result
+
+        finally:
+            conn.close()
+
     def get_attack_map_data(self, days: int = 7) -> dict:
         """
         Get aggregated attack data for the map visualization.

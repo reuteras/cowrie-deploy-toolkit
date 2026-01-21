@@ -2254,32 +2254,27 @@ def downloads_data():
 
 @app.route("/api/ips-data")
 def ips_data():
-    """API endpoint for IPs data - called via AJAX from IPs page."""
+    """API endpoint for IPs data - called via AJAX from IPs page.
+
+    Uses efficient aggregated IP endpoint instead of fetching all sessions.
+    """
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
     asn_filter = request.args.get("asn", "")
     country_filter = request.args.get("country", "")
     city_filter = request.args.get("city", "")
 
-    # Get available sources for multi-honeypot mode
-    if hasattr(session_parser, "sources"):
-        list(session_parser.sources.keys())
+    # Use the efficient get_all_ips method
+    result = session_parser.get_all_ips(hours=hours, source_filter=source_filter if source_filter else None)
+    all_ips = result.get("ips", [])
 
-    # Fetch sessions with limit for performance
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-
-    # Extract IP data from sessions
-    ip_stats = {}
-    for session in all_sessions.values():
-        src_ip = session.get("src_ip")
-        if not src_ip:
-            continue
-
-        geo = session.get("geo", {})
+    # Apply client-side filters if specified
+    filtered_ips = []
+    for ip_data in all_ips:
+        geo = ip_data.get("geo", {})
         country = geo.get("country", "Unknown")
         city = geo.get("city", "Unknown")
         asn = geo.get("asn")
-        geo.get("asn_org", "-")
 
         # Apply filters
         if asn_filter and str(asn) != asn_filter.replace("AS", ""):
@@ -2289,29 +2284,7 @@ def ips_data():
         if city_filter and city != city_filter:
             continue
 
-        if src_ip not in ip_stats:
-            ip_stats[src_ip] = {
-                "ip": src_ip,
-                "count": 0,
-                "successful_logins": 0,
-                "failed_logins": 0,
-                "last_seen": session.get("start_time"),
-                "geo": geo,
-            }
-
-        ip_stats[src_ip]["count"] += 1
-        if session.get("login_success"):
-            ip_stats[src_ip]["successful_logins"] += 1
-        else:
-            ip_stats[src_ip]["failed_logins"] += 1
-
-        # Update last seen
-        session_time = session.get("start_time")
-        if session_time and (not ip_stats[src_ip]["last_seen"] or session_time > ip_stats[src_ip]["last_seen"]):
-            ip_stats[src_ip]["last_seen"] = session_time
-
-    # Convert to list and sort by session count
-    filtered_ips = sorted(ip_stats.values(), key=lambda x: x["count"], reverse=True)
+        filtered_ips.append(ip_data)
 
     # Build filter info
     filters = {}
