@@ -465,6 +465,29 @@ class DataSource:
             logger.error(f"[DataSource] Failed to fetch IPs from API: {e}")
             return {"ips": [], "total": 0}
 
+    def get_all_commands(self, hours: int = 168, unique_only: bool = False) -> dict:
+        """
+        Get ALL commands with counts and metadata from API.
+
+        Args:
+            hours: Time range in hours
+            unique_only: If True, return unique commands with counts
+
+        Returns:
+            Dict with 'commands' list and 'total' count
+        """
+        try:
+            response = self.session.get(
+                f"{self.api_base_url}/api/v1/commands",
+                params={"hours": hours, "unique": unique_only},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"[DataSource] Failed to fetch commands from API: {e}")
+            return {"commands": [], "total": 0}
+
     def get_attack_map_data(self, hours: int = 24) -> dict:
         """
         Get aggregated attack data for the map visualization.

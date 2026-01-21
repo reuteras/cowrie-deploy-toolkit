@@ -2523,54 +2523,22 @@ def asns_data():
 
 @app.route("/api/commands-data")
 def commands_data():
-    """API endpoint for commands data - called via AJAX from commands page."""
+    """API endpoint for commands data - called via AJAX from commands page.
+
+    Uses efficient aggregated commands endpoint instead of fetching all sessions.
+    """
     hours = request.args.get("hours", 168, type=int)
-    unique_only = request.args.get("unique", "")
+    unique_only = request.args.get("unique", "") == "true" or request.args.get("unique", "") == "1"
     source_filter = request.args.get("source", "")
 
-    # Fetch sessions with limit for performance
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
+    # Use the efficient get_all_commands method
+    result = session_parser.get_all_commands(
+        hours=hours,
+        unique_only=unique_only,
+        source_filter=source_filter if source_filter else None,
+    )
 
-    # Collect all commands
-    all_commands = []
-    for session in all_sessions.values():
-        session_id = session.get("id")
-        src_ip = session.get("src_ip")
-        timestamp = session.get("start_time")
-
-        for cmd in session.get("commands", []):
-            all_commands.append(
-                {"command": cmd.get("command", ""), "timestamp": timestamp, "src_ip": src_ip, "session_id": session_id}
-            )
-
-    # Apply unique filter if requested
-    if unique_only:
-        # Group by command text and keep track of counts/timestamps
-        unique_cmds = {}
-        for cmd in all_commands:
-            cmd_text = cmd["command"]
-            if cmd_text not in unique_cmds:
-                unique_cmds[cmd_text] = {
-                    "command": cmd_text,
-                    "timestamp": cmd["timestamp"],
-                    "src_ip": cmd["src_ip"],
-                    "session_id": cmd["session_id"],
-                    "count": 1,
-                }
-            else:
-                unique_cmds[cmd_text]["count"] += 1
-                # Keep the most recent timestamp
-                if cmd["timestamp"] and cmd["timestamp"] > unique_cmds[cmd_text]["timestamp"]:
-                    unique_cmds[cmd_text]["timestamp"] = cmd["timestamp"]
-                    unique_cmds[cmd_text]["src_ip"] = cmd["src_ip"]
-                    unique_cmds[cmd_text]["session_id"] = cmd["session_id"]
-
-        all_commands = list(unique_cmds.values())
-
-    # Sort by timestamp (most recent first)
-    all_commands.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
-
-    return jsonify({"commands": all_commands, "total": len(all_commands)})
+    return jsonify({"commands": result.get("commands", []), "total": result.get("total", 0)})
 
 
 @app.route("/download/<shasum>.zip")

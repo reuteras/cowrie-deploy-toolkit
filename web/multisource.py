@@ -1009,6 +1009,117 @@ class MultiSourceDataSource:
 
         return {"ips": all_ips, "total": len(all_ips)}
 
+    def get_all_commands(self, hours: int = 168, unique_only: bool = False, source_filter: Optional[str] = None) -> dict:
+        """
+        Get ALL commands with counts from all sources via API.
+
+        Aggregates command data from each source's /api/v1/commands endpoint,
+        much more efficient than fetching all sessions.
+
+        Args:
+            hours: Time range in hours
+            unique_only: If True, return unique commands with counts
+            source_filter: Filter by specific source (None = all sources)
+
+        Returns:
+            Dict with 'commands' list and 'total' count
+        """
+        # Determine which sources to query
+        sources_to_query = self.sources
+        if source_filter and source_filter in self.sources:
+            sources_to_query = {source_filter: self.sources[source_filter]}
+
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
+
+        # For unique_only, we need to aggregate counts across sources
+        if unique_only:
+            command_stats = {}
+
+            # Query sources in parallel
+            max_workers = min(len(available_sources), MAX_WORKERS)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_source = {
+                    executor.submit(source.datasource.get_all_commands, hours, unique_only): source
+                    for source in available_sources.values()
+                }
+
+                for future in concurrent.futures.as_completed(future_to_source):
+                    source = future_to_source[future]
+                    try:
+                        result = future.result(timeout=30)
+                        self.backoff.record_success(source.name)
+
+                        for cmd_data in result.get("commands", []):
+                            cmd_text = cmd_data.get("command", "")
+                            if not cmd_text:
+                                continue
+
+                            if cmd_text not in command_stats:
+                                command_stats[cmd_text] = {
+                                    "command": cmd_text,
+                                    "count": 0,
+                                    "timestamp": cmd_data.get("timestamp"),
+                                    "src_ip": cmd_data.get("src_ip"),
+                                    "session_id": cmd_data.get("session_id"),
+                                    "sources": [],
+                                }
+
+                            # Aggregate counts
+                            command_stats[cmd_text]["count"] += cmd_data.get("count", 1)
+                            command_stats[cmd_text]["sources"].append(source.name)
+
+                            # Update timestamp if newer
+                            new_ts = cmd_data.get("timestamp")
+                            if new_ts:
+                                old_ts = command_stats[cmd_text]["timestamp"]
+                                if not old_ts or new_ts > old_ts:
+                                    command_stats[cmd_text]["timestamp"] = new_ts
+                                    command_stats[cmd_text]["src_ip"] = cmd_data.get("src_ip")
+                                    command_stats[cmd_text]["session_id"] = cmd_data.get("session_id")
+
+                        print(f"[MultiSource] Fetched {len(result.get('commands', []))} commands from '{source.name}'")
+
+                    except Exception as e:
+                        print(f"[MultiSource] Error fetching commands from '{source.name}': {e}")
+                        self.backoff.record_failure(source.name)
+
+            # Sort by count
+            all_commands = sorted(command_stats.values(), key=lambda x: x["count"], reverse=True)
+        else:
+            # For non-unique, just collect all commands from all sources
+            all_commands = []
+
+            max_workers = min(len(available_sources), MAX_WORKERS)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_source = {
+                    executor.submit(source.datasource.get_all_commands, hours, unique_only): source
+                    for source in available_sources.values()
+                }
+
+                for future in concurrent.futures.as_completed(future_to_source):
+                    source = future_to_source[future]
+                    try:
+                        result = future.result(timeout=30)
+                        self.backoff.record_success(source.name)
+
+                        for cmd_data in result.get("commands", []):
+                            cmd_data["source"] = source.name
+                            all_commands.append(cmd_data)
+
+                        print(f"[MultiSource] Fetched {len(result.get('commands', []))} commands from '{source.name}'")
+
+                    except Exception as e:
+                        print(f"[MultiSource] Error fetching commands from '{source.name}': {e}")
+                        self.backoff.record_failure(source.name)
+
+            # Sort by timestamp (most recent first)
+            all_commands.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
+
+        return {"commands": all_commands, "total": len(all_commands)}
+
     def get_available_sources(self) -> list[dict]:
         """
         Get list of available data sources.

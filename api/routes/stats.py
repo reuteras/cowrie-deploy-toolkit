@@ -136,6 +136,44 @@ async def get_all_ips(hours: int = Query(168, ge=1, le=8760)):
     }
 
 
+@router.get("/commands")
+async def get_all_commands(
+    hours: int = Query(168, ge=1, le=8760),
+    unique: bool = Query(False, description="Return unique commands with counts"),
+):
+    """
+    Get ALL commands with counts and metadata.
+
+    This endpoint returns all commands seen in the time period.
+    Much more efficient than fetching all sessions - queries input table directly.
+
+    Args:
+        hours: Number of hours to include in statistics
+        unique: If True, return unique commands with counts; if False, return all commands
+
+    Returns:
+        List of command dicts with command, count, timestamp, src_ip, session_id
+    """
+    if not sqlite_parser.available:
+        logger.error(f"SQLite database not found at {sqlite_parser.db_path}")
+        raise FileNotFoundError(
+            f"SQLite database required but not found at {sqlite_parser.db_path}. "
+            "Please enable SQLite output in Cowrie configuration."
+        )
+
+    days = max(1, hours // 24)
+    logger.info(f"Getting all commands (hours={hours}, converted to days={days}, unique={unique})")
+
+    commands = sqlite_parser.get_all_commands(days=days, unique_only=unique)
+
+    return {
+        "commands": commands,
+        "total": len(commands),
+        "hours": hours,
+        "unique": unique,
+    }
+
+
 @router.get("/attack-map")
 async def get_attack_map_data(hours: int = Query(24, ge=1, le=8760)):
     """

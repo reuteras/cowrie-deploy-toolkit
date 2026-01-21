@@ -540,6 +540,94 @@ class SQLiteStatsParser:
         finally:
             conn.close()
 
+    def get_all_commands(self, days: int = 7, unique_only: bool = False) -> list[dict]:
+        """
+        Get ALL commands with counts and metadata.
+
+        This is much more efficient than fetching all sessions - it queries
+        the input table directly with aggregation.
+
+        Args:
+            days: Number of days to include
+            unique_only: If True, return unique commands with counts; if False, return all commands
+
+        Returns:
+            List of command dicts with command, count, timestamp, src_ip, session_id
+        """
+        if not self.available:
+            raise FileNotFoundError(f"SQLite database not found at {self.db_path}")
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+            if unique_only:
+                # Get unique commands with counts
+                cursor.execute(
+                    """
+                    SELECT
+                        i.input as command,
+                        COUNT(*) as count,
+                        MAX(i.timestamp) as timestamp,
+                        (SELECT ip FROM sessions WHERE id = (
+                            SELECT session FROM input WHERE input = i.input ORDER BY timestamp DESC LIMIT 1
+                        )) as src_ip,
+                        (SELECT session FROM input WHERE input = i.input ORDER BY timestamp DESC LIMIT 1) as session_id
+                    FROM input i
+                    JOIN sessions s ON i.session = s.id
+                    WHERE i.timestamp >= ? AND i.success = 1
+                    GROUP BY i.input
+                    ORDER BY count DESC
+                    """,
+                    (cutoff_str,),
+                )
+
+                result = []
+                for row in cursor.fetchall():
+                    result.append({
+                        "command": row["command"],
+                        "count": row["count"],
+                        "timestamp": row["timestamp"],
+                        "src_ip": row["src_ip"],
+                        "session_id": row["session_id"],
+                    })
+            else:
+                # Get all commands (limited for performance)
+                cursor.execute(
+                    """
+                    SELECT
+                        i.input as command,
+                        i.timestamp,
+                        s.ip as src_ip,
+                        i.session as session_id
+                    FROM input i
+                    JOIN sessions s ON i.session = s.id
+                    WHERE i.timestamp >= ? AND i.success = 1
+                    ORDER BY i.timestamp DESC
+                    LIMIT 10000
+                    """,
+                    (cutoff_str,),
+                )
+
+                result = []
+                for row in cursor.fetchall():
+                    result.append({
+                        "command": row["command"],
+                        "count": 1,
+                        "timestamp": row["timestamp"],
+                        "src_ip": row["src_ip"],
+                        "session_id": row["session_id"],
+                    })
+
+            return result
+
+        finally:
+            conn.close()
+
     def get_attack_map_data(self, days: int = 7) -> dict:
         """
         Get aggregated attack data for the map visualization.
