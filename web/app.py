@@ -1585,10 +1585,6 @@ def attack_map_page():
     hours = request.args.get("hours", 24, type=int)
     source_filter = request.args.get("source", "")
 
-    # Get sessions with source filter
-    # Limit to 5000 most recent sessions per source for performance (map plotting)
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-
     # Get available sources for multi-honeypot mode
     available_sources = []
     honeypot_locations = {}  # Map of source -> location
@@ -1636,41 +1632,32 @@ def attack_map_page():
             if not honeypot_locations:
                 honeypot_locations["local"] = honeypot_location
 
-    # Collect attack data with timestamps for animation
+    # Get aggregated attack data using efficient API-based method
     attacks = []
-    sessions_without_geo = 0
-    sessions_without_coords = 0
+    if hasattr(session_parser, "get_attack_map_data"):
+        # Multi-source mode
+        result = session_parser.get_attack_map_data(hours=hours, source_filter=source_filter or None)
+        attacks = result.get("attacks", [])
+    elif datasource and hasattr(datasource, "get_attack_map_data"):
+        # Single-source mode with datasource
+        result = datasource.get_attack_map_data(hours=hours)
+        attacks = result.get("attacks", [])
+        # Add source attribution for single source
+        for attack in attacks:
+            attack["_source"] = "local"
 
-    for session in sessions.values():
-        if not session.get("src_ip"):
-            continue
-
-        if not session.get("geo"):
-            sessions_without_geo += 1
-            continue
-
-        geo = session["geo"]
-        if "latitude" not in geo or "longitude" not in geo:
-            sessions_without_coords += 1
-            continue
-
-        attack = {
-            "session_id": session["id"],
-            "ip": session["src_ip"],
-            "lat": geo["latitude"],
-            "lon": geo["longitude"],
-            "city": geo.get("city", "-"),
-            "country": geo.get("country", "-"),
-            "timestamp": session.get("start_time", ""),
-            "username": session.get("username", ""),
-            "password": session.get("password", ""),
-            "login_success": session.get("login_success", False),
-            "_source": session.get("_source", "local"),  # Track which honeypot
-        }
-        attacks.append(attack)
-
-    # Sort by timestamp
-    attacks.sort(key=lambda x: x["timestamp"])
+    # Transform aggregated data to match template expectations
+    # The template expects session-level data, but we have IP-level aggregated data
+    # Add fields expected by the template
+    for attack in attacks:
+        # Use session_count for visual effects
+        attack["attackCount"] = attack.get("session_count", 1)
+        # Determine if login was successful (success_count > 0)
+        attack["login_success"] = attack.get("success_count", 0) > 0
+        # Use latest_timestamp for animation ordering
+        attack["timestamp"] = attack.get("latest_timestamp", "")
+        # Generate a pseudo session_id for linking (first 8 chars of IP hash)
+        attack["session_id"] = f"ip-{hash(attack['ip']) & 0xFFFFFFFF:08x}"
 
     return render_template(
         "attack_map.html",

@@ -759,6 +759,88 @@ class MultiSourceDataSource:
         # Treat None/missing vt_detections as 0
         return sorted(dl_dict.values(), key=lambda x: x.get("vt_detections") or 0, reverse=True)[:10]
 
+    def get_attack_map_data(self, hours: int = 24, source_filter: Optional[str] = None) -> dict:
+        """
+        Get aggregated attack data for the map visualization from all sources.
+
+        Aggregates attack data from each source's /api/v1/attack-map endpoint,
+        much more efficient than fetching all sessions.
+
+        Args:
+            hours: Time range in hours
+            source_filter: Filter by specific source (None = all sources)
+
+        Returns:
+            Dict with 'attacks' list, 'total_sessions', and 'unique_ips'
+        """
+        # Determine which sources to query
+        sources_to_query = self.sources
+        if source_filter and source_filter in self.sources:
+            sources_to_query = {source_filter: self.sources[source_filter]}
+
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
+
+        # Aggregate attack data across all sources
+        # Key by IP to merge data from multiple sources
+        ip_attacks = {}
+        total_sessions = 0
+
+        # Query sources in parallel
+        max_workers = min(len(available_sources), MAX_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(source.datasource.get_attack_map_data, hours): source
+                for source in available_sources.values()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    result = future.result(timeout=30)
+                    self.backoff.record_success(source.name)
+
+                    for attack in result.get("attacks", []):
+                        ip = attack.get("ip")
+                        if not ip:
+                            continue
+
+                        # Add source attribution
+                        attack["_source"] = source.name
+
+                        if ip not in ip_attacks:
+                            ip_attacks[ip] = attack
+                        else:
+                            # Merge: sum session counts, keep latest timestamp
+                            existing = ip_attacks[ip]
+                            existing["session_count"] += attack.get("session_count", 0)
+                            existing["success_count"] = existing.get("success_count", 0) + attack.get("success_count", 0)
+                            if attack.get("latest_timestamp", "") > existing.get("latest_timestamp", ""):
+                                existing["latest_timestamp"] = attack["latest_timestamp"]
+                            # Keep first source for attribution
+                            if "_sources" not in existing:
+                                existing["_sources"] = [existing["_source"]]
+                            existing["_sources"].append(source.name)
+
+                    total_sessions += result.get("total_sessions", 0)
+                    print(f"[MultiSource] Fetched {len(result.get('attacks', []))} attack locations from '{source.name}'")
+
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching attack map data from '{source.name}': {e}")
+                    self.backoff.record_failure(source.name)
+
+        # Convert to list and sort by latest timestamp
+        attacks = list(ip_attacks.values())
+        attacks.sort(key=lambda x: x.get("latest_timestamp") or "")
+
+        return {
+            "attacks": attacks,
+            "total_sessions": total_sessions,
+            "unique_ips": len(attacks),
+        }
+
     def get_all_asns(self, hours: int = 168, source_filter: Optional[str] = None) -> dict:
         """
         Get ALL ASNs with session counts from all sources via API.

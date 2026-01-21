@@ -94,7 +94,22 @@
 
         <!-- Live Attack Feed -->
         <div class="attack-feed-container" style="background: var(--bg-secondary); border-radius: 8px; padding: 15px; height: 700px; display: flex; flex-direction: column;">
-            <h3 id="attack-feed-title" style="margin: 0 0 15px 0; font-size: 1.1em;">📡 Live Attack Feed</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 id="attack-feed-title" style="margin: 0; font-size: 1.1em;">📡 Live Attack Feed</h3>
+                <div id="feed-filters" style="display: flex; gap: 10px; font-size: 0.85em;">
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;" title="Show only successful logins">
+                        <input type="checkbox" id="filter-success" onchange="applyFeedFilters()">
+                        <span style="color: #28a745;">✓ Success</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;" title="Show only sessions with commands">
+                        <input type="checkbox" id="filter-commands" onchange="applyFeedFilters()">
+                        <span style="color: #17a2b8;">⌨ Commands</span>
+                    </label>
+                </div>
+            </div>
+            <div id="feed-stats" style="font-size: 0.8em; color: var(--text-secondary); margin-bottom: 8px;">
+                Showing <span id="visible-count">0</span> of <span id="total-count">0</span> sessions
+            </div>
             <div style="flex: 1; overflow-y: auto; overflow-x: hidden;" id="attack-feed">
                 <div style="color: var(--text-secondary); text-align: center; padding: 20px;">
                     Waiting for live attacks...
@@ -258,6 +273,12 @@
     }
 }
 
+/* Blinking cursor for terminal display */
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
 /* IP link hover effect */
 .ip-link:hover {
     opacity: 0.7;
@@ -319,6 +340,43 @@ function updateFilters() {
     }
 
     window.location.href = url;
+}
+
+// Apply feed filters (success only, commands only)
+function applyFeedFilters() {
+    const filterSuccess = document.getElementById('filter-success').checked;
+    const filterCommands = document.getElementById('filter-commands').checked;
+    const feed = document.getElementById('attack-feed');
+    const entries = feed.querySelectorAll('.feed-entry');
+
+    let visibleCount = 0;
+    let totalCount = entries.length;
+
+    entries.forEach(entry => {
+        const hasSuccess = entry.dataset.success === 'true';
+        const hasCommands = parseInt(entry.dataset.commands || '0') > 0;
+
+        let visible = true;
+        if (filterSuccess && !hasSuccess) visible = false;
+        if (filterCommands && !hasCommands) visible = false;
+
+        entry.style.display = visible ? 'block' : 'none';
+        if (visible) visibleCount++;
+    });
+
+    // Update stats
+    document.getElementById('visible-count').textContent = visibleCount;
+    document.getElementById('total-count').textContent = totalCount;
+}
+
+// Update feed stats
+function updateFeedStats() {
+    const feed = document.getElementById('attack-feed');
+    const entries = feed.querySelectorAll('.feed-entry');
+    const visibleEntries = Array.from(entries).filter(e => e.style.display !== 'none');
+
+    document.getElementById('visible-count').textContent = visibleEntries.length;
+    document.getElementById('total-count').textContent = entries.length;
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -393,42 +451,43 @@ document.addEventListener('DOMContentLoaded', function() {
         honeypotMarkers[sourceName] = marker;
     }
 
-    // Aggregate attacks by IP to determine line thickness
+    // Use pre-aggregated attack data from API (per-IP with session counts)
+    // This is much more efficient than fetching all sessions
     const ipAttackCounts = {};
     const ipDetails = {};
 
     attacks.forEach(attack => {
-        if (!ipAttackCounts[attack.ip]) {
-            ipAttackCounts[attack.ip] = 0;
-            ipDetails[attack.ip] = {
-                lat: attack.lat,
-                lon: attack.lon,
-                city: attack.city,
-                country: attack.country,
-                sessions: [],
-                successCount: 0,
-                asn: null,
-                asn_org: null
-            };
-        }
-        ipAttackCounts[attack.ip]++;
-        ipDetails[attack.ip].sessions.push(attack.session_id);
-        if (attack.login_success) {
-            ipDetails[attack.ip].successCount++;
-        }
+        // Data is already aggregated by IP from the API
+        const sessionCount = attack.session_count || attack.attackCount || 1;
+        const successCount = attack.success_count || (attack.login_success ? 1 : 0);
+
+        ipAttackCounts[attack.ip] = sessionCount;
+        ipDetails[attack.ip] = {
+            lat: attack.lat,
+            lon: attack.lon,
+            city: attack.city,
+            country: attack.country,
+            sessions: [attack.session_id],
+            successCount: successCount,
+            asn: attack.asn,
+            asn_org: attack.asn_org
+        };
     });
 
     // Calculate statistics with new thresholds (10, 20, 40+)
     const uniqueIPCount = Object.keys(ipAttackCounts).length;
+    const totalSessionCount = Object.values(ipAttackCounts).reduce((sum, count) => sum + count, 0);
     const highVolumeAttackers = Object.values(ipAttackCounts).filter(count => count >= 10).length;
 
     // Update stats display
+    document.getElementById('total-attacks').textContent = totalSessionCount;
     document.getElementById('unique-ips').textContent = uniqueIPCount;
     document.getElementById('high-volume-count').textContent = highVolumeAttackers;
 
     // Prepare migration data with attack count information
     const migrationData = attacks.map(attack => {
-        const attackCount = ipAttackCounts[attack.ip];
+        // Use pre-aggregated session count from API
+        const attackCount = attack.session_count || attack.attackCount || ipAttackCounts[attack.ip] || 1;
 
         // Scale visual properties based on new thresholds: 1, 10, 20, 40+
         let lineWidth, glowIntensity, isHighVolume;
@@ -666,8 +725,9 @@ document.addEventListener('DOMContentLoaded', function() {
         arc.bindPopup(`
             <strong>${attack.city}, ${attack.country}</strong> → <strong style="color:#28a745;">🍯 ${targetHoneypotName}</strong><br>
             IP: <a href="${basePath}/sessions?ip=${attack.ip}" target="_blank">${attack.ip}</a><br>
-            ${attack.attackCount > 1 ? `<span style="color: #ffc107; font-weight: bold;">⚡ ${attack.attackCount} attacks from this IP</span><br>` : ''}
-            <a href="${basePath}/session/${attack.sessionId}" target="_blank">View Session →</a>
+            ${attack.attackCount > 1 ? `<span style="color: #ffc107; font-weight: bold;">⚡ ${attack.attackCount} sessions from this IP</span><br>` : ''}
+            ${attack.success_count > 0 ? `<span style="color: #28a745;">✓ ${attack.success_count} successful login${attack.success_count > 1 ? 's' : ''}</span><br>` : ''}
+            <a href="${basePath}/sessions?ip=${attack.ip}" target="_blank">View Sessions →</a>
         `);
 
         // Add impact explosion at honeypot location
@@ -806,10 +866,18 @@ document.addEventListener('DOMContentLoaded', function() {
         const targetHoneypot = attack._targetHoneypot || honeypotLocations[attack._source];
         const targetName = targetHoneypot ? targetHoneypot.name : (attack._source || 'local');
 
+        // Format session info for aggregated data
+        const sessionInfo = attack.session_count > 1
+            ? `${attack.session_count} sessions`
+            : '1 session';
+        const successInfo = attack.success_count > 0
+            ? ` (${attack.success_count} successful)`
+            : '';
+
         entry.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                 <strong style="color: var(--accent-color);">
-                    <a href="${basePath}/session/${attack.sessionId}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a>
+                    <a href="${basePath}/sessions?ip=${attack.ip}" target="_blank" class="ip-link" style="color: var(--accent-color); text-decoration: none; transition: opacity 0.2s;">${attack.ip}</a>
                     <span style="color: var(--text-secondary); font-weight: normal;"> → </span>
                     <span style="color: #28a745;">🍯 ${targetName}</span>
                 </strong>
@@ -817,7 +885,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             <div style="color: var(--text-secondary); font-size: 0.9em;">
                 <div>${locationLine}</div>
-                <div style="margin-top: 3px;">${credentials}</div>
+                <div style="margin-top: 3px;">${sessionInfo}${successInfo}</div>
                 <div style="margin-top: 3px; color: var(--text-tertiary);">${timeStr}</div>
             </div>
         `;
@@ -1291,7 +1359,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('attack-feed').innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">Waiting for attacks...</div>';
 
         // Restore replay mode stats
-        document.getElementById('total-attacks').textContent = attacks.length;
+        document.getElementById('total-attacks').textContent = totalSessionCount;
         document.getElementById('unique-ips').textContent = uniqueIPCount;
         document.getElementById('high-volume-count').textContent = highVolumeAttackers;
 
@@ -1409,6 +1477,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const entry = document.createElement('div');
+        entry.className = 'feed-entry';
+        entry.dataset.success = 'false';
+        entry.dataset.commands = '0';
         entry.style.cssText = `
             padding: 10px;
             margin-bottom: 8px;
@@ -1424,6 +1495,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Initial render
         updateLiveFeedEntry(liveSessions[data.session_id]);
+
+        // Update feed stats
+        updateFeedStats();
 
         // Update stats
         document.getElementById('progress-text').textContent = `${liveAttackCount} attacks`;
@@ -1589,22 +1663,36 @@ document.addEventListener('DOMContentLoaded', function() {
         const targetSource = attack._source || Object.keys(honeypotLocations)[0] || 'local';
         const targetHoneypot = honeypotLocations[targetSource];
         const targetName = targetHoneypot ? targetHoneypot.name : targetSource;
+        // Use honeypot name for terminal prompt (this is the fake hostname attackers see)
+        const honeypotHostname = targetHoneypot ? targetHoneypot.name : 'localhost';
 
-        // Build command display
+        // Build realistic terminal prompt
+        const shellUser = attack.username || 'root';
+        const shellPrompt = `<span style="color: #4CAF50;">${shellUser}@${honeypotHostname}</span><span style="color: #fff;">:</span><span style="color: #5c9eff;">~</span><span style="color: #fff;">#</span>`;
+
+        // Build command display with realistic terminal output
         let commandDisplay = '';
         if (session.commandCount > 0 && !session.isExpanded) {
             commandDisplay = `<div style="margin-top: 5px; color: var(--text-secondary); font-size: 0.85em;">💬 ${session.commandCount} command${session.commandCount > 1 ? 's' : ''} executed • Click to view</div>`;
         } else if (session.isExpanded && session.commandBuffer.length > 0) {
             const commandLines = session.commandBuffer.map(cmd =>
-                `<div style="color: #4CAF50;">$ ${cmd.command}</div>`
+                `<div>${shellPrompt} <span style="color: #fff;">${escapeHtml(cmd.command)}</span></div>`
             ).join('');
             commandDisplay = `
-                <div style="margin-top: 8px; padding: 10px; background: #1e1e1e; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 0.85em; max-height: 200px; overflow-y: auto;">
-                    <div style="color: #888; margin-bottom: 5px; font-size: 0.9em;">─ LIVE SESSION ─</div>
+                <div style="margin-top: 8px; padding: 10px; background: #0d1117; border-radius: 4px; font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace; font-size: 0.8em; max-height: 250px; overflow-y: auto; border: 1px solid #30363d;">
+                    <div style="color: #7d8590; margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid #30363d; font-size: 0.9em;">
+                        ─── Session ${attack.sessionId.substring(0, 8)}... ───
+                    </div>
                     ${commandLines}
+                    <div style="margin-top: 4px;">${shellPrompt} <span style="animation: blink 1s step-end infinite; color: #fff;">▊</span></div>
                 </div>
             `;
         }
+
+        // Add data attributes for filtering
+        session.feedElement.className = 'feed-entry';
+        session.feedElement.dataset.success = attack.login_success ? 'true' : 'false';
+        session.feedElement.dataset.commands = session.commandCount.toString();
 
         session.feedElement.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
@@ -1639,6 +1727,16 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             updateLiveFeedEntry(session);
         };
+
+        // Apply filters after update
+        applyFeedFilters();
+    }
+
+    // Escape HTML to prevent XSS in command display
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     function handleLiveCommand(data) {

@@ -443,6 +443,28 @@ class DataSource:
             logger.error(f"[DataSource] Failed to fetch ASNs from API: {e}")
             return {"asns": [], "total": 0}
 
+    def get_attack_map_data(self, hours: int = 24) -> dict:
+        """
+        Get aggregated attack data for the map visualization.
+
+        Args:
+            hours: Time range in hours
+
+        Returns:
+            Dict with 'attacks' list, 'total_sessions', and 'unique_ips'
+        """
+        try:
+            response = self.session.get(
+                f"{self.api_base_url}/api/v1/attack-map",
+                params={"hours": hours},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"[DataSource] Failed to fetch attack map data from API: {e}")
+            return {"attacks": [], "total_sessions": 0, "unique_ips": 0}
+
     def get_downloads(
         self,
         hours: int = 168,

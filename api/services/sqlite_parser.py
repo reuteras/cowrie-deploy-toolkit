@@ -471,6 +471,105 @@ class SQLiteStatsParser:
         finally:
             conn.close()
 
+    def get_attack_map_data(self, days: int = 7) -> dict:
+        """
+        Get aggregated attack data for the map visualization.
+
+        Returns per-IP data with coordinates, session counts, and success counts.
+        Much more efficient than fetching all sessions.
+
+        Args:
+            days: Number of days to include
+
+        Returns:
+            Dict with 'attacks' list and 'total_sessions' count
+        """
+        if not self.available:
+            raise FileNotFoundError(f"SQLite database not found at {self.db_path}")
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+            # Get IP stats: session count, success count, latest timestamp
+            cursor.execute(
+                """
+                SELECT
+                    s.ip,
+                    COUNT(*) as session_count,
+                    MAX(s.starttime) as latest_timestamp
+                FROM sessions s
+                WHERE s.starttime >= ?
+                GROUP BY s.ip
+                """,
+                (cutoff_str,),
+            )
+            ip_stats = {row["ip"]: {
+                "session_count": row["session_count"],
+                "latest_timestamp": row["latest_timestamp"],
+            } for row in cursor.fetchall()}
+
+            # Get success counts per IP from auth table
+            cursor.execute(
+                """
+                SELECT
+                    a.source_ip,
+                    COUNT(*) as success_count
+                FROM auth a
+                WHERE a.timestamp >= ? AND a.success = 1
+                GROUP BY a.source_ip
+                """,
+                (cutoff_str,),
+            )
+            for row in cursor.fetchall():
+                if row["source_ip"] in ip_stats:
+                    ip_stats[row["source_ip"]]["success_count"] = row["success_count"]
+
+            # Build attack list with GeoIP enrichment
+            attacks = []
+            total_sessions = 0
+
+            for ip, stats in ip_stats.items():
+                geo = self._geoip_lookup(ip)
+
+                # Skip IPs without coordinates
+                if not geo.get("latitude") or not geo.get("longitude"):
+                    continue
+
+                session_count = stats["session_count"]
+                success_count = stats.get("success_count", 0)
+                total_sessions += session_count
+
+                attacks.append({
+                    "ip": ip,
+                    "lat": geo["latitude"],
+                    "lon": geo["longitude"],
+                    "city": geo.get("city", "-"),
+                    "country": geo.get("country", "-"),
+                    "country_code": geo.get("country_code", "XX"),
+                    "asn": geo.get("asn"),
+                    "asn_org": geo.get("asn_org"),
+                    "session_count": session_count,
+                    "success_count": success_count,
+                    "latest_timestamp": stats["latest_timestamp"],
+                })
+
+            # Sort by latest timestamp for animation ordering
+            attacks.sort(key=lambda x: x["latest_timestamp"] or "")
+
+            return {
+                "attacks": attacks,
+                "total_sessions": total_sessions,
+                "unique_ips": len(attacks),
+            }
+
+        finally:
+            conn.close()
+
     def get_sessions(
         self,
         limit: int = 100,

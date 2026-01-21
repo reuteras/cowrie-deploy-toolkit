@@ -103,6 +103,33 @@ async def get_all_asns(hours: int = Query(168, ge=1, le=8760)):
     }
 
 
+@router.get("/attack-map")
+async def get_attack_map_data(hours: int = Query(24, ge=1, le=8760)):
+    """
+    Get aggregated attack data for the map visualization.
+
+    Returns per-IP data with coordinates, session counts, and success counts.
+    Much more efficient than fetching all sessions.
+
+    Args:
+        hours: Number of hours to include
+
+    Returns:
+        Dict with attacks list, total_sessions, and unique_ips
+    """
+    if not sqlite_parser.available:
+        logger.error(f"SQLite database not found at {sqlite_parser.db_path}")
+        raise FileNotFoundError(
+            f"SQLite database required but not found at {sqlite_parser.db_path}. "
+            "Please enable SQLite output in Cowrie configuration."
+        )
+
+    days = max(1, hours // 24)
+    logger.info(f"Getting attack map data (hours={hours}, converted to days={days})")
+
+    return sqlite_parser.get_attack_map_data(days=days)
+
+
 @router.get("/dashboard/overview")
 async def get_dashboard_overview(hours: int = Query(24, ge=1), force_refresh: bool = Query(False)):
     """
