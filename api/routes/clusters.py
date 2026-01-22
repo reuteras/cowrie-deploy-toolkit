@@ -162,6 +162,25 @@ async def get_ip_clusters(ip: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/clusters/diagnose")
+async def diagnose_clustering(
+    days: int = Query(7, ge=1, le=365, description="Days to check"),
+):
+    """
+    Diagnose clustering issues.
+
+    Returns detailed information about the database state and
+    what data is available for clustering. Useful for debugging
+    when clusters aren't being found.
+    """
+    try:
+        service = get_clustering_service()
+        return service.diagnose(days)
+    except Exception as e:
+        logger.error(f"Failed to diagnose clustering: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/clusters/analyze")
 async def trigger_cluster_analysis(
     days: int = Query(7, ge=1, le=365, description="Days to analyze"),

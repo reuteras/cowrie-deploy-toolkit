@@ -2801,6 +2801,29 @@ def ip_intel(ip: str):
     return jsonify({"error": "Threat intel API not available"}), 503
 
 
+@app.route("/api/clusters-diagnose")
+def clusters_diagnose():
+    """API endpoint for diagnosing clustering issues."""
+    days = request.args.get("days", 7, type=int)
+
+    # Forward to the API if available
+    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+        try:
+            import requests as req
+
+            response = req.get(
+                f"{datasource.api_base_url}/api/v1/clusters/diagnose",
+                params={"days": days},
+                timeout=30,
+            )
+            if response.ok:
+                return jsonify(response.json())
+        except Exception as e:
+            print(f"[!] Failed to diagnose clusters from API: {e}")
+
+    return jsonify({"error": "Clustering API not available"}), 503
+
+
 @app.route("/webhook/canary", methods=["POST"])
 def canary_webhook():
     """Webhook endpoint for Canary Token alerts.

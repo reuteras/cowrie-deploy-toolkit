@@ -105,6 +105,12 @@
         <div id="no-clusters" style="display: none; text-align: center; padding: 40px; color: var(--text-secondary);">
             <p style="font-size: 1.2em;">No clusters found matching the criteria</p>
             <p style="font-size: 0.9em;">Try adjusting filters or running cluster analysis</p>
+            <button onclick="runDiagnose()" class="btn" style="margin-top: 15px;">Run Diagnostics</button>
+        </div>
+
+        <div id="diagnose-results" style="display: none; margin-top: 20px;">
+            <div class="section-title">Diagnostic Results</div>
+            <pre id="diagnose-output" style="background: var(--bg-tertiary); padding: 15px; border-radius: 6px; overflow-x: auto; font-size: 0.85em;"></pre>
         </div>
     </div>
 </div>
@@ -238,6 +244,55 @@ function runAnalysis() {
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('error-state').style.display = 'block';
             document.getElementById('error-message').textContent = 'Analysis failed: ' + error.message;
+        });
+}
+
+function runDiagnose() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hours = urlParams.get('hours') || '168';
+    const days = Math.max(1, Math.floor(parseInt(hours) / 24));
+
+    document.getElementById('diagnose-results').style.display = 'block';
+    document.getElementById('diagnose-output').textContent = 'Running diagnostics...';
+
+    fetch(basePath + '/api/clusters-diagnose?days=' + days)
+        .then(response => response.json())
+        .then(data => {
+            let output = 'Database: ' + (data.db_path || 'unknown') + '\n';
+            output += 'Cutoff time: ' + (data.cutoff || 'unknown') + '\n\n';
+
+            output += '=== DATA COUNTS ===\n';
+            if (data.data_counts) {
+                for (const [key, value] of Object.entries(data.data_counts)) {
+                    output += `  ${key}: ${value}\n`;
+                }
+            }
+
+            output += '\n=== SAMPLE TIMESTAMPS ===\n';
+            if (data.sample_timestamps) {
+                for (const [key, value] of Object.entries(data.sample_timestamps)) {
+                    output += `  ${key}: ${value}\n`;
+                }
+            }
+
+            output += '\n=== EXISTING TABLES ===\n';
+            if (data.tables && data.tables.existing) {
+                output += '  ' + data.tables.existing.join(', ') + '\n';
+            }
+
+            if (data.issues && data.issues.length > 0) {
+                output += '\n=== ISSUES DETECTED ===\n';
+                for (const issue of data.issues) {
+                    output += `  - ${issue}\n`;
+                }
+            } else {
+                output += '\n=== NO ISSUES DETECTED ===\n';
+            }
+
+            document.getElementById('diagnose-output').textContent = output;
+        })
+        .catch(error => {
+            document.getElementById('diagnose-output').textContent = 'Error: ' + error.message;
         });
 }
 

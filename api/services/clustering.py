@@ -42,20 +42,76 @@ class ClusteringService:
 
     def _ensure_tables(self):
         """Ensure clustering tables exist."""
-        schema_path = "/app/api/sql/events_schema.sql"
-        try:
-            with open(schema_path) as f:
-                schema = f.read()
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-            conn = self._get_connection()
-            conn.executescript(schema)
-            conn.commit()
-            conn.close()
-            logger.info("Clustering tables ensured")
-        except FileNotFoundError:
-            logger.warning(f"Schema file not found: {schema_path}")
-        except Exception as e:
-            logger.error(f"Failed to ensure tables: {e}")
+        # Create command_fingerprints table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS command_fingerprints (
+                session TEXT PRIMARY KEY,
+                fingerprint TEXT NOT NULL,
+                normalized_commands TEXT,
+                command_count INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cmd_fingerprint ON command_fingerprints(fingerprint)")
+
+        # Create hassh_fingerprints table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS hassh_fingerprints (
+                session TEXT PRIMARY KEY,
+                hassh TEXT NOT NULL,
+                hassh_server TEXT,
+                kex_algorithms TEXT,
+                encryption_algorithms TEXT,
+                mac_algorithms TEXT,
+                src_ip TEXT,
+                timestamp DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_hassh ON hassh_fingerprints(hassh)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_hassh_ip ON hassh_fingerprints(src_ip)")
+
+        # Create attack_clusters table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS attack_clusters (
+                cluster_id TEXT PRIMARY KEY,
+                cluster_type TEXT NOT NULL,
+                fingerprint TEXT,
+                name TEXT,
+                description TEXT,
+                first_seen DATETIME NOT NULL,
+                last_seen DATETIME NOT NULL,
+                size INTEGER NOT NULL DEFAULT 0,
+                session_count INTEGER NOT NULL DEFAULT 0,
+                score INTEGER DEFAULT 0,
+                metadata TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_clusters_type ON attack_clusters(cluster_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_clusters_fingerprint ON attack_clusters(fingerprint)")
+
+        # Create cluster_members table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cluster_members (
+                cluster_id TEXT NOT NULL,
+                src_ip TEXT NOT NULL,
+                first_seen DATETIME NOT NULL,
+                last_seen DATETIME NOT NULL,
+                session_count INTEGER DEFAULT 1,
+                metadata TEXT,
+                PRIMARY KEY (cluster_id, src_ip)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cluster_members_ip ON cluster_members(src_ip)")
+
+        conn.commit()
+        conn.close()
+        logger.info("Clustering tables ensured")
 
     # =========================================================================
     # Command Fingerprinting
@@ -894,3 +950,118 @@ class ClusteringService:
         }
 
         return results
+
+    def diagnose(self, days: int = 7) -> dict:
+        """
+        Diagnose clustering issues by checking database state.
+
+        Returns detailed info about what data is available for clustering.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+        result = {
+            "db_path": self.db_path,
+            "cutoff": cutoff_str,
+            "tables": {},
+            "data_counts": {},
+            "sample_timestamps": {},
+            "issues": [],
+        }
+
+        # Check which tables exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [row["name"] for row in cursor.fetchall()]
+        result["tables"]["existing"] = tables
+
+        # Check sessions table
+        if "sessions" in tables:
+            cursor.execute("SELECT COUNT(*) as cnt FROM sessions")
+            result["data_counts"]["total_sessions"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT COUNT(*) as cnt FROM sessions WHERE starttime >= ?", (cutoff_str,))
+            result["data_counts"]["recent_sessions"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT starttime FROM sessions ORDER BY starttime DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                result["sample_timestamps"]["latest_session"] = row["starttime"]
+
+            cursor.execute("SELECT COUNT(*) as cnt FROM sessions WHERE ip IS NULL")
+            null_ips = cursor.fetchone()["cnt"]
+            if null_ips > 0:
+                result["issues"].append(f"{null_ips} sessions have NULL ip")
+        else:
+            result["issues"].append("sessions table not found")
+
+        # Check input table (commands)
+        if "input" in tables:
+            cursor.execute("SELECT COUNT(*) as cnt FROM input")
+            result["data_counts"]["total_commands"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT COUNT(*) as cnt FROM input WHERE timestamp >= ?", (cutoff_str,))
+            result["data_counts"]["recent_commands"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT COUNT(DISTINCT session) as cnt FROM input WHERE timestamp >= ?", (cutoff_str,))
+            result["data_counts"]["sessions_with_commands"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT timestamp FROM input ORDER BY timestamp DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                result["sample_timestamps"]["latest_command"] = row["timestamp"]
+        else:
+            result["issues"].append("input table not found")
+
+        # Check downloads table
+        if "downloads" in tables:
+            cursor.execute("SELECT COUNT(*) as cnt FROM downloads WHERE shasum IS NOT NULL")
+            result["data_counts"]["total_downloads"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT COUNT(*) as cnt FROM downloads WHERE timestamp >= ? AND shasum IS NOT NULL", (cutoff_str,))
+            result["data_counts"]["recent_downloads"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT COUNT(DISTINCT shasum) as cnt FROM downloads WHERE timestamp >= ? AND shasum IS NOT NULL", (cutoff_str,))
+            result["data_counts"]["unique_payloads"] = cursor.fetchone()["cnt"]
+        else:
+            result["issues"].append("downloads table not found")
+
+        # Check command_fingerprints table
+        if "command_fingerprints" in tables:
+            cursor.execute("SELECT COUNT(*) as cnt FROM command_fingerprints")
+            result["data_counts"]["fingerprints_stored"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT COUNT(DISTINCT fingerprint) as cnt FROM command_fingerprints WHERE fingerprint != 'empty'")
+            result["data_counts"]["unique_fingerprints"] = cursor.fetchone()["cnt"]
+        else:
+            result["issues"].append("command_fingerprints table not found - will be created on first run")
+
+        # Check for potential timestamp format issues
+        if "sessions" in tables:
+            cursor.execute("SELECT starttime FROM sessions LIMIT 1")
+            row = cursor.fetchone()
+            if row and row["starttime"]:
+                sample_ts = row["starttime"]
+                result["sample_timestamps"]["session_format_example"] = sample_ts
+                # Check if format has 'T' separator (ISO8601)
+                if "T" in str(sample_ts):
+                    result["issues"].append(f"Timestamps use ISO8601 format with 'T' separator: {sample_ts}")
+
+        # Check events table for HASSH
+        if "events" in tables:
+            cursor.execute("SELECT COUNT(*) as cnt FROM events WHERE eventid = 'cowrie.client.kex'")
+            result["data_counts"]["kex_events"] = cursor.fetchone()["cnt"]
+        else:
+            result["issues"].append("events table not found - HASSH clustering will not work")
+
+        # Summary
+        if result["data_counts"].get("recent_commands", 0) == 0:
+            result["issues"].append("No commands found in time range - check timestamp format")
+
+        if result["data_counts"].get("sessions_with_commands", 0) < 2:
+            result["issues"].append("Less than 2 sessions with commands - minimum for clustering")
+
+        conn.close()
+        return result
