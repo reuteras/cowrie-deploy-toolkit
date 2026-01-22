@@ -398,36 +398,6 @@ class MultiSourceDataSource:
         print(f"[MultiSource] parse_all: returning {len(sessions_dict)} sessions")
         return sessions_dict
 
-    def get_all_commands(self, hours: int = 168, source_filter: Optional[str] = None) -> list:
-        """
-        Get a flat list of all commands from all sessions.
-
-        Args:
-            hours: Time range in hours
-            source_filter: Filter by specific source (None = all sources)
-
-        Returns:
-            List of command dicts with timestamp, command, src_ip, session_id, and _source
-        """
-        sessions = self.parse_all(hours=hours, source_filter=source_filter)
-        all_commands = []
-
-        for session in sessions.values():
-            if session.get("commands"):
-                for cmd in session["commands"]:
-                    all_commands.append(
-                        {
-                            "timestamp": cmd.get("timestamp"),
-                            "command": cmd.get("command"),
-                            "src_ip": session.get("src_ip"),
-                            "session_id": session.get("id"),
-                            "_source": session.get("_source", "local"),
-                        }
-                    )
-
-        # Sort by timestamp, most recent first
-        return sorted(all_commands, key=lambda x: x.get("timestamp", ""), reverse=True)
-
     def get_session(self, session_id: str, source_name: Optional[str] = None) -> Optional[dict]:
         """
         Get a specific session by ID.
@@ -1008,6 +978,226 @@ class MultiSourceDataSource:
         all_ips = sorted(ip_stats.values(), key=lambda x: x["count"], reverse=True)
 
         return {"ips": all_ips, "total": len(all_ips)}
+
+    def get_all_countries(self, hours: int = 168, source_filter: Optional[str] = None) -> dict:
+        """
+        Get ALL countries with session counts from all sources via API.
+
+        Aggregates country data from each source's /api/v1/countries endpoint,
+        much more efficient than fetching all sessions.
+
+        Args:
+            hours: Time range in hours
+            source_filter: Filter by specific source (None = all sources)
+
+        Returns:
+            Dict with 'countries' list and 'total' count
+        """
+        from collections import Counter
+
+        # Determine which sources to query
+        sources_to_query = self.sources
+        if source_filter and source_filter in self.sources:
+            sources_to_query = {source_filter: self.sources[source_filter]}
+
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
+
+        # Aggregate country counts across all sources
+        country_counter = Counter()
+        country_details = {}
+
+        # Query sources in parallel
+        max_workers = min(len(available_sources), MAX_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(source.datasource.get_all_countries, hours): source
+                for source in available_sources.values()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    result = future.result(timeout=30)
+                    self.backoff.record_success(source.name)
+
+                    for country_data in result.get("countries", []):
+                        country = country_data.get("country")
+                        if country:
+                            country_counter[country] += country_data.get("count", 0)
+                            if country not in country_details:
+                                country_details[country] = {
+                                    "country_code": country_data.get("country_code", "XX"),
+                                }
+
+                    print(f"[MultiSource] Fetched {len(result.get('countries', []))} countries from '{source.name}'")
+
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching countries from '{source.name}': {e}")
+                    self.backoff.record_failure(source.name)
+
+        # Build result list sorted by count
+        all_countries = []
+        for country, count in country_counter.most_common():
+            details = country_details.get(country, {})
+            all_countries.append({
+                "country": country,
+                "country_code": details.get("country_code", "XX"),
+                "count": count,
+            })
+
+        return {"countries": all_countries, "total": len(all_countries)}
+
+    def get_all_credentials(self, hours: int = 168, source_filter: Optional[str] = None) -> dict:
+        """
+        Get ALL credentials with attempt counts from all sources via API.
+
+        Aggregates credential data from each source's /api/v1/credentials endpoint,
+        much more efficient than fetching all sessions.
+
+        Args:
+            hours: Time range in hours
+            source_filter: Filter by specific source (None = all sources)
+
+        Returns:
+            Dict with 'credentials' list, 'successful' list, and 'total' count
+        """
+        from collections import Counter
+
+        # Determine which sources to query
+        sources_to_query = self.sources
+        if source_filter and source_filter in self.sources:
+            sources_to_query = {source_filter: self.sources[source_filter]}
+
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
+
+        # Aggregate credential counts across all sources
+        cred_counter = Counter()
+        cred_details = {}
+        successful_creds = set()
+
+        # Query sources in parallel
+        max_workers = min(len(available_sources), MAX_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(source.datasource.get_all_credentials, hours): source
+                for source in available_sources.values()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    result = future.result(timeout=30)
+                    self.backoff.record_success(source.name)
+
+                    for cred_data in result.get("credentials", []):
+                        cred = cred_data.get("credential")
+                        if cred:
+                            cred_counter[cred] += cred_data.get("count", 0)
+                            if cred not in cred_details:
+                                cred_details[cred] = {
+                                    "username": cred_data.get("username", ""),
+                                    "password": cred_data.get("password", ""),
+                                }
+                            if cred_data.get("successful"):
+                                successful_creds.add(cred)
+
+                    # Also track successful credentials from the successful list
+                    for cred in result.get("successful", []):
+                        successful_creds.add(cred)
+
+                    print(f"[MultiSource] Fetched {len(result.get('credentials', []))} credentials from '{source.name}'")
+
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching credentials from '{source.name}': {e}")
+                    self.backoff.record_failure(source.name)
+
+        # Build result list sorted by count
+        all_credentials = []
+        for cred, count in cred_counter.most_common():
+            details = cred_details.get(cred, {})
+            all_credentials.append({
+                "credential": cred,
+                "username": details.get("username", ""),
+                "password": details.get("password", ""),
+                "count": count,
+                "successful": cred in successful_creds,
+            })
+
+        return {
+            "credentials": all_credentials,
+            "successful": list(successful_creds),
+            "total": len(all_credentials),
+        }
+
+    def get_all_clients(self, hours: int = 168, source_filter: Optional[str] = None) -> dict:
+        """
+        Get ALL SSH client versions with session counts from all sources via API.
+
+        Aggregates client data from each source's /api/v1/clients endpoint,
+        much more efficient than fetching all sessions.
+
+        Args:
+            hours: Time range in hours
+            source_filter: Filter by specific source (None = all sources)
+
+        Returns:
+            Dict with 'clients' list and 'total' count
+        """
+        from collections import Counter
+
+        # Determine which sources to query
+        sources_to_query = self.sources
+        if source_filter and source_filter in self.sources:
+            sources_to_query = {source_filter: self.sources[source_filter]}
+
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
+
+        # Aggregate client counts across all sources
+        client_counter = Counter()
+
+        # Query sources in parallel
+        max_workers = min(len(available_sources), MAX_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(source.datasource.get_all_clients, hours): source
+                for source in available_sources.values()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    result = future.result(timeout=30)
+                    self.backoff.record_success(source.name)
+
+                    for client_data in result.get("clients", []):
+                        client = client_data.get("client")
+                        if client:
+                            client_counter[client] += client_data.get("count", 0)
+
+                    print(f"[MultiSource] Fetched {len(result.get('clients', []))} clients from '{source.name}'")
+
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching clients from '{source.name}': {e}")
+                    self.backoff.record_failure(source.name)
+
+        # Build result list sorted by count
+        all_clients = []
+        for client, count in client_counter.most_common():
+            all_clients.append({
+                "client": client,
+                "count": count,
+            })
+
+        return {"clients": all_clients, "total": len(all_clients)}
 
     def get_all_commands(self, hours: int = 168, unique_only: bool = False, source_filter: Optional[str] = None) -> dict:
         """

@@ -1603,23 +1603,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function resetAutoCollapseTimer(sessionId) {
-        const session = liveSessions[sessionId];
-        if (!session) return;
-
-        // Clear existing timer
-        if (session.autoCollapseTimer) {
-            clearTimeout(session.autoCollapseTimer);
-        }
-
-        // Set new timer (10 seconds)
-        if (session.isExpanded) {
-            session.autoCollapseTimer = setTimeout(() => {
-                session.isExpanded = false;
-                updateLiveFeedEntry(session);
-            }, 10000);
-        }
-    }
+    // Auto-collapse timer removed - expanded views stay open until manually closed
 
     function updateLiveFeedEntry(session) {
         if (!session.feedElement) return;
@@ -1675,16 +1659,41 @@ document.addEventListener('DOMContentLoaded', function() {
         if (session.commandCount > 0 && !session.isExpanded) {
             commandDisplay = `<div style="margin-top: 5px; color: var(--text-secondary); font-size: 0.85em;">💬 ${session.commandCount} command${session.commandCount > 1 ? 's' : ''} executed • Click to view</div>`;
         } else if (session.isExpanded && session.commandBuffer.length > 0) {
-            const commandLines = session.commandBuffer.map(cmd =>
-                `<div>${shellPrompt} <span style="color: #fff;">${escapeHtml(cmd.command)}</span></div>`
-            ).join('');
+            let commandLines = '';
+
+            // Use output-enriched commands if available (closed sessions with fetched output)
+            if (session.commandsWithOutput && session.commandsWithOutput.length > 0) {
+                commandLines = session.commandsWithOutput.map(cmd => {
+                    let line = `<div>${shellPrompt} <span style="color: #fff;">${escapeHtml(cmd.command)}</span></div>`;
+                    if (cmd.output) {
+                        line += `<div style="color: #d4d4d4; margin-left: 0; white-space: pre-wrap; word-break: break-all;">${escapeHtml(cmd.output)}</div>`;
+                    }
+                    return line;
+                }).join('');
+            } else {
+                // Live session or output not yet fetched - show commands only
+                commandLines = session.commandBuffer.map(cmd =>
+                    `<div>${shellPrompt} <span style="color: #fff;">${escapeHtml(cmd.command)}</span></div>`
+                ).join('');
+            }
+
+            // Show loading indicator if fetching output
+            const loadingIndicator = session.outputFetching ?
+                `<div style="color: #7d8590; font-size: 0.9em; margin-top: 5px;">⏳ Loading output...</div>` : '';
+
+            // Show cursor only for active sessions
+            const cursorLine = !session.isClosed ?
+                `<div style="margin-top: 4px;">${shellPrompt} <span style="animation: blink 1s step-end infinite; color: #fff;">▊</span></div>` :
+                `<div style="margin-top: 4px;">${shellPrompt}</div>`;
+
             commandDisplay = `
-                <div style="margin-top: 8px; padding: 10px; background: #0d1117; border-radius: 4px; font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace; font-size: 0.8em; max-height: 250px; overflow-y: auto; border: 1px solid #30363d;">
+                <div style="margin-top: 8px; padding: 10px; background: #0d1117; border-radius: 4px; font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace; font-size: 0.8em; max-height: 400px; overflow-y: auto; border: 1px solid #30363d;">
                     <div style="color: #7d8590; margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid #30363d; font-size: 0.9em;">
-                        ─── Session ${attack.sessionId.substring(0, 8)}... ───
+                        ─── Session ${attack.sessionId.substring(0, 8)}... ${session.isClosed ? '(closed)' : '(active)'} ───
                     </div>
                     ${commandLines}
-                    <div style="margin-top: 4px;">${shellPrompt} <span style="animation: blink 1s step-end infinite; color: #fff;">▊</span></div>
+                    ${loadingIndicator}
+                    ${cursorLine}
                 </div>
             `;
         }
@@ -1718,13 +1727,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (e.target.tagName === 'A') return;
 
             session.isExpanded = !session.isExpanded;
-            if (session.isExpanded) {
-                resetAutoCollapseTimer(attack.sessionId);
-            } else {
-                if (session.autoCollapseTimer) {
-                    clearTimeout(session.autoCollapseTimer);
-                }
+
+            // If expanding and session is closed, fetch command output
+            if (session.isExpanded && session.isClosed && session.commandCount > 0 && !session.outputFetched) {
+                fetchCommandOutput(attack.sessionId);
             }
+
             updateLiveFeedEntry(session);
         };
 
@@ -1737,6 +1745,77 @@ document.addEventListener('DOMContentLoaded', function() {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // Fetch command output from asciicast for closed sessions
+    async function fetchCommandOutput(sessionId) {
+        const session = liveSessions[sessionId];
+        if (!session || session.outputFetched || session.outputFetching) return;
+
+        session.outputFetching = true;
+
+        try {
+            const response = await fetch(`${basePath}/api/session/${sessionId}/asciicast`);
+            if (!response.ok) {
+                console.log(`[Live Feed] No asciicast available for session ${sessionId}`);
+                session.outputFetched = true;
+                session.outputFetching = false;
+                return;
+            }
+
+            const asciicast = await response.json();
+            if (asciicast && asciicast.stdout) {
+                // Parse asciicast to extract commands with their output
+                session.commandsWithOutput = parseAsciicastOutput(asciicast.stdout, session.commandBuffer);
+                session.outputFetched = true;
+            }
+        } catch (e) {
+            console.log(`[Live Feed] Error fetching asciicast for ${sessionId}:`, e);
+        }
+
+        session.outputFetching = false;
+        updateLiveFeedEntry(session);
+    }
+
+    // Parse asciicast stdout to extract command outputs
+    function parseAsciicastOutput(stdout, commandBuffer) {
+        if (!stdout || !Array.isArray(stdout)) return commandBuffer;
+
+        // Concatenate all text from stdout events
+        let fullOutput = '';
+        for (const [delay, text] of stdout) {
+            fullOutput += text;
+        }
+
+        // Try to match commands with their output
+        const commandsWithOutput = [];
+        const commands = commandBuffer.map(c => c.command);
+
+        for (let i = 0; i < commands.length; i++) {
+            const cmd = commands[i];
+            const cmdEntry = { command: cmd, output: '' };
+
+            // Find this command in the output
+            const cmdPattern = cmd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape regex chars
+            const cmdRegex = new RegExp(cmdPattern + '[\\r\\n]+([\\s\\S]*?)(?=' +
+                (i < commands.length - 1 ?
+                    commands[i + 1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') :
+                    '$') + '|$)');
+
+            const match = fullOutput.match(cmdRegex);
+            if (match && match[1]) {
+                // Clean up the output - remove prompts and extra whitespace
+                let output = match[1];
+                // Remove common prompt patterns
+                output = output.replace(/[\r\n]*[^\r\n]*@[^\r\n]*:[^\r\n]*[#$]\s*$/gm, '');
+                output = output.trim();
+                cmdEntry.output = output;
+            }
+
+            commandsWithOutput.push(cmdEntry);
+        }
+
+        return commandsWithOutput;
     }
 
     function handleLiveCommand(data) {
@@ -1757,11 +1836,6 @@ document.addEventListener('DOMContentLoaded', function() {
             session.commandCount++;
             session.lastActivityTime = Date.now();
             session.isTyping = false;
-
-            // Reset auto-collapse timer if expanded
-            if (session.isExpanded) {
-                resetAutoCollapseTimer(data.session_id);
-            }
 
             // Update feed entry
             updateLiveFeedEntry(session);
@@ -1801,16 +1875,13 @@ document.addEventListener('DOMContentLoaded', function() {
             // Mark session as closed
             session.isClosed = true;
 
-            // Collapse if expanded
-            if (session.isExpanded) {
-                session.isExpanded = false;
-                updateLiveFeedEntry(session);
+            // Session closed - fetch command output if expanded and has commands
+            if (session.isExpanded && session.commandCount > 0 && !session.outputFetched) {
+                fetchCommandOutput(data.session_id);
             }
 
-            // Clear auto-collapse timer
-            if (session.autoCollapseTimer) {
-                clearTimeout(session.autoCollapseTimer);
-            }
+            // Update entry to show closed status
+            updateLiveFeedEntry(session);
 
             // Check if we can remove the arc now or need to wait for minimum display time
             if (session.canRemoveArc) {
@@ -1849,7 +1920,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 if (session.closeTimer) clearTimeout(session.closeTimer);
                 if (session.minDisplayTimer) clearTimeout(session.minDisplayTimer);
-                if (session.autoCollapseTimer) clearTimeout(session.autoCollapseTimer);
 
                 // Find and delete from liveSessions
                 const sessionId = Object.keys(liveSessions).find(

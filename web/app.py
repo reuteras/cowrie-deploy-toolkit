@@ -537,270 +537,9 @@ class SessionParser:
 
         return result
 
-    def get_stats(self, hours: int = 24) -> dict:
-        """Get statistics for the dashboard."""
-        sessions = self.parse_all(hours=hours)
-
-        if not sessions:
-            return {
-                "total_sessions": 0,
-                "unique_ips": 0,
-                "sessions_with_commands": 0,
-                "total_downloads": 0,
-                "unique_downloads": 0,
-                "ip_list": [],
-                "ip_locations": [],
-                "top_countries": [],
-                "top_credentials": [],
-                "successful_credentials": [],
-                "top_commands": [],
-                "top_clients": [],
-                "top_asns": [],
-                "hourly_activity": [],
-                "vt_stats": {
-                    "total_scanned": 0,
-                    "total_malicious": 0,
-                    "avg_detection_rate": 0.0,
-                    "total_threat_families": 0,
-                },
-            }
-
-        # Calculate stats
-        ips = set()
-        ip_details = defaultdict(
-            lambda: {"count": 0, "geo": None, "last_seen": None, "successful_logins": 0, "failed_logins": 0}
-        )
-        country_counter = Counter()
-        credential_counter = Counter()
-        successful_credentials = set()
-        command_counter = Counter()
-        client_version_counter = Counter()
-        asn_counter = Counter()  # Track sessions by ASN
-        asn_details = {}  # ASN -> {asn_org, asn_number}
-        sessions_with_cmds = 0
-        total_downloads = 0
-        unique_downloads = set()
-        hourly_activity = defaultdict(int)
-        ip_locations = []  # For map
-
-        for session in sessions.values():
-            if session["src_ip"]:
-                ips.add(session["src_ip"])
-                ip = session["src_ip"]
-                ip_details[ip]["count"] += 1
-                ip_details[ip]["geo"] = session.get("geo", {})
-                ip_details[ip]["last_seen"] = session["start_time"]
-
-                # Track login attempts for this IP
-                if session.get("login_success"):
-                    ip_details[ip]["successful_logins"] += 1
-                elif session.get("username"):  # Had login attempt but not successful
-                    ip_details[ip]["failed_logins"] += 1
-
-                # Collect IP locations for map
-                geo = session.get("geo", {})
-                if geo and "latitude" in geo and "longitude" in geo:
-                    ip_locations.append(
-                        {
-                            "ip": ip,
-                            "lat": geo["latitude"],
-                            "lon": geo["longitude"],
-                            "country": geo.get("country", "Unknown"),
-                            "city": geo.get("city", "Unknown"),
-                        }
-                    )
-
-                country = session.get("geo", {}).get("country", "Unknown")
-                country_counter[country] += 1
-
-                # Track ASN data
-                asn = session.get("geo", {}).get("asn")
-                asn_org = session.get("geo", {}).get("asn_org")
-                if asn:
-                    asn_key = f"AS{asn}"
-                    asn_counter[asn_key] += 1
-                    if asn_key not in asn_details:
-                        asn_details[asn_key] = {"asn_number": asn, "asn_org": asn_org or "Unknown Organization"}
-
-            if session["username"] and session["password"]:
-                cred = f"{session['username']}:{session['password']}"
-                credential_counter[cred] += 1
-                # Track successful logins
-                if session.get("login_success"):
-                    successful_credentials.add(cred)
-
-            if session["commands"]:
-                sessions_with_cmds += 1
-                for cmd in session["commands"]:
-                    command_counter[cmd["command"]] += 1
-
-            # Track SSH client versions
-            if session.get("client_version"):
-                client_version_counter[session["client_version"]] += 1
-
-            # Track downloads
-            for download in session["downloads"]:
-                total_downloads += 1
-                if download["shasum"]:
-                    unique_downloads.add(download["shasum"])
-
-            if session["start_time"]:
-                try:
-                    hour = datetime.fromisoformat(session["start_time"].replace("Z", "+00:00")).strftime(
-                        "%Y-%m-%d %H:00"
-                    )
-                    hourly_activity[hour] += 1
-                except Exception:
-                    pass
-
-        # Sort hourly activity
-        sorted_hours = sorted(hourly_activity.items())
-
-        # Sort IP details by session count
-        sorted_ips = sorted(
-            [{"ip": ip, **details} for ip, details in ip_details.items()], key=lambda x: x["count"], reverse=True
-        )
-
-        # Build top ASNs list with details
-        top_asns = []
-        for asn_key, count in asn_counter.most_common(10):
-            details = asn_details.get(asn_key, {})
-            top_asns.append(
-                {
-                    "asn": asn_key,
-                    "asn_number": details.get("asn_number", 0),
-                    "asn_org": details.get("asn_org", "Unknown"),
-                    "count": count,
-                }
-            )
-
-        # Collect malicious downloads with VT scores
-        download_path = CONFIG["download_path"]
-        all_downloads = []
-        for session in sessions.values():
-            for download in session["downloads"]:
-                all_downloads.append(
-                    {
-                        "session_id": session["id"],
-                        "src_ip": session["src_ip"],
-                        "shasum": download["shasum"],
-                        "url": download.get("url", ""),
-                        "timestamp": download["timestamp"],
-                    }
-                )
-
-        # Deduplicate by shasum and get VT scores
-        all_scanned_files = {}
-        vt_total_scanned = 0
-        vt_total_malicious = 0
-        vt_total_detections = 0
-        vt_total_engines = 0
-        vt_threat_families = set()
-
-        for dl in all_downloads:
-            shasum = dl["shasum"]
-            if shasum and shasum not in all_scanned_files:
-                file_path = os.path.join(download_path, shasum)
-                dl["exists"] = os.path.exists(file_path)
-                if dl["exists"]:
-                    dl["size"] = os.path.getsize(file_path)
-                else:
-                    dl["size"] = 0
-
-                # Get YARA matches and file type
-                yara_result = yara_cache.get_result(shasum)
-                if yara_result:
-                    dl["file_type"] = yara_result.get("file_type")
-                    dl["file_category"] = yara_result.get("file_category")
-                    dl["is_previewable"] = yara_result.get("is_previewable", False)
-
-                # Get VirusTotal score from cache or live scan
-                vt_data = None
-                if vt_scanner:
-                    vt_result = vt_scanner.scan_file(shasum)
-                    if vt_result:
-                        vt_data = vt_result
-                elif cache_db:
-                    vt_data = cache_db.get_vt_result(shasum)
-
-                all_scanned_files[shasum] = dl
-
-                if vt_data:
-                    vt_total_scanned += 1
-                    detections = vt_data.get("detections", 0)
-                    total_eng = vt_data.get("total_engines", 0)
-
-                    dl["vt_detections"] = detections
-                    dl["vt_total"] = total_eng
-                    dl["vt_link"] = vt_data.get("link", "")
-                    dl["vt_threat_label"] = vt_data.get("threat_label", "")
-
-                    # Aggregate stats
-                    vt_total_detections += detections
-                    vt_total_engines += total_eng
-
-                    if detections > 0:
-                        vt_total_malicious += 1
-
-                        # Track threat families
-                        threat_label = vt_data.get("threat_label", "")
-                        if threat_label:
-                            vt_threat_families.add(threat_label)
-                else:
-                    # No VT data available, set defaults
-                    dl["vt_detections"] = 0
-                    dl["vt_total"] = 0
-                    dl["vt_link"] = ""
-                    dl["vt_threat_label"] = ""
-
-        # Calculate VirusTotal statistics
-        vt_stats = {
-            "total_scanned": vt_total_scanned,
-            "total_malicious": vt_total_malicious,
-            "avg_detection_rate": (vt_total_detections / vt_total_engines * 100) if vt_total_engines > 0 else 0.0,
-            "total_threat_families": len(vt_threat_families),
-        }
-
-        # Sort by VT detections (most detected first, but include all files)
-        top_downloads = sorted(all_scanned_files.values(), key=lambda x: x.get("vt_detections", 0), reverse=True)[:10]
-
-        return {
-            "total_sessions": len(sessions),
-            "unique_ips": len(ips),
-            "sessions_with_commands": sessions_with_cmds,
-            "total_downloads": total_downloads,
-            "unique_downloads": len(unique_downloads),
-            "ip_list": sorted_ips,
-            "ip_locations": ip_locations,
-            "top_countries": country_counter.most_common(10),
-            "top_credentials": credential_counter.most_common(10),
-            "successful_credentials": list(successful_credentials),
-            "top_commands": command_counter.most_common(20),
-            "top_clients": client_version_counter.most_common(10),
-            "top_asns": top_asns,
-            "top_downloads_with_vt": top_downloads,
-            "vt_stats": vt_stats,
-            "hourly_activity": sorted_hours[-48:],  # Last 48 hours
-        }
-
-    def get_all_commands(self, hours: int = 168) -> list:
-        """Get a flat list of all commands from all sessions."""
-        sessions = self.parse_all(hours=hours)
-        all_commands = []
-        for session in sessions.values():
-            if session["commands"]:
-                for cmd in session["commands"]:
-                    all_commands.append(
-                        {
-                            "timestamp": cmd["timestamp"],
-                            "command": cmd["command"],
-                            "src_ip": session["src_ip"],
-                            "session_id": session["id"],
-                        }
-                    )
-
-        # Sort by timestamp, most recent first
-        return sorted(all_commands, key=lambda x: x["timestamp"], reverse=True)
+    # NOTE: Legacy get_stats() and get_all_commands() methods removed in v2.1
+    # All stats are now fetched via the API layer (DataSource/MultiSourceDataSource)
+    # which queries the efficient SQLite database instead of parsing JSON logs
 
 
 class TTYLogParser:
@@ -1789,9 +1528,23 @@ def session_asciicast(session_id: str):
 
 @app.route("/api/stats")
 def api_stats():
-    """API endpoint for dashboard stats."""
+    """API endpoint for dashboard stats.
+
+    Uses efficient API-based stats fetching instead of parsing all sessions.
+    """
     hours = request.args.get("hours", 24, type=int)
-    stats = session_parser.get_stats(hours=hours)
+
+    # Use efficient API-based stats fetching
+    if hasattr(session_parser, "get_stats") and hasattr(session_parser, "sources"):
+        # Multi-source mode - already uses API calls internally
+        stats = session_parser.get_stats(hours=hours)
+    elif datasource and hasattr(datasource, "get_stats"):
+        # Single-source mode with datasource (API-based)
+        stats = datasource.get_stats(hours=hours)
+    else:
+        # Legacy fallback (should not happen with API-based architecture)
+        stats = session_parser.get_stats(hours=hours)
+
     return jsonify(stats)
 
 
@@ -2264,9 +2017,18 @@ def ips_data():
     country_filter = request.args.get("country", "")
     city_filter = request.args.get("city", "")
 
-    # Use the efficient get_all_ips method
-    result = session_parser.get_all_ips(hours=hours, source_filter=source_filter if source_filter else None)
-    all_ips = result.get("ips", [])
+    # Use efficient API-based IP fetching
+    if hasattr(session_parser, "get_all_ips"):
+        # Multi-source mode
+        result = session_parser.get_all_ips(hours=hours, source_filter=source_filter or None)
+        all_ips = result.get("ips", [])
+    elif datasource and hasattr(datasource, "get_all_ips"):
+        # Single-source mode with datasource
+        result = datasource.get_all_ips(hours=hours)
+        all_ips = result.get("ips", [])
+    else:
+        # Fallback
+        all_ips = []
 
     # Apply client-side filters if specified
     filtered_ips = []
@@ -2421,84 +2183,71 @@ def sessions_data():
 
 @app.route("/api/countries-data")
 def countries_data():
-    """API endpoint for countries data - called via AJAX from countries page."""
+    """API endpoint for countries data - called via AJAX from countries page.
+
+    Uses efficient aggregated countries endpoint instead of fetching all sessions.
+    """
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
-    # Fetch sessions with limit for performance
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-
-    # Count sessions by country
-    country_counts = {}
-    for session in all_sessions.values():
-        geo = session.get("geo", {})
-        country = geo.get("country", "Unknown")
-        country_counts[country] = country_counts.get(country, 0) + 1
-
-    # Sort by count descending
-    all_countries = sorted(country_counts.items(), key=lambda x: x[1], reverse=True)
-
-    return jsonify(
-        {"countries": [{"country": c, "count": count} for c, count in all_countries], "total": len(all_countries)}
-    )
+    # Use efficient API-based country fetching instead of fetching all sessions
+    if hasattr(session_parser, "get_all_countries"):
+        # Multi-source mode
+        result = session_parser.get_all_countries(hours=hours, source_filter=source_filter or None)
+        return jsonify(result)
+    elif datasource and hasattr(datasource, "get_all_countries"):
+        # Single-source mode with datasource
+        result = datasource.get_all_countries(hours=hours)
+        return jsonify(result)
+    else:
+        # Fallback to old method (should not happen with API-based architecture)
+        return jsonify({"countries": [], "total": 0, "error": "Countries API not available"})
 
 
 @app.route("/api/credentials-data")
 def credentials_data():
-    """API endpoint for credentials data - called via AJAX from credentials page."""
+    """API endpoint for credentials data - called via AJAX from credentials page.
+
+    Uses efficient aggregated credentials endpoint instead of fetching all sessions.
+    """
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
-    # Fetch sessions with limit for performance
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-
-    # Count credentials
-    all_credentials = {}
-    successful_credentials = set()
-
-    for session in all_sessions.values():
-        if not session.get("username"):
-            continue
-
-        creds = f"{session['username']}:{session.get('password') or '***'}"
-        all_credentials[creds] = all_credentials.get(creds, 0) + 1
-
-        if session.get("login_success"):
-            successful_credentials.add(creds)
-
-    # Sort by count descending
-    sorted_credentials = sorted(all_credentials.items(), key=lambda x: x[1], reverse=True)
-
-    return jsonify(
-        {
-            "credentials": [{"credential": cred, "count": count} for cred, count in sorted_credentials],
-            "successful": list(successful_credentials),
-            "total": len(sorted_credentials),
-        }
-    )
+    # Use efficient API-based credential fetching instead of fetching all sessions
+    if hasattr(session_parser, "get_all_credentials"):
+        # Multi-source mode
+        result = session_parser.get_all_credentials(hours=hours, source_filter=source_filter or None)
+        return jsonify(result)
+    elif datasource and hasattr(datasource, "get_all_credentials"):
+        # Single-source mode with datasource
+        result = datasource.get_all_credentials(hours=hours)
+        return jsonify(result)
+    else:
+        # Fallback to old method (should not happen with API-based architecture)
+        return jsonify({"credentials": [], "successful": [], "total": 0, "error": "Credentials API not available"})
 
 
 @app.route("/api/clients-data")
 def clients_data():
-    """API endpoint for SSH clients data - called via AJAX from clients page."""
+    """API endpoint for SSH clients data - called via AJAX from clients page.
+
+    Uses efficient aggregated clients endpoint instead of fetching all sessions.
+    """
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
-    # Fetch sessions with limit for performance
-    all_sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-
-    # Count client versions
-    all_clients = {}
-    for session in all_sessions.values():
-        client = session.get("client_version", "Unknown")
-        all_clients[client] = all_clients.get(client, 0) + 1
-
-    # Sort by count descending
-    sorted_clients = sorted(all_clients.items(), key=lambda x: x[1], reverse=True)
-
-    return jsonify(
-        {"clients": [{"client": c, "count": count} for c, count in sorted_clients], "total": len(sorted_clients)}
-    )
+    # Use efficient API-based client fetching instead of fetching all sessions
+    if hasattr(session_parser, "get_all_clients"):
+        # Multi-source mode
+        result = session_parser.get_all_clients(hours=hours, source_filter=source_filter or None)
+        return jsonify(result)
+    elif datasource and hasattr(datasource, "get_all_clients"):
+        # Single-source mode with datasource
+        result = datasource.get_all_clients(hours=hours)
+        return jsonify(result)
+    else:
+        # Fallback to old method (should not happen with API-based architecture)
+        return jsonify({"clients": [], "total": 0, "error": "Clients API not available"})
 
 
 @app.route("/api/asns-data")
@@ -2531,12 +2280,20 @@ def commands_data():
     unique_only = request.args.get("unique", "") == "true" or request.args.get("unique", "") == "1"
     source_filter = request.args.get("source", "")
 
-    # Use the efficient get_all_commands method
-    result = session_parser.get_all_commands(
-        hours=hours,
-        unique_only=unique_only,
-        source_filter=source_filter if source_filter else None,
-    )
+    # Use efficient API-based command fetching
+    if hasattr(session_parser, "get_all_commands") and hasattr(session_parser, "sources"):
+        # Multi-source mode
+        result = session_parser.get_all_commands(
+            hours=hours,
+            unique_only=unique_only,
+            source_filter=source_filter if source_filter else None,
+        )
+    elif datasource and hasattr(datasource, "get_all_commands"):
+        # Single-source mode with datasource
+        result = datasource.get_all_commands(hours=hours, unique_only=unique_only)
+    else:
+        # Fallback - return empty
+        result = {"commands": [], "total": 0}
 
     return jsonify({"commands": result.get("commands", []), "total": result.get("total", 0)})
 
@@ -2726,7 +2483,7 @@ def commands():
 
 @app.route("/ips")
 def ip_list():
-    """IP address listing page. Returns HTML immediately, data loaded via AJAX."""
+    """IP address listing page. Uses efficient API-based IP fetching."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -2735,8 +2492,16 @@ def ip_list():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Get stats (IPs now returned without API limit after PR #116)
-    stats = session_parser.get_stats(hours=hours, source_filter=source_filter)
+    # Use efficient API-based IP fetching instead of get_stats
+    all_ips = []
+    if hasattr(session_parser, "get_all_ips"):
+        # Multi-source mode
+        result = session_parser.get_all_ips(hours=hours, source_filter=source_filter or None)
+        all_ips = result.get("ips", [])
+    elif datasource and hasattr(datasource, "get_all_ips"):
+        # Single-source mode with datasource
+        result = datasource.get_all_ips(hours=hours)
+        all_ips = result.get("ips", [])
 
     # Get filter parameters
     asn_filter = request.args.get("asn", "")
@@ -2744,7 +2509,7 @@ def ip_list():
     city_filter = request.args.get("city", "")
 
     # Apply filters
-    filtered_ips = stats["ip_list"]
+    filtered_ips = all_ips
     if asn_filter:
         filtered_ips = [
             ip for ip in filtered_ips if ip.get("geo", {}).get("asn") and f"AS{ip['geo']['asn']}" == asn_filter
@@ -2769,7 +2534,7 @@ def ip_list():
 
 @app.route("/countries")
 def countries():
-    """All countries listing page. Returns HTML immediately, data loaded via AJAX."""
+    """All countries listing page. Uses efficient API-based country fetching."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -2778,16 +2543,16 @@ def countries():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Get all countries (not just top 10)
-    # Limit to 5000 most recent sessions per source for performance
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-    country_counter = Counter()
-    for session in sessions.values():
-        if session.get("src_ip"):
-            country = session.get("geo", {}).get("country", "Unknown")
-            country_counter[country] += 1
-
-    all_countries = country_counter.most_common()
+    # Use efficient API-based country fetching instead of fetching all sessions
+    all_countries = []
+    if hasattr(session_parser, "get_all_countries"):
+        # Multi-source mode
+        result = session_parser.get_all_countries(hours=hours, source_filter=source_filter or None)
+        all_countries = [(c["country"], c["count"]) for c in result.get("countries", [])]
+    elif datasource and hasattr(datasource, "get_all_countries"):
+        # Single-source mode with datasource
+        result = datasource.get_all_countries(hours=hours)
+        all_countries = [(c["country"], c["count"]) for c in result.get("countries", [])]
 
     return render_template(
         "countries.html",
@@ -2801,7 +2566,7 @@ def countries():
 
 @app.route("/credentials")
 def credentials():
-    """All credentials listing page. Returns HTML immediately, data loaded via AJAX."""
+    """All credentials listing page. Uses efficient API-based credential fetching."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -2810,19 +2575,19 @@ def credentials():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Get all credentials (not just top 10)
-    # Limit to 5000 most recent sessions per source for performance
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-    credential_counter = Counter()
+    # Use efficient API-based credential fetching instead of fetching all sessions
+    all_credentials = []
     successful_credentials = set()
-    for session in sessions.values():
-        if session["username"] and session["password"]:
-            cred = f"{session['username']}:{session['password']}"
-            credential_counter[cred] += 1
-            if session.get("login_success"):
-                successful_credentials.add(cred)
-
-    all_credentials = credential_counter.most_common()
+    if hasattr(session_parser, "get_all_credentials"):
+        # Multi-source mode
+        result = session_parser.get_all_credentials(hours=hours, source_filter=source_filter or None)
+        all_credentials = [(c["credential"], c["count"]) for c in result.get("credentials", [])]
+        successful_credentials = set(result.get("successful", []))
+    elif datasource and hasattr(datasource, "get_all_credentials"):
+        # Single-source mode with datasource
+        result = datasource.get_all_credentials(hours=hours)
+        all_credentials = [(c["credential"], c["count"]) for c in result.get("credentials", [])]
+        successful_credentials = set(result.get("successful", []))
 
     return render_template(
         "credentials.html",
@@ -2837,7 +2602,7 @@ def credentials():
 
 @app.route("/clients")
 def clients():
-    """All SSH clients listing page. Returns HTML immediately, data loaded via AJAX."""
+    """All SSH clients listing page. Uses efficient API-based client fetching."""
     hours = request.args.get("hours", 168, type=int)
     source_filter = request.args.get("source", "")
 
@@ -2846,15 +2611,16 @@ def clients():
     if hasattr(session_parser, "sources"):
         available_sources = list(session_parser.sources.keys())
 
-    # Get all client versions (not just top 10)
-    # Limit to 5000 most recent sessions per source for performance
-    sessions = session_parser.parse_all(hours=hours, source_filter=source_filter, max_sessions=0)
-    client_version_counter = Counter()
-    for session in sessions.values():
-        if session.get("client_version"):
-            client_version_counter[session["client_version"]] += 1
-
-    all_clients = client_version_counter.most_common()
+    # Use efficient API-based client fetching instead of fetching all sessions
+    all_clients = []
+    if hasattr(session_parser, "get_all_clients"):
+        # Multi-source mode
+        result = session_parser.get_all_clients(hours=hours, source_filter=source_filter or None)
+        all_clients = [(c["client"], c["count"]) for c in result.get("clients", [])]
+    elif datasource and hasattr(datasource, "get_all_clients"):
+        # Single-source mode with datasource
+        result = datasource.get_all_clients(hours=hours)
+        all_clients = [(c["client"], c["count"]) for c in result.get("clients", [])]
 
     return render_template(
         "clients.html",

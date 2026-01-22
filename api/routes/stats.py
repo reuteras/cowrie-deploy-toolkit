@@ -103,6 +103,106 @@ async def get_all_asns(hours: int = Query(168, ge=1, le=8760)):
     }
 
 
+@router.get("/countries")
+async def get_all_countries(hours: int = Query(168, ge=1, le=8760)):
+    """
+    Get ALL countries with session counts (not just top 10).
+
+    This endpoint returns all countries seen in the time period, sorted by session count.
+    Much more efficient than fetching all sessions - uses SQLite + GeoIP lookup.
+
+    Args:
+        hours: Number of hours to include in statistics
+
+    Returns:
+        List of country dicts with country, country_code, and count
+    """
+    if not sqlite_parser.available:
+        logger.error(f"SQLite database not found at {sqlite_parser.db_path}")
+        raise FileNotFoundError(
+            f"SQLite database required but not found at {sqlite_parser.db_path}. "
+            "Please enable SQLite output in Cowrie configuration."
+        )
+
+    days = max(1, hours // 24)
+    logger.info(f"Getting all countries (hours={hours}, converted to days={days})")
+
+    countries = sqlite_parser.get_all_countries(days=days)
+
+    return {
+        "countries": countries,
+        "total": len(countries),
+        "hours": hours,
+    }
+
+
+@router.get("/credentials")
+async def get_all_credentials(hours: int = Query(168, ge=1, le=8760)):
+    """
+    Get ALL credentials with attempt counts (not just top 10).
+
+    This endpoint returns all credentials seen in the time period, sorted by attempt count.
+    Much more efficient than fetching all sessions - queries auth table directly.
+
+    Args:
+        hours: Number of hours to include in statistics
+
+    Returns:
+        Dict with 'credentials' list and 'successful' list of successful credentials
+    """
+    if not sqlite_parser.available:
+        logger.error(f"SQLite database not found at {sqlite_parser.db_path}")
+        raise FileNotFoundError(
+            f"SQLite database required but not found at {sqlite_parser.db_path}. "
+            "Please enable SQLite output in Cowrie configuration."
+        )
+
+    days = max(1, hours // 24)
+    logger.info(f"Getting all credentials (hours={hours}, converted to days={days})")
+
+    result = sqlite_parser.get_all_credentials(days=days)
+
+    return {
+        "credentials": result["credentials"],
+        "successful": result["successful"],
+        "total": len(result["credentials"]),
+        "hours": hours,
+    }
+
+
+@router.get("/clients")
+async def get_all_clients(hours: int = Query(168, ge=1, le=8760)):
+    """
+    Get ALL SSH client versions with session counts (not just top 10).
+
+    This endpoint returns all SSH clients seen in the time period, sorted by session count.
+    Much more efficient than fetching all sessions - queries clients table directly.
+
+    Args:
+        hours: Number of hours to include in statistics
+
+    Returns:
+        List of client dicts with client and count
+    """
+    if not sqlite_parser.available:
+        logger.error(f"SQLite database not found at {sqlite_parser.db_path}")
+        raise FileNotFoundError(
+            f"SQLite database required but not found at {sqlite_parser.db_path}. "
+            "Please enable SQLite output in Cowrie configuration."
+        )
+
+    days = max(1, hours // 24)
+    logger.info(f"Getting all SSH clients (hours={hours}, converted to days={days})")
+
+    clients = sqlite_parser.get_all_clients(days=days)
+
+    return {
+        "clients": clients,
+        "total": len(clients),
+        "hours": hours,
+    }
+
+
 @router.get("/ips")
 async def get_all_ips(hours: int = Query(168, ge=1, le=8760)):
     """

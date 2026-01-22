@@ -540,6 +540,184 @@ class SQLiteStatsParser:
         finally:
             conn.close()
 
+    def get_all_countries(self, days: int = 7) -> list[dict]:
+        """
+        Get ALL countries with session counts.
+
+        This is more efficient than fetching all sessions - it queries
+        unique IPs from SQLite and enriches with GeoIP, counting sessions per country.
+
+        Args:
+            days: Number of days to include
+
+        Returns:
+            List of country dicts with country, country_code, and count (sorted by count desc)
+        """
+        if not self.available:
+            raise FileNotFoundError(f"SQLite database not found at {self.db_path}")
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+            # Get IPs with session counts
+            cursor.execute(
+                """
+                SELECT ip, COUNT(*) as session_count
+                FROM sessions
+                WHERE starttime >= ?
+                GROUP BY ip
+                """,
+                (cutoff_str,),
+            )
+            ip_session_counts = {row["ip"]: row["session_count"] for row in cursor.fetchall()}
+
+            # Aggregate by country
+            country_counter = Counter()
+            country_details = {}
+
+            for ip, session_count in ip_session_counts.items():
+                geo = self._geoip_lookup(ip)
+                country = geo.get("country", "-")
+                country_code = geo.get("country_code", "XX")
+                if country != "-":
+                    country_counter[country] += session_count
+                    if country not in country_details:
+                        country_details[country] = {
+                            "country": country,
+                            "country_code": country_code,
+                        }
+
+            # Build result list sorted by count
+            result = []
+            for country, count in country_counter.most_common():
+                details = country_details.get(country, {})
+                result.append({
+                    "country": country,
+                    "country_code": details.get("country_code", "XX"),
+                    "count": count,
+                })
+
+            return result
+
+        finally:
+            conn.close()
+
+    def get_all_credentials(self, days: int = 7) -> dict:
+        """
+        Get ALL credentials with attempt counts and success flags.
+
+        This is more efficient than fetching all sessions - it queries
+        the auth table directly with aggregation.
+
+        Args:
+            days: Number of days to include
+
+        Returns:
+            Dict with 'credentials' list and 'successful' set of successful credentials
+        """
+        if not self.available:
+            raise FileNotFoundError(f"SQLite database not found at {self.db_path}")
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+            # Get credentials with counts
+            cursor.execute(
+                """
+                SELECT
+                    username,
+                    password,
+                    COUNT(*) as count,
+                    MAX(CASE WHEN success = 1 THEN 1 ELSE 0 END) as has_success
+                FROM auth
+                WHERE timestamp >= ?
+                GROUP BY username, password
+                ORDER BY count DESC
+                """,
+                (cutoff_str,),
+            )
+
+            credentials = []
+            successful = []
+            for row in cursor.fetchall():
+                cred = f"{row['username']}:{row['password']}"
+                credentials.append({
+                    "credential": cred,
+                    "username": row["username"],
+                    "password": row["password"],
+                    "count": row["count"],
+                    "successful": bool(row["has_success"]),
+                })
+                if row["has_success"]:
+                    successful.append(cred)
+
+            return {
+                "credentials": credentials,
+                "successful": successful,
+            }
+
+        finally:
+            conn.close()
+
+    def get_all_clients(self, days: int = 7) -> list[dict]:
+        """
+        Get ALL SSH client versions with session counts.
+
+        This is more efficient than fetching all sessions - it queries
+        the clients table directly with aggregation.
+
+        Args:
+            days: Number of days to include
+
+        Returns:
+            List of client dicts with client and count (sorted by count desc)
+        """
+        if not self.available:
+            raise FileNotFoundError(f"SQLite database not found at {self.db_path}")
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+            # Get client versions with session counts
+            cursor.execute(
+                """
+                SELECT c.version as client, COUNT(*) as count
+                FROM sessions s
+                JOIN clients c ON s.client = c.id
+                WHERE s.starttime >= ?
+                GROUP BY c.version
+                ORDER BY count DESC
+                """,
+                (cutoff_str,),
+            )
+
+            result = []
+            for row in cursor.fetchall():
+                result.append({
+                    "client": row["client"],
+                    "count": row["count"],
+                })
+
+            return result
+
+        finally:
+            conn.close()
+
     def get_all_commands(self, days: int = 7, unique_only: bool = False) -> list[dict]:
         """
         Get ALL commands with counts and metadata.

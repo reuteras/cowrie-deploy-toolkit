@@ -465,6 +465,72 @@ class DataSource:
             logger.error(f"[DataSource] Failed to fetch IPs from API: {e}")
             return {"ips": [], "total": 0}
 
+    def get_all_countries(self, hours: int = 168) -> dict:
+        """
+        Get ALL countries with session counts from API.
+
+        Args:
+            hours: Time range in hours
+
+        Returns:
+            Dict with 'countries' list and 'total' count
+        """
+        try:
+            response = self.session.get(
+                f"{self.api_base_url}/api/v1/countries",
+                params={"hours": hours},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"[DataSource] Failed to fetch countries from API: {e}")
+            return {"countries": [], "total": 0}
+
+    def get_all_credentials(self, hours: int = 168) -> dict:
+        """
+        Get ALL credentials with attempt counts from API.
+
+        Args:
+            hours: Time range in hours
+
+        Returns:
+            Dict with 'credentials' list, 'successful' list, and 'total' count
+        """
+        try:
+            response = self.session.get(
+                f"{self.api_base_url}/api/v1/credentials",
+                params={"hours": hours},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"[DataSource] Failed to fetch credentials from API: {e}")
+            return {"credentials": [], "successful": [], "total": 0}
+
+    def get_all_clients(self, hours: int = 168) -> dict:
+        """
+        Get ALL SSH client versions with session counts from API.
+
+        Args:
+            hours: Time range in hours
+
+        Returns:
+            Dict with 'clients' list and 'total' count
+        """
+        try:
+            response = self.session.get(
+                f"{self.api_base_url}/api/v1/clients",
+                params={"hours": hours},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"[DataSource] Failed to fetch clients from API: {e}")
+            return {"clients": [], "total": 0}
+
     def get_all_commands(self, hours: int = 168, unique_only: bool = False) -> dict:
         """
         Get ALL commands with counts and metadata from API.
