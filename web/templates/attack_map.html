@@ -1777,6 +1777,12 @@ document.addEventListener('DOMContentLoaded', function() {
         updateLiveFeedEntry(session);
     }
 
+    // Strip ANSI escape codes from text
+    function stripAnsiCodes(text) {
+        // Remove all ANSI escape sequences (colors, cursor movement, etc.)
+        return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+    }
+
     // Parse asciicast stdout to extract command outputs
     function parseAsciicastOutput(stdout, commandBuffer) {
         if (!stdout || !Array.isArray(stdout)) return commandBuffer;
@@ -1786,6 +1792,9 @@ document.addEventListener('DOMContentLoaded', function() {
         for (const [delay, text] of stdout) {
             fullOutput += text;
         }
+
+        // Strip ANSI escape codes for cleaner parsing
+        fullOutput = stripAnsiCodes(fullOutput);
 
         // Try to match commands with their output
         const commandsWithOutput = [];
@@ -1806,8 +1815,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (match && match[1]) {
                 // Clean up the output - remove prompts and extra whitespace
                 let output = match[1];
-                // Remove common prompt patterns
-                output = output.replace(/[\r\n]*[^\r\n]*@[^\r\n]*:[^\r\n]*[#$]\s*$/gm, '');
+                // Remove common prompt patterns (user@host:path# or user@host:path$)
+                // Pattern: optional leading newlines, username@hostname:path, then # or $
+                // Using [\w.-]+ for username/hostname (more specific than [^\r\n]* which was too greedy)
+                output = output.replace(/[\r\n]*[\w.-]+@[\w.-]+:[^\r\n]*[#$]\s*$/gm, '');
                 output = output.trim();
                 cmdEntry.output = output;
             }
