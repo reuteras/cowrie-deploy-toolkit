@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+
+{% block title %}Cluster {{ cluster_id }} - Cowrie Honeypot{% endblock %}
+
+{% block content %}
+<style>
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+.loading-state { text-align: center; padding: 60px 20px; color: #666; }
+.cluster-header-card { background: var(--bg-secondary); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+.cluster-type { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 0.85em; font-weight: 600; text-transform: uppercase; }
+.cluster-type.command { background: #3498db; color: white; }
+.cluster-type.hassh { background: #9b59b6; color: white; }
+.cluster-type.payload { background: #e74c3c; color: white; }
+.cluster-score { font-size: 2em; font-weight: 700; }
+.cluster-score.high { color: #e74c3c; }
+.cluster-score.medium { color: #f39c12; }
+.cluster-score.low { color: #27ae60; }
+.stats-row { display: flex; gap: 30px; margin: 20px 0; flex-wrap: wrap; }
+.stat-item { text-align: center; min-width: 100px; }
+.stat-value { font-size: 1.8em; font-weight: 600; color: var(--accent-color); }
+.stat-label { font-size: 0.85em; color: var(--text-secondary); }
+.section { margin-top: 30px; }
+.section-title { font-size: 1.2em; font-weight: 600; margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+.member-card { background: var(--bg-secondary); border-radius: 8px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.member-ip { font-family: monospace; font-size: 1.1em; font-weight: 600; color: var(--accent-color); }
+.member-stats { display: flex; gap: 20px; }
+.member-stat { text-align: center; }
+.member-stat-value { font-weight: 600; }
+.member-stat-label { font-size: 0.8em; color: var(--text-secondary); }
+.intel-card { background: var(--bg-tertiary); border-radius: 6px; padding: 12px; margin-top: 10px; }
+.intel-source { font-weight: 600; margin-bottom: 8px; }
+.intel-tag { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 3px; font-size: 0.8em; background: var(--bg-secondary); }
+.intel-tag.threat { background: #e74c3c; color: white; }
+.intel-tag.port { background: #3498db; color: white; }
+.fingerprint-box { background: var(--bg-tertiary); padding: 15px; border-radius: 6px; font-family: monospace; word-break: break-all; }
+.command-list { background: var(--bg-tertiary); padding: 15px; border-radius: 6px; font-family: monospace; font-size: 0.9em; }
+.command-item { padding: 5px 0; border-bottom: 1px solid var(--border-color); }
+.command-item:last-child { border-bottom: none; }
+</style>
+
+<div class="page">
+    <div class="page-header">
+        <h1>Cluster Details</h1>
+        <div class="header-actions">
+            <a href="{{ url_for('clusters', hours=hours) }}" class="btn">Back to Clusters</a>
+            <a href="{{ url_for('index') }}" class="btn">Dashboard</a>
+        </div>
+    </div>
+
+    <div id="loading-state" class="loading-state">
+        <div class="spinner"></div>
+        <p style="font-size: 16px; font-weight: 500;">Loading cluster details...</p>
+    </div>
+
+    <div id="error-state" class="loading-state" style="display:none; color: #d32f2f;">
+        <p style="font-size: 16px; font-weight: 500;">Failed to load cluster</p>
+        <p style="font-size: 12px;" id="error-message"></p>
+        <a href="{{ url_for('clusters') }}" class="btn" style="margin-top: 15px;">Back to Clusters</a>
+    </div>
+
+    <div id="content" style="display: none;">
+        <div class="cluster-header-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 20px;">
+                <div>
+                    <span id="cluster-type" class="cluster-type">-</span>
+                    <h2 id="cluster-name" style="margin: 10px 0 5px 0;">-</h2>
+                    <p id="cluster-description" style="color: var(--text-secondary); margin: 0;">-</p>
+                </div>
+                <div style="text-align: right;">
+                    <div class="cluster-score" id="cluster-score">-</div>
+                    <div style="color: var(--text-secondary);">Threat Score</div>
+                </div>
+            </div>
+            <div class="stats-row">
+                <div class="stat-item">
+                    <div class="stat-value" id="stat-size">-</div>
+                    <div class="stat-label">Unique IPs</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="stat-sessions">-</div>
+                    <div class="stat-label">Total Sessions</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="stat-first">-</div>
+                    <div class="stat-label">First Seen</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="stat-last">-</div>
+                    <div class="stat-label">Last Seen</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section" id="fingerprint-section">
+            <div class="section-title">Fingerprint</div>
+            <div class="fingerprint-box" id="fingerprint-value">-</div>
+        </div>
+
+        <div class="section" id="commands-section" style="display: none;">
+            <div class="section-title">Sample Commands</div>
+            <div class="command-list" id="commands-list"></div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Member IPs (<span id="member-count">0</span>)</div>
+            <div id="members-list"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const basePath = "{{ config.get('base_path', '') }}";
+const clusterId = "{{ cluster_id }}";
+
+function getScoreClass(score) {
+    if (score >= 70) return 'high';
+    if (score >= 40) return 'medium';
+    return 'low';
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString();
+}
+
+function formatDateTime(dateStr) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    return date.toLocaleString();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function loadThreatIntel(ip) {
+    try {
+        const response = await fetch(basePath + '/api/ip-intel/' + ip);
+        if (!response.ok) return null;
+        return await response.json();
+    } catch (e) {
+        console.log('Failed to load threat intel for', ip);
+        return null;
+    }
+}
+
+function renderThreatIntel(intel, container) {
+    if (!intel || !intel.summary) return;
+
+    let html = '<div class="intel-card">';
+
+    if (intel.summary.is_known_threat) {
+        html += '<span class="intel-tag threat">Known Threat</span> ';
+    }
+
+    if (intel.summary.open_ports && intel.summary.open_ports.length > 0) {
+        html += '<div style="margin-top: 8px;"><strong>Open Ports:</strong> ';
+        html += intel.summary.open_ports.slice(0, 10).map(p => `<span class="intel-tag port">${p}</span>`).join(' ');
+        if (intel.summary.open_ports.length > 10) html += ` +${intel.summary.open_ports.length - 10} more`;
+        html += '</div>';
+    }
+
+    if (intel.summary.tags && intel.summary.tags.length > 0) {
+        html += '<div style="margin-top: 8px;"><strong>Tags:</strong> ';
+        html += intel.summary.tags.map(t => `<span class="intel-tag">${escapeHtml(t)}</span>`).join(' ');
+        html += '</div>';
+    }
+
+    if (intel.summary.vulnerabilities && intel.summary.vulnerabilities.length > 0) {
+        html += '<div style="margin-top: 8px;"><strong>Vulnerabilities:</strong> ';
+        html += intel.summary.vulnerabilities.slice(0, 5).map(v => `<span class="intel-tag threat">${escapeHtml(v)}</span>`).join(' ');
+        if (intel.summary.vulnerabilities.length > 5) html += ` +${intel.summary.vulnerabilities.length - 5} more`;
+        html += '</div>';
+    }
+
+    html += '</div>';
+    container.innerHTML += html;
+}
+
+async function loadData() {
+    document.getElementById('loading-state').style.display = 'block';
+    document.getElementById('error-state').style.display = 'none';
+    document.getElementById('content').style.display = 'none';
+
+    try {
+        const response = await fetch(basePath + '/api/cluster/' + clusterId);
+        if (!response.ok) {
+            throw new Error(response.status === 404 ? 'Cluster not found' : 'Server error ' + response.status);
+        }
+
+        const cluster = await response.json();
+
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+
+        // Update header
+        const typeEl = document.getElementById('cluster-type');
+        typeEl.textContent = cluster.cluster_type;
+        typeEl.className = 'cluster-type ' + cluster.cluster_type;
+
+        document.getElementById('cluster-name').textContent = cluster.name || cluster.cluster_id;
+        document.getElementById('cluster-description').textContent = cluster.description || '';
+
+        const scoreEl = document.getElementById('cluster-score');
+        scoreEl.textContent = cluster.score;
+        scoreEl.className = 'cluster-score ' + getScoreClass(cluster.score);
+
+        // Stats
+        document.getElementById('stat-size').textContent = cluster.size;
+        document.getElementById('stat-sessions').textContent = cluster.session_count;
+        document.getElementById('stat-first').textContent = formatDate(cluster.first_seen);
+        document.getElementById('stat-last').textContent = formatDate(cluster.last_seen);
+
+        // Fingerprint
+        document.getElementById('fingerprint-value').textContent = cluster.fingerprint;
+
+        // Sample commands (for command clusters)
+        if (cluster.metadata && cluster.metadata.sample_commands && cluster.metadata.sample_commands.length > 0) {
+            document.getElementById('commands-section').style.display = 'block';
+            document.getElementById('commands-list').innerHTML = cluster.metadata.sample_commands
+                .map(cmd => `<div class="command-item">$ ${escapeHtml(cmd)}</div>`)
+                .join('');
+        }
+
+        // Members
+        const members = cluster.members || [];
+        document.getElementById('member-count').textContent = members.length;
+
+        const membersHtml = members.map(member => `
+            <div class="member-card" id="member-${member.src_ip.replace(/\./g, '-')}">
+                <div>
+                    <div class="member-ip">
+                        <a href="${basePath}/sessions?ip=${member.src_ip}" style="color: var(--accent-color); text-decoration: none;">
+                            ${member.src_ip}
+                        </a>
+                    </div>
+                    <div style="font-size: 0.85em; color: var(--text-secondary); margin-top: 5px;">
+                        ${formatDateTime(member.first_seen)} - ${formatDateTime(member.last_seen)}
+                    </div>
+                </div>
+                <div class="member-stats">
+                    <div class="member-stat">
+                        <div class="member-stat-value">${member.session_count}</div>
+                        <div class="member-stat-label">Sessions</div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        document.getElementById('members-list').innerHTML = membersHtml;
+
+        // Load threat intel for first 10 members
+        for (const member of members.slice(0, 10)) {
+            const intel = await loadThreatIntel(member.src_ip);
+            if (intel) {
+                const container = document.getElementById('member-' + member.src_ip.replace(/\./g, '-'));
+                if (container) {
+                    renderThreatIntel(intel, container);
+                }
+            }
+        }
+
+    } catch (error) {
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('error-state').style.display = 'block';
+        document.getElementById('error-message').textContent = error.message;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadData);
+</script>
+{% endblock %}

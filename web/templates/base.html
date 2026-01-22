@@ -44,6 +44,7 @@
             <a href="{{ url_for('ip_list') }}" class="{% if request.endpoint == 'ip_list' %}active{% endif %}">IPs</a>
             <a href="{{ url_for('downloads') }}" class="{% if request.endpoint == 'downloads' %}active{% endif %}">Downloads</a>
             <a href="{{ url_for('commands') }}" class="{% if request.endpoint == 'commands' %}active{% endif %}">Commands</a>
+            <a href="{{ url_for('clusters') }}" class="{% if request.endpoint in ['clusters', 'cluster_detail'] %}active{% endif %}">Clusters</a>
             <a href="{{ url_for('canary_alerts') }}" class="{% if request.endpoint == 'canary_alerts' %}active{% endif %}">🐦 Canary Alerts</a>
         </div>
     </nav>

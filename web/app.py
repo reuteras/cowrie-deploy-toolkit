@@ -2664,6 +2664,143 @@ def asns():
     )
 
 
+# =============================================================================
+# Cluster Routes
+# =============================================================================
+
+
+@app.route("/clusters")
+def clusters():
+    """Attack clusters listing page."""
+    hours = request.args.get("hours", 168, type=int)
+    min_size = request.args.get("min_size", 2, type=int)
+    cluster_type = request.args.get("type", "")
+
+    return render_template(
+        "clusters.html",
+        hours=hours,
+        min_size=min_size,
+        cluster_type=cluster_type,
+        config=CONFIG,
+    )
+
+
+@app.route("/cluster/<cluster_id>")
+def cluster_detail(cluster_id: str):
+    """Cluster detail page."""
+    hours = request.args.get("hours", 168, type=int)
+
+    return render_template(
+        "cluster_detail.html",
+        cluster_id=cluster_id,
+        hours=hours,
+        config=CONFIG,
+    )
+
+
+@app.route("/api/clusters-data")
+def clusters_data():
+    """API endpoint for fetching clusters data."""
+    days = request.args.get("days", 7, type=int)
+    min_size = request.args.get("min_size", 2, type=int)
+    min_score = request.args.get("min_score", 0, type=int)
+    cluster_type = request.args.get("cluster_type", "")
+    limit = request.args.get("limit", 100, type=int)
+
+    # Forward to the API if available
+    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+        try:
+            import requests as req
+
+            params = {
+                "days": days,
+                "min_size": min_size,
+                "min_score": min_score,
+                "limit": limit,
+            }
+            if cluster_type:
+                params["cluster_type"] = cluster_type
+
+            response = req.get(
+                f"{datasource.api_base_url}/api/v1/clusters",
+                params=params,
+                timeout=30,
+            )
+            if response.ok:
+                return jsonify(response.json())
+        except Exception as e:
+            print(f"[!] Failed to fetch clusters from API: {e}")
+
+    # Return empty if API not available
+    return jsonify({"clusters": [], "total": 0, "error": "Clustering API not available"})
+
+
+@app.route("/api/cluster/<cluster_id>")
+def cluster_detail_data(cluster_id: str):
+    """API endpoint for fetching single cluster details."""
+    # Forward to the API if available
+    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+        try:
+            import requests as req
+
+            response = req.get(
+                f"{datasource.api_base_url}/api/v1/clusters/{cluster_id}",
+                timeout=30,
+            )
+            if response.ok:
+                return jsonify(response.json())
+            elif response.status_code == 404:
+                return jsonify({"error": "Cluster not found"}), 404
+        except Exception as e:
+            print(f"[!] Failed to fetch cluster from API: {e}")
+
+    return jsonify({"error": "Clustering API not available"}), 503
+
+
+@app.route("/api/clusters-analyze", methods=["POST"])
+def clusters_analyze():
+    """API endpoint for triggering cluster analysis."""
+    days = request.args.get("days", 7, type=int)
+    min_size = request.args.get("min_size", 2, type=int)
+
+    # Forward to the API if available
+    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+        try:
+            import requests as req
+
+            response = req.post(
+                f"{datasource.api_base_url}/api/v1/clusters/analyze",
+                params={"days": days, "min_size": min_size},
+                timeout=120,  # Analysis can take time
+            )
+            if response.ok:
+                return jsonify(response.json())
+        except Exception as e:
+            print(f"[!] Failed to run cluster analysis: {e}")
+
+    return jsonify({"error": "Clustering API not available"}), 503
+
+
+@app.route("/api/ip-intel/<ip>")
+def ip_intel(ip: str):
+    """API endpoint for fetching IP threat intelligence."""
+    # Forward to the API if available
+    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+        try:
+            import requests as req
+
+            response = req.get(
+                f"{datasource.api_base_url}/api/v1/intel/ip/{ip}",
+                timeout=30,
+            )
+            if response.ok:
+                return jsonify(response.json())
+        except Exception as e:
+            print(f"[!] Failed to fetch IP intel from API: {e}")
+
+    return jsonify({"error": "Threat intel API not available"}), 503
+
+
 @app.route("/webhook/canary", methods=["POST"])
 def canary_webhook():
     """Webhook endpoint for Canary Token alerts.
