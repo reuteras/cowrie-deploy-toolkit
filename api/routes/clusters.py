@@ -43,7 +43,7 @@ def get_threat_intel_service() -> ThreatIntelService:
     global _threat_intel_service
     if _threat_intel_service is None:
         _threat_intel_service = ThreatIntelService(
-            config.COWRIE_DB_PATH,
+            config.THREAT_INTEL_CACHE_DB,
             abuseipdb_key=config.ABUSEIPDB_API_KEY,
         )
     return _threat_intel_service
