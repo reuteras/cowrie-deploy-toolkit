@@ -137,9 +137,44 @@ class ClusteringService:
             )
         """)
 
+        # Create TTP fingerprinting tables
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ttp_fingerprints (
+                session TEXT PRIMARY KEY,
+                ttp_sequence TEXT,  -- JSON array of TTP matches
+                technique_count INTEGER DEFAULT 0,
+                dominant_techniques TEXT,  -- JSON array of top techniques
+                confidence_score REAL DEFAULT 0.0,
+                tactics TEXT,  -- JSON array of ATT&CK tactics
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ttp_sessions ON ttp_fingerprints(session)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ttp_techniques ON ttp_fingerprints(dominant_techniques)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ttp_tactics ON ttp_fingerprints(tactics)")
+
+        # Create TTP cluster table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ttp_clusters (
+                cluster_id TEXT PRIMARY KEY,
+                dominant_technique TEXT,
+                dominant_tactic TEXT,
+                member_count INTEGER DEFAULT 0,
+                confidence_score REAL DEFAULT 0.0,
+                first_seen DATETIME,
+                last_seen DATETIME,
+                metadata TEXT,  -- JSON with additional cluster info
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ttp_clusters_technique ON ttp_clusters(dominant_technique)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ttp_clusters_tactic ON ttp_clusters(dominant_tactic)")
+
         conn.commit()
         conn.close()
-        logger.info("Clustering tables ensured")
+        logger.info("Clustering tables ensured (including TTP tables)")
 
     # =========================================================================
     # Command Fingerprinting
@@ -293,9 +328,7 @@ class ClusteringService:
         source_cursor = source_conn.cursor()
 
         # Check if events table exists
-        source_cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='events'"
-        )
+        source_cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='events'")
         if not source_cursor.fetchone():
             source_conn.close()
             return {"error": "Events table not found", "sessions_processed": 0}
@@ -733,12 +766,8 @@ class ClusteringService:
             last_seen = max(timestamps) if timestamps else datetime.now().isoformat()
 
             # Get threat info
-            threat_label = next(
-                (d["threat_label"] for d in downloads if d["threat_label"]), None
-            )
-            vt_detections = max(
-                (d["vt_detections"] or 0 for d in downloads), default=0
-            )
+            threat_label = next((d["threat_label"] for d in downloads if d["threat_label"]), None)
+            vt_detections = max((d["vt_detections"] or 0 for d in downloads), default=0)
 
             cluster_id = f"payload-{shasum[:16]}"
 
@@ -1009,7 +1038,7 @@ class ClusteringService:
             "payload_clusters": self.build_payload_clusters(days, min_size),
         }
 
-        results["summary"] = {
+        results["summary"] = {  # type: ignore
             "total_clusters": sum(len(v) for v in results.values() if isinstance(v, list)),
             "command_clusters_count": len(results["command_clusters"]),
             "hassh_clusters_count": len(results["hassh_clusters"]),
@@ -1043,7 +1072,300 @@ class ClusteringService:
             cursor = conn.cursor()
         except Exception as e:
             result["issues"].append(f"Cannot connect to source database: {e}")
-            return result
+        return result
+
+    # =========================================================================
+    # TTP Clustering Methods
+    # =========================================================================
+
+    def build_ttp_clusters(self, days: int = 7, min_size: int = 2) -> list[dict]:
+        """
+        Build clusters based on TTP (Tactics, Techniques, and Procedures) patterns.
+
+        Args:
+            days: Number of days to look back
+            min_size: Minimum cluster size (unique IPs)
+
+        Returns:
+            List of TTP cluster dictionaries
+        """
+        from services.ttp_extraction import TTPExtractionService
+
+        logger.info(f"Building TTP clusters for last {days} days (min_size={min_size})")
+
+        # Initialize TTP extraction service
+        mitre_db_path = (
+            self.clustering_db_path.replace("_clustering.db", "_mitre.db")
+            if self.clustering_db_path
+            else self.source_db_path.replace(".db", "_mitre.db")
+        )
+        ttp_service = TTPExtractionService(self.source_db_path, mitre_db_path)
+
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+
+        # Get sessions with TTP fingerprints
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT session, ttp_sequence, dominant_techniques, confidence_score, tactics
+            FROM ttp_fingerprints
+            WHERE created_at >= ?
+            ORDER BY confidence_score DESC
+        """,
+            (cutoff_date.isoformat(),),
+        )
+
+        session_ttps = {}
+        for row in cursor.fetchall():
+            try:
+                session_ttps[row["session"]] = {
+                    "ttp_sequence": json.loads(row["ttp_sequence"]),
+                    "dominant_techniques": json.loads(row["dominant_techniques"]),
+                    "confidence_score": row["confidence_score"],
+                    "tactics": json.loads(row["tactics"]),
+                }
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        conn.close()
+
+        if not session_ttps:
+            logger.info("No TTP fingerprints found")
+            return []
+
+        # Group sessions by dominant technique
+        technique_clusters = defaultdict(list)
+
+        for session_id, ttp_data in session_ttps.items():
+            if ttp_data["dominant_techniques"]:
+                dominant_technique = ttp_data["dominant_techniques"][0]  # Use top technique
+                technique_clusters[dominant_technique].append((session_id, ttp_data))
+
+        # Create TTP clusters
+        ttp_clusters = []
+
+        for technique_id, sessions_data in technique_clusters.items():
+            if len(sessions_data) < min_size:
+                continue
+
+            # Get unique IPs for this cluster
+            session_ids = [s[0] for s in sessions_data]
+            unique_ips = self._get_unique_ips_for_sessions(session_ids)
+
+            if len(unique_ips) < min_size:
+                continue
+
+            # Calculate cluster metrics
+            confidence_scores = [
+                float(s[1]["confidence_score"]) for s in sessions_data if s[1]["confidence_score"] is not None
+            ]
+            avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
+
+            # Get technique details
+            technique_info = ttp_service.get_technique_details(technique_id)
+
+            cluster_id = f"ttp_{technique_id}_{len(unique_ips)}_{int(avg_confidence * 100)}"
+
+            # Get timestamps safely
+            timestamps = [self._get_session_timestamp(s[0]) for s in sessions_data]
+            valid_timestamps = [ts for ts in timestamps if ts]
+
+            cluster = {
+                "cluster_id": cluster_id,
+                "cluster_type": "ttp",
+                "dominant_technique": technique_id,
+                "technique_name": technique_info.get("name", technique_id) if technique_info else technique_id,
+                "dominant_tactic": technique_info.get("tactic_id", "unknown") if technique_info else "unknown",
+                "size": len(unique_ips),
+                "session_count": len(session_ids),
+                "score": int(avg_confidence * 100),
+                "first_seen": min(valid_timestamps) if valid_timestamps else datetime.now(timezone.utc).isoformat(),
+                "last_seen": max(valid_timestamps) if valid_timestamps else datetime.now(timezone.utc).isoformat(),
+                "metadata": json.dumps(
+                    {
+                        "technique_details": technique_info,
+                        "avg_confidence": avg_confidence,
+                        "member_sessions": session_ids[:10],  # Sample of sessions
+                        "unique_ips": list(unique_ips)[:20],  # Sample of IPs
+                    }
+                ),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            ttp_clusters.append(cluster)
+
+            # Store cluster in database
+            self._store_ttp_cluster(cluster)
+
+        logger.info(f"Created {len(ttp_clusters)} TTP clusters")
+        return ttp_clusters
+
+    def _store_ttp_cluster(self, cluster: dict):
+        """Store a TTP cluster in the database."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO ttp_clusters
+            (cluster_id, dominant_technique, dominant_tactic, member_count, confidence_score,
+             first_seen, last_seen, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                cluster["cluster_id"],
+                cluster["dominant_technique"],
+                cluster["dominant_tactic"],
+                cluster["size"],
+                cluster.get("avg_confidence", cluster["score"] / 100.0),
+                cluster["first_seen"],
+                cluster["last_seen"],
+                cluster["metadata"],
+                cluster["created_at"],
+            ),
+        )
+
+        conn.commit()
+        conn.close()
+
+    def get_ttp_clusters(self, technique_filter: Optional[str] = None, min_score: int = 0) -> list[dict]:
+        """
+        Get TTP clusters from database.
+
+        Args:
+            technique_filter: Filter by specific technique ID
+            min_score: Minimum confidence score (0-100)
+
+        Returns:
+            List of TTP cluster dictionaries
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT cluster_id, dominant_technique, dominant_tactic, member_count,
+                   confidence_score, first_seen, last_seen, metadata, created_at
+            FROM ttp_clusters
+            WHERE confidence_score >= ?
+        """
+
+        params = [min_score / 100.0]  # type: ignore
+
+        if technique_filter:
+            query += " AND dominant_technique = ?"
+            params.append(technique_filter)  # type: ignore
+
+        query += " ORDER BY confidence_score DESC, member_count DESC"
+
+        cursor.execute(query, params)
+
+        clusters = []
+        for row in cursor.fetchall():
+            try:
+                metadata = json.loads(row["metadata"]) if row["metadata"] else {}
+                cluster = {
+                    "cluster_id": row["cluster_id"],
+                    "cluster_type": "ttp",
+                    "dominant_technique": row["dominant_technique"],
+                    "dominant_tactic": row["dominant_tactic"],
+                    "size": row["member_count"],
+                    "score": int(row["confidence_score"] * 100),
+                    "first_seen": row["first_seen"],
+                    "last_seen": row["last_seen"],
+                    "metadata": metadata,
+                    "created_at": row["created_at"],
+                }
+                clusters.append(cluster)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        conn.close()
+        return clusters
+
+    def _get_unique_ips_for_sessions(self, session_ids: list[str]) -> set[str]:
+        """Get unique IPs for a list of session IDs."""
+        conn = self._get_source_connection()
+        cursor = conn.cursor()
+
+        placeholders = ",".join("?" * len(session_ids))
+        cursor.execute(
+            f"""
+            SELECT DISTINCT ip
+            FROM sessions
+            WHERE id IN ({placeholders})
+        """,
+            session_ids,
+        )
+
+        ips = {row["ip"] for row in cursor.fetchall()}
+        conn.close()
+
+        return ips
+
+    def _get_session_timestamp(self, session_id: str) -> str:
+        """Get the start timestamp for a session."""
+        conn = self._get_source_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT starttime FROM sessions WHERE id = ?", (session_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        return row["starttime"] if row else datetime.now(timezone.utc).isoformat()
+
+    def analyze_session_ttps(self, session_id: str) -> dict:
+        """
+        Analyze TTPs for a specific session.
+
+        Args:
+            session_id: Session ID to analyze
+
+        Returns:
+            TTP analysis results
+        """
+        from services.ttp_extraction import TTPExtractionService
+
+        mitre_db_path = (
+            self.clustering_db_path.replace("_clustering.db", "_mitre.db")
+            if self.clustering_db_path
+            else self.source_db_path.replace(".db", "_mitre.db")
+        )
+        ttp_service = TTPExtractionService(self.source_db_path, mitre_db_path)
+
+        # Extract TTPs
+        ttps = ttp_service.extract_session_ttps(session_id)
+
+        # Create fingerprint
+        fingerprint = ttp_service.create_ttp_fingerprint(session_id)
+
+        # Store fingerprint if TTPs found
+        if fingerprint:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO ttp_fingerprints
+                (session, ttp_sequence, technique_count, dominant_techniques,
+                 confidence_score, tactics, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+                (
+                    fingerprint["session"],
+                    fingerprint["ttp_sequence"],
+                    fingerprint["technique_count"],
+                    fingerprint["dominant_techniques"],
+                    fingerprint["confidence_score"],
+                    fingerprint["tactics"],
+                ),
+            )
+
+            conn.commit()
+            conn.close()
+
+        return {"session_id": session_id, "ttps_found": len(ttps), "ttp_details": ttps, "fingerprint": fingerprint}
 
         # Check which tables exist
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1093,10 +1415,15 @@ class ClusteringService:
             cursor.execute("SELECT COUNT(*) as cnt FROM downloads WHERE shasum IS NOT NULL")
             result["data_counts"]["total_downloads"] = cursor.fetchone()["cnt"]
 
-            cursor.execute("SELECT COUNT(*) as cnt FROM downloads WHERE timestamp >= ? AND shasum IS NOT NULL", (cutoff_str,))
+            cursor.execute(
+                "SELECT COUNT(*) as cnt FROM downloads WHERE timestamp >= ? AND shasum IS NOT NULL", (cutoff_str,)
+            )
             result["data_counts"]["recent_downloads"] = cursor.fetchone()["cnt"]
 
-            cursor.execute("SELECT COUNT(DISTINCT shasum) as cnt FROM downloads WHERE timestamp >= ? AND shasum IS NOT NULL", (cutoff_str,))
+            cursor.execute(
+                "SELECT COUNT(DISTINCT shasum) as cnt FROM downloads WHERE timestamp >= ? AND shasum IS NOT NULL",
+                (cutoff_str,),
+            )
             result["data_counts"]["unique_payloads"] = cursor.fetchone()["cnt"]
         else:
             result["issues"].append("downloads table not found")
@@ -1144,7 +1471,9 @@ class ClusteringService:
                 cluster_cursor.execute("SELECT COUNT(*) as cnt FROM command_fingerprints")
                 result["data_counts"]["fingerprints_stored"] = cluster_cursor.fetchone()["cnt"]
 
-                cluster_cursor.execute("SELECT COUNT(DISTINCT fingerprint) as cnt FROM command_fingerprints WHERE fingerprint != 'empty'")
+                cluster_cursor.execute(
+                    "SELECT COUNT(DISTINCT fingerprint) as cnt FROM command_fingerprints WHERE fingerprint != 'empty'"
+                )
                 result["data_counts"]["unique_fingerprints"] = cluster_cursor.fetchone()["cnt"]
 
             # Check attack_clusters table

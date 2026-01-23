@@ -134,7 +134,31 @@ function getScoreClass(score) {
 function formatDate(dateStr) {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
-    return date.toLocaleString();
+    // ISO format: YYYY-MM-DD HH:MM:SS
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function getVTBadge(metadata) {
+    if (!metadata) return '';
+    const vtDetections = metadata.vt_detections;
+    const threatLabel = metadata.threat_label;
+    if (vtDetections === undefined && !threatLabel) return '';
+
+    let badge = '';
+    if (vtDetections !== undefined) {
+        const color = vtDetections > 10 ? '#e74c3c' : vtDetections > 0 ? '#f39c12' : '#27ae60';
+        badge += `<span style="background: ${color}; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; margin-right: 5px;">VT: ${vtDetections}/70</span>`;
+    }
+    if (threatLabel) {
+        badge += `<span style="background: #9b59b6; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75em;">${threatLabel}</span>`;
+    }
+    return badge;
 }
 
 function loadData() {
@@ -180,12 +204,20 @@ function loadData() {
             }
 
             noDataEl.style.display = 'none';
-            listEl.innerHTML = clusters.map(cluster => `
+            listEl.innerHTML = clusters.map(cluster => {
+                const vtBadge = cluster.cluster_type === 'payload' ? getVTBadge(cluster.metadata) : '';
+                const sampleUrls = cluster.metadata?.sample_urls || [];
+                const urlsHtml = cluster.cluster_type === 'payload' && sampleUrls.length > 0
+                    ? `<div style="margin-top: 8px; font-size: 0.85em; color: var(--text-secondary);"><strong>Sample URLs:</strong> ${sampleUrls.slice(0, 2).map(u => `<code style="word-break: break-all;">${u}</code>`).join(', ')}${sampleUrls.length > 2 ? ` (+${sampleUrls.length - 2} more)` : ''}</div>`
+                    : '';
+
+                return `
                 <div class="cluster-card">
                     <div class="cluster-header">
                         <div>
                             <span class="cluster-type ${cluster.cluster_type}">${cluster.cluster_type}</span>
                             <strong style="margin-left: 10px;">${cluster.name || cluster.cluster_id}</strong>
+                            ${vtBadge ? `<span style="margin-left: 10px;">${vtBadge}</span>` : ''}
                         </div>
                         <div class="cluster-score ${getScoreClass(cluster.score)}">
                             Score: ${cluster.score}
@@ -200,8 +232,15 @@ function loadData() {
                             <div class="cluster-stat-value">${cluster.session_count}</div>
                             <div class="cluster-stat-label">Sessions</div>
                         </div>
+                        ${cluster.cluster_type === 'payload' && cluster.metadata?.vt_detections !== undefined ? `
+                        <div class="cluster-stat">
+                            <div class="cluster-stat-value" style="color: ${cluster.metadata.vt_detections > 10 ? '#e74c3c' : cluster.metadata.vt_detections > 0 ? '#f39c12' : '#27ae60'};">${cluster.metadata.vt_detections}</div>
+                            <div class="cluster-stat-label">VT Detections</div>
+                        </div>
+                        ` : ''}
                     </div>
                     <div class="cluster-description">${cluster.description || ''}</div>
+                    ${urlsHtml}
                     <div class="cluster-meta">
                         <span>First seen: ${formatDate(cluster.first_seen)}</span>
                         <span>Last seen: ${formatDate(cluster.last_seen)}</span>
@@ -211,7 +250,7 @@ function loadData() {
                         <a href="${basePath}/cluster/${cluster.cluster_id}" class="btn btn-sm">View Details</a>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         })
         .catch(error => {
             document.getElementById('loading-state').style.display = 'none';

@@ -102,6 +102,33 @@
             <div class="command-list" id="commands-list"></div>
         </div>
 
+        <div class="section" id="payload-section" style="display: none;">
+            <div class="section-title">Payload Information</div>
+            <div style="background: var(--bg-secondary); border-radius: 8px; padding: 15px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                    <div>
+                        <div style="color: var(--text-secondary); font-size: 0.85em;">SHA256</div>
+                        <div id="payload-sha256" style="font-family: monospace; word-break: break-all; margin-top: 5px;">-</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--text-secondary); font-size: 0.85em;">Threat Label</div>
+                        <div id="payload-threat" style="margin-top: 5px;">-</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--text-secondary); font-size: 0.85em;">VirusTotal Detections</div>
+                        <div id="payload-vt" style="margin-top: 5px;">-</div>
+                    </div>
+                </div>
+                <div id="payload-urls" style="margin-top: 15px; display: none;">
+                    <div style="color: var(--text-secondary); font-size: 0.85em; margin-bottom: 8px;">Download URLs</div>
+                    <div id="payload-urls-list" class="command-list"></div>
+                </div>
+                <div style="margin-top: 15px;">
+                    <a id="vt-link" href="#" target="_blank" class="btn btn-sm" style="display: none;">View on VirusTotal</a>
+                </div>
+            </div>
+        </div>
+
         <div class="section">
             <div class="section-title">Member IPs (<span id="member-count">0</span>)</div>
             <div id="members-list"></div>
@@ -110,7 +137,6 @@
 </div>
 
 <script>
-const basePath = "{{ config.get('base_path', '') }}";
 const clusterId = "{{ cluster_id }}";
 
 function getScoreClass(score) {
@@ -122,13 +148,21 @@ function getScoreClass(score) {
 function formatDate(dateStr) {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
-    return date.toLocaleDateString();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 function formatDateTime(dateStr) {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
-    return date.toLocaleString();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
 function escapeHtml(text) {

@@ -10,6 +10,7 @@ Provides API endpoints for attack cluster analysis:
 """
 
 import logging
+import os
 from typing import Optional
 
 from config import config
@@ -122,9 +123,7 @@ async def diagnose_clustering(
 async def trigger_cluster_analysis(
     days: int = Query(7, ge=1, le=365, description="Days to analyze"),
     min_size: int = Query(2, ge=1, description="Minimum cluster size"),
-    cluster_types: Optional[str] = Query(
-        None, description="Comma-separated types: command,hassh,payload"
-    ),
+    cluster_types: Optional[str] = Query(None, description="Comma-separated types: command,hassh,payload"),
 ):
     """
     Trigger manual cluster analysis.
@@ -157,8 +156,7 @@ async def trigger_cluster_analysis(
             "hassh_clusters_count": len(results.get("hassh_clusters", [])),
             "payload_clusters_count": len(results.get("payload_clusters", [])),
             "total_clusters": sum(
-                len(results.get(k, []))
-                for k in ["command_clusters", "hassh_clusters", "payload_clusters"]
+                len(results.get(k, [])) for k in ["command_clusters", "hassh_clusters", "payload_clusters"]
             ),
         }
 
@@ -247,9 +245,7 @@ async def get_ip_clusters(ip: str):
 @router.get("/intel/ip/{ip}")
 async def get_ip_threat_intel(
     ip: str,
-    sources: Optional[str] = Query(
-        None, description="Comma-separated sources: shodan,threatfox,urlhaus"
-    ),
+    sources: Optional[str] = Query(None, description="Comma-separated sources: shodan,threatfox,urlhaus"),
 ):
     """
     Get aggregated threat intelligence for an IP address.
@@ -278,9 +274,7 @@ async def get_ip_threat_intel(
 @router.get("/intel/hash/{file_hash}")
 async def get_hash_threat_intel(
     file_hash: str,
-    sources: Optional[str] = Query(
-        None, description="Comma-separated sources: threatfox,malwarebazaar"
-    ),
+    sources: Optional[str] = Query(None, description="Comma-separated sources: threatfox,malwarebazaar"),
 ):
     """
     Get aggregated threat intelligence for a file hash.
@@ -387,4 +381,310 @@ async def cleanup_threat_intel_cache():
 
     except Exception as e:
         logger.error(f"Failed to cleanup cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# TTP Clustering Endpoints
+# =============================================================================
+
+
+@router.post("/clusters/ttp/analyze")
+async def analyze_session_ttp(session_id: str = Query(..., description="Session ID to analyze for TTPs")):
+    """
+    Analyze TTPs for a specific session and store fingerprint.
+
+    Returns TTP analysis results including extracted techniques and confidence scores.
+    """
+    try:
+        service = get_clustering_service()
+        result = service.analyze_session_ttps(session_id)
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to analyze session TTPs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/clusters/ttp")
+async def get_ttp_clusters(
+    technique: str = Query(None, description="Filter by MITRE technique ID (e.g., T1110)"),
+    min_score: int = Query(0, description="Minimum confidence score (0-100)", ge=0, le=100),
+):
+    """
+    Get TTP clusters with optional filtering.
+
+    Returns clusters grouped by dominant MITRE ATT&CK techniques.
+    """
+    try:
+        service = get_clustering_service()
+        clusters = service.get_ttp_clusters(technique_filter=technique, min_score=min_score)
+        return {"clusters": clusters, "count": len(clusters)}
+
+    except Exception as e:
+        logger.error(f"Failed to get TTP clusters: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/clusters/ttp/build")
+async def build_ttp_clusters(
+    days: int = Query(7, description="Number of days to analyze", ge=1, le=365),
+    min_size: int = Query(2, description="Minimum cluster size", ge=1),
+):
+    """
+    Build TTP clusters from recent session data.
+
+    Analyzes sessions for MITRE ATT&CK technique patterns and groups them into clusters.
+    """
+    try:
+        service = get_clustering_service()
+        clusters = service.build_ttp_clusters(days=days, min_size=min_size)
+
+        return {
+            "message": f"Built {len(clusters)} TTP clusters",
+            "clusters": clusters,
+            "parameters": {"days": days, "min_size": min_size},
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to build TTP clusters: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/clusters/ttp/{technique_id}")
+async def get_clusters_by_technique(technique_id: str):
+    """
+    Get all clusters associated with a specific MITRE ATT&CK technique.
+
+    Returns both IOC clusters and TTP clusters that match the technique.
+    """
+    try:
+        service = get_clustering_service()
+
+        # Get TTP clusters for this technique
+        ttp_clusters = service.get_ttp_clusters(technique_filter=technique_id)
+
+        # Also get IOC clusters that might be related (this would need enhancement)
+        # For now, just return TTP clusters
+        all_clusters = ttp_clusters
+
+        return {"technique_id": technique_id, "clusters": all_clusters, "count": len(all_clusters)}
+
+    except Exception as e:
+        logger.error(f"Failed to get clusters for technique {technique_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/intel/ttp/{technique_id}")
+async def get_technique_details(technique_id: str):
+    """
+    Get detailed information about a MITRE ATT&CK technique.
+
+    Includes technique metadata, associated tactics, and detection guidance.
+    """
+    try:
+        from services.ttp_extraction import TTPExtractionService
+
+        # Initialize TTP service to access MITRE data
+        clustering_db = config.CLUSTERING_DB_PATH or config.COWRIE_DB_PATH.replace(".db", "_clustering.db")
+        mitre_db = clustering_db.replace("_clustering.db", "_mitre.db")
+
+        ttp_service = TTPExtractionService(config.COWRIE_DB_PATH, mitre_db)
+        technique_info = ttp_service.get_technique_details(technique_id)
+
+        if not technique_info:
+            raise HTTPException(status_code=404, detail=f"Technique {technique_id} not found")
+
+        return technique_info
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get technique details for {technique_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# STIX Export Endpoints
+# =============================================================================
+
+
+@router.get("/stix/clusters/{cluster_id}")
+async def export_cluster_stix(
+    cluster_id: str, format: str = Query("json", description="Output format: 'json' or 'dict'", regex="^(json|dict)$")
+):
+    """
+    Export a single cluster as a STIX bundle.
+
+    Returns STIX 2.1 bundle containing indicators, attack patterns, and relationships
+    for the specified cluster.
+    """
+    try:
+        # Check if STIX is available
+        from services.stix_export import STIX_AVAILABLE
+
+        if not STIX_AVAILABLE:
+            raise HTTPException(status_code=503, detail="STIX export not available. Please install 'stix2' package.")
+
+        # Get cluster data
+        service = get_clustering_service()
+        clusters = service.get_clusters(days=30)  # Get recent clusters
+        cluster_data = next((c for c in clusters if c["cluster_id"] == cluster_id), None)
+
+        if not cluster_data:
+            raise HTTPException(status_code=404, detail=f"Cluster {cluster_id} not found")
+
+        # Create STIX bundle
+        from services.stix_export import STIXExportService
+
+        stix_service = STIXExportService()
+
+        bundle = stix_service.create_cluster_bundle(cluster_data)
+
+        if format == "dict":
+            result = stix_service.bundle_to_dict(bundle)
+        else:
+            result = stix_service.bundle_to_json(bundle)
+
+        return {"cluster_id": cluster_id, "stix_bundle": result, "format": format, "spec_version": "2.1"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export cluster {cluster_id} to STIX: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/stix/export")
+async def bulk_stix_export(
+    cluster_type: str = Query(None, description="Filter by cluster type: 'command', 'hassh', 'payload', 'ttp'"),
+    min_score: int = Query(0, description="Minimum cluster score", ge=0, le=100),
+    days: int = Query(7, description="Days to look back", ge=1, le=365),
+    format: str = Query("json", description="Output format: 'json' or 'dict'", regex="^(json|dict)$"),
+    validate: bool = Query(True, description="Validate STIX bundle"),
+):
+    """
+    Export multiple clusters as a STIX bundle.
+
+    Allows filtering by cluster type, score, and time range.
+    Returns consolidated STIX 2.1 bundle.
+    """
+    try:
+        # Check if STIX is available
+        from services.stix_export import STIX_AVAILABLE
+
+        if not STIX_AVAILABLE:
+            raise HTTPException(status_code=503, detail="STIX export not available. Please install 'stix2' package.")
+
+        # Get clusters with filtering
+        service = get_clustering_service()
+        clusters = service.get_clusters(days=days, min_size=1)
+
+        # Apply filters
+        if cluster_type:
+            clusters = [c for c in clusters if c.get("cluster_type") == cluster_type]
+
+        clusters = [c for c in clusters if c.get("score", 0) >= min_score]
+
+        if not clusters:
+            return {"message": "No clusters match the specified criteria", "clusters_found": 0, "stix_bundle": None}
+
+        # Create STIX bundle
+        from services.stix_export import STIXExportService
+
+        stix_service = STIXExportService()
+
+        export_result = stix_service.export_clusters_to_stix(clusters=clusters, output_format=format, validate=validate)
+
+        return {
+            "message": f"Exported {len(clusters)} clusters to STIX",
+            "clusters_exported": len(clusters),
+            "stix_bundle": export_result["bundle"],
+            "validation": export_result["validation"],
+            "metadata": export_result["metadata"],
+            "format": format,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export clusters to STIX: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stix/validate/{cluster_id}")
+async def validate_cluster_stix(cluster_id: str):
+    """
+    Validate STIX bundle for a cluster without exporting.
+
+    Returns validation results including any errors or warnings.
+    """
+    try:
+        # Get cluster data
+        service = get_clustering_service()
+        clusters = service.get_clusters(days=30)
+        cluster_data = next((c for c in clusters if c["cluster_id"] == cluster_id), None)
+
+        if not cluster_data:
+            raise HTTPException(status_code=404, detail=f"Cluster {cluster_id} not found")
+
+        # Create and validate STIX bundle
+        from services.stix_export import STIXExportService
+
+        stix_service = STIXExportService()
+
+        bundle = stix_service.create_cluster_bundle(cluster_data)
+        validation = stix_service.validate_bundle(bundle)
+
+        return {
+            "cluster_id": cluster_id,
+            "validation": validation,
+            "cluster_type": cluster_data.get("cluster_type"),
+            "cluster_score": cluster_data.get("score"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to validate STIX for cluster {cluster_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stix/info")
+async def get_stix_info():
+    """
+    Get information about STIX export capabilities.
+
+    Returns supported formats, STIX version, and available object types.
+    """
+    try:
+        from services.stix_export import STIX_AVAILABLE
+        from services.opencti_client import OPENCTI_AVAILABLE
+
+        info = {
+            "stix_available": STIX_AVAILABLE,
+            "opencti_available": OPENCTI_AVAILABLE,
+            "stix_version": "2.1" if STIX_AVAILABLE else None,
+            "supported_formats": ["json", "dict"] if STIX_AVAILABLE else [],
+            "supported_cluster_types": ["command", "hassh", "payload", "ttp"],
+            "object_types": ["identity", "indicator", "attack-pattern", "malware", "relationship", "intrusion-set"]
+            if STIX_AVAILABLE
+            else [],
+            "integrations": {
+                "opencti_enabled": bool(os.getenv("OPENCTI_URL") and OPENCTI_AVAILABLE),
+                "auto_push": os.getenv("OPENCTI_AUTO_PUSH", "false").lower() == "true",
+                "push_threshold": int(os.getenv("OPENCTI_PUSH_THRESHOLD", "70")),
+            },
+        }
+
+        if not STIX_AVAILABLE:
+            info["stix_error"] = "STIX export requires 'stix2' Python package"
+
+        if not OPENCTI_AVAILABLE:
+            info["opencti_error"] = "OpenCTI integration requires 'pycti' Python package"
+
+        return info
+
+    except Exception as e:
+        logger.error(f"Failed to get STIX info: {e}")
         raise HTTPException(status_code=500, detail=str(e))

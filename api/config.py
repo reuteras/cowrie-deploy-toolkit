@@ -33,6 +33,13 @@ class Config:
     VIRUSTOTAL_API_KEY: str = os.getenv("VIRUSTOTAL_API_KEY", "")
     ABUSEIPDB_API_KEY: str = os.getenv("ABUSEIPDB_API_KEY", "")
 
+    # OpenCTI integration
+    OPENCTI_URL: str = os.getenv("OPENCTI_URL", "")
+    OPENCTI_API_KEY: str = os.getenv("OPENCTI_API_KEY", "")
+    OPENCTI_SSL_VERIFY: bool = os.getenv("OPENCTI_SSL_VERIFY", "true").lower() == "true"
+    OPENCTI_AUTO_PUSH: bool = os.getenv("OPENCTI_AUTO_PUSH", "false").lower() == "true"
+    OPENCTI_PUSH_THRESHOLD: int = int(os.getenv("OPENCTI_PUSH_THRESHOLD", "70"))
+
     # API settings
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
