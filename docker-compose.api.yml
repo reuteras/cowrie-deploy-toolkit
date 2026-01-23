@@ -11,13 +11,13 @@ services:
       - cowrie-cache:/cowrie-cache
       # No local Cowrie data - connects to remote servers via network
     environment:
-      # API-only configuration (no local Cowrie data)
-      - COWRIE_DB_PATH=/dev/null  # No local Cowrie database
+      # Remote database configuration
+      - COWRIE_DB_PATH=/remote-cowrie-data/cowrie.db
       - CLUSTERING_DB_PATH=/cowrie-cache/clustering.db
       - LOG_LEVEL=${API_LOG_LEVEL:-INFO}
       # Optional OpenCTI integration
       - OPENCTI_URL=${OPENCTI_URL:-}
-       - OPENCTI_API_KEY=${OPENCTI_API_KEY:-}
+      - OPENCTI_API_KEY=${OPENCTI_API_KEY:-}
       - OPENCTI_SSL_VERIFY=${OPENCTI_SSL_VERIFY:-true}
       - OPENCTI_AUTO_PUSH=${OPENCTI_AUTO_PUSH:-false}
       - OPENCTI_PUSH_THRESHOLD=${OPENCTI_PUSH_THRESHOLD:-70}
