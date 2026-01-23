@@ -2698,6 +2698,23 @@ def cluster_detail(cluster_id: str):
     )
 
 
+def get_local_api_url():
+    """Get the local API URL for clustering operations.
+
+    Works in both single-source and multi-source modes.
+    Clustering is always done on the local honeypot's data.
+    """
+    # In multi-source mode, use the hardcoded local API URL
+    if session_parser is not None:
+        return "http://cowrie-api:8000"
+
+    # In single-source mode, use the datasource's API URL
+    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+        return datasource.api_base_url
+
+    return None
+
+
 @app.route("/api/clusters-data")
 def clusters_data():
     """API endpoint for fetching clusters data."""
@@ -2707,8 +2724,9 @@ def clusters_data():
     cluster_type = request.args.get("cluster_type", "")
     limit = request.args.get("limit", 100, type=int)
 
-    # Forward to the API if available
-    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+    # Forward to the local API
+    api_url = get_local_api_url()
+    if api_url:
         try:
             import requests as req
 
@@ -2722,7 +2740,7 @@ def clusters_data():
                 params["cluster_type"] = cluster_type
 
             response = req.get(
-                f"{datasource.api_base_url}/api/v1/clusters",
+                f"{api_url}/api/v1/clusters",
                 params=params,
                 timeout=30,
             )
@@ -2738,13 +2756,13 @@ def clusters_data():
 @app.route("/api/cluster/<cluster_id>")
 def cluster_detail_data(cluster_id: str):
     """API endpoint for fetching single cluster details."""
-    # Forward to the API if available
-    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+    api_url = get_local_api_url()
+    if api_url:
         try:
             import requests as req
 
             response = req.get(
-                f"{datasource.api_base_url}/api/v1/clusters/{cluster_id}",
+                f"{api_url}/api/v1/clusters/{cluster_id}",
                 timeout=30,
             )
             if response.ok:
@@ -2763,13 +2781,13 @@ def clusters_analyze():
     days = request.args.get("days", 7, type=int)
     min_size = request.args.get("min_size", 2, type=int)
 
-    # Forward to the API if available
-    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+    api_url = get_local_api_url()
+    if api_url:
         try:
             import requests as req
 
             response = req.post(
-                f"{datasource.api_base_url}/api/v1/clusters/analyze",
+                f"{api_url}/api/v1/clusters/analyze",
                 params={"days": days, "min_size": min_size},
                 timeout=120,  # Analysis can take time
             )
@@ -2784,13 +2802,13 @@ def clusters_analyze():
 @app.route("/api/ip-intel/<ip>")
 def ip_intel(ip: str):
     """API endpoint for fetching IP threat intelligence."""
-    # Forward to the API if available
-    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+    api_url = get_local_api_url()
+    if api_url:
         try:
             import requests as req
 
             response = req.get(
-                f"{datasource.api_base_url}/api/v1/intel/ip/{ip}",
+                f"{api_url}/api/v1/intel/ip/{ip}",
                 timeout=30,
             )
             if response.ok:
@@ -2806,13 +2824,13 @@ def clusters_diagnose():
     """API endpoint for diagnosing clustering issues."""
     days = request.args.get("days", 7, type=int)
 
-    # Forward to the API if available
-    if datasource and hasattr(datasource, "api_base_url") and datasource.api_base_url:
+    api_url = get_local_api_url()
+    if api_url:
         try:
             import requests as req
 
             response = req.get(
-                f"{datasource.api_base_url}/api/v1/clusters/diagnose",
+                f"{api_url}/api/v1/clusters/diagnose",
                 params={"days": days},
                 timeout=30,
             )
