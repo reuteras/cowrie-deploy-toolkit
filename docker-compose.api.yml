@@ -12,11 +12,18 @@ services:
       - cowrie-var:/remote-cowrie-data
       # Mount local code for testing fixes
       - ./api:/app
+      # Metadata from Cowrie container
+      - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
     environment:
       # Remote database configuration
       - COWRIE_DB_PATH=/remote-cowrie-data/lib/cowrie/cowrie.db
+      - COWRIE_LOG_PATH=/remote-cowrie-data/log/cowrie/cowrie.log
       - CLUSTERING_DB_PATH=/cowrie-cache/clustering.db
       - LOG_LEVEL=${API_LOG_LEVEL:-INFO}
+      # System info (replaced by deploy script)
+      - SERVER_IP=SERVER_IP_PLACEHOLDER
+      - HONEYPOT_HOSTNAME=HONEYPOT_HOSTNAME_PLACEHOLDER
+      - COWRIE_METADATA_PATH=/cowrie-metadata/metadata.json
       # Optional OpenCTI integration
       - OPENCTI_URL=${OPENCTI_URL:-}
       - OPENCTI_API_KEY=${OPENCTI_API_KEY:-}

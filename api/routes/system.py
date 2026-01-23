@@ -22,10 +22,14 @@ def get_cowrie_version_from_log():
         Version string or None if not found
     """
     # Try cowrie.log (text format, contains version line)
+    # First try env var, then fallback paths
     log_paths = [
+        os.getenv("COWRIE_LOG_PATH", ""),
+        "/remote-cowrie-data/log/cowrie/cowrie.log",
         "/cowrie/cowrie-git/var/log/cowrie/cowrie.log",
         "/var/lib/docker/volumes/cowrie-var/_data/log/cowrie/cowrie.log",
     ]
+    log_paths = [p for p in log_paths if p]  # Remove empty strings
 
     for log_path in log_paths:
         if not os.path.exists(log_path):
