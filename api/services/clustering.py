@@ -247,7 +247,7 @@ class ClusteringService:
             Dict with statistics about fingerprints found
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Read from source database
         source_conn = self._get_source_connection()
@@ -321,7 +321,7 @@ class ClusteringService:
             Dict with statistics about HASSH fingerprints found
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Read from source database
         source_conn = self._get_source_connection()
@@ -333,13 +333,14 @@ class ClusteringService:
             source_conn.close()
             return {"error": "Events table not found", "sessions_processed": 0}
 
-        # Get KEX events (cowrie.client.kex contains HASSH data)
+        # Get KEX events (cowrie.client.kex contains HASSH data) with session IPs
         source_cursor.execute(
             """
-            SELECT session, src_ip, timestamp, data
-            FROM events
-            WHERE eventid = 'cowrie.client.kex'
-            AND timestamp >= ?
+            SELECT e.session, s.ip as src_ip, e.timestamp, e.data
+            FROM events e
+            JOIN sessions s ON e.session = s.id
+            WHERE e.eventid = 'cowrie.client.kex'
+            AND e.timestamp >= ?
             """,
             (cutoff_str,),
         )
@@ -432,7 +433,7 @@ class ClusteringService:
             List of cluster dicts
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # First, ensure fingerprints are extracted
         self.extract_command_fingerprints(days)
@@ -586,7 +587,7 @@ class ClusteringService:
             List of cluster dicts
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # First, ensure HASSH fingerprints are extracted
         self.extract_hassh_from_events(days)
@@ -708,11 +709,17 @@ class ClusteringService:
             List of cluster dicts
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Read from source database
         source_conn = self._get_source_connection()
         source_cursor = source_conn.cursor()
+
+        # Check if downloads table exists
+        source_cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='downloads'")
+        if not source_cursor.fetchone():
+            source_conn.close()
+            return []
 
         # Group downloads by SHA256 (reading from source DB)
         source_cursor.execute(
@@ -874,7 +881,7 @@ class ClusteringService:
         cursor = conn.cursor()
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         query = """
             SELECT
@@ -1054,7 +1061,7 @@ class ClusteringService:
         Returns detailed info about what data is available for clustering.
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         result = {
             "db_path": self.source_db_path,

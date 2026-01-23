@@ -142,13 +142,25 @@ async def trigger_cluster_analysis(
         results = {"days": days, "min_size": min_size}
 
         if types_to_run is None or "command" in types_to_run:
-            results["command_clusters"] = service.build_command_clusters(days, min_size)
+            try:
+                results["command_clusters"] = service.build_command_clusters(days, min_size)
+            except Exception as e:
+                logger.warning(f"Command clustering failed: {e}")
+                results["command_clusters"] = []
 
         if types_to_run is None or "hassh" in types_to_run:
-            results["hassh_clusters"] = service.build_hassh_clusters(days, min_size)
+            try:
+                results["hassh_clusters"] = service.build_hassh_clusters(days, min_size)
+            except Exception as e:
+                logger.warning(f"HASSH clustering failed: {e}")
+                results["hassh_clusters"] = []
 
         if types_to_run is None or "payload" in types_to_run:
-            results["payload_clusters"] = service.build_payload_clusters(days, min_size)
+            try:
+                results["payload_clusters"] = service.build_payload_clusters(days, min_size)
+            except Exception as e:
+                logger.warning(f"Payload clustering failed: {e}")
+                results["payload_clusters"] = []
 
         # Summary
         results["summary"] = {

@@ -1,7 +1,7 @@
 ---
 services:
   cowrie-api:
-    image: ghcr.io/reuteras/cowrie-api:latest
+    image: ghcr.io/reuteras/cowrie-api:fixed-1769158636
     container_name: cowrie-api
     restart: unless-stopped
     networks:
@@ -9,7 +9,7 @@ services:
     volumes:
       # Writable cache for API processing only
       - cowrie-cache:/cowrie-cache
-      # No local Cowrie data - connects to remote servers via network
+      - remote-cowrie-data:/remote-cowrie-data
     environment:
       # Remote database configuration
       - COWRIE_DB_PATH=/remote-cowrie-data/cowrie.db
@@ -25,6 +25,7 @@ services:
       - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
       - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
     # Security hardening
+    user: "1000:1000"
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -50,3 +51,5 @@ volumes:
     name: cowrie-etc
   cowrie-cache:
     name: cowrie-cache
+  remote-cowrie-data:
+    name: remote-cowrie-data
