@@ -16,6 +16,9 @@ class Config:
     COWRIE_SHARE_PATH: str = os.getenv("COWRIE_SHARE_PATH", "/cowrie-data/share/cowrie")
     COWRIE_DB_PATH: str = os.getenv("COWRIE_DB_PATH", "/cowrie/cowrie-git/var/lib/cowrie/cowrie.db")
 
+    # Clustering database (writable, for storing clustering results)
+    CLUSTERING_DB_PATH: str = os.getenv("CLUSTERING_DB_PATH", "/cowrie-cache/clustering.db")
+
     # GeoIP databases
     GEOIP_CITY_DB: str = os.getenv("GEOIP_CITY_DB", "/geoip/GeoLite2-City.mmdb")
     GEOIP_ASN_DB: str = os.getenv("GEOIP_ASN_DB", "/geoip/GeoLite2-ASN.mmdb")

@@ -19,6 +19,7 @@ services:
     environment:
        - COWRIE_LOG_PATH=/cowrie/cowrie-git/var/log/cowrie/cowrie.json
        - COWRIE_DB_PATH=/cowrie/cowrie-git/var/lib/cowrie/cowrie.db
+       - CLUSTERING_DB_PATH=/cowrie-cache/clustering.db
        - COWRIE_TTY_PATH=/cowrie/cowrie-git/var/lib/cowrie/tty
        - COWRIE_DOWNLOADS_PATH=/cowrie/cowrie-git/var/lib/cowrie/downloads
        - COWRIE_SHARE_PATH=/cowrie/cowrie-git/var/share/cowrie

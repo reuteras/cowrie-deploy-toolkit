@@ -24,21 +24,36 @@ logger = logging.getLogger(__name__)
 class ClusteringService:
     """Service for clustering attack sessions by various attributes."""
 
-    def __init__(self, db_path: str):
+    def __init__(self, source_db_path: str, clustering_db_path: Optional[str] = None):
         """
         Initialize clustering service.
 
         Args:
-            db_path: Path to the Cowrie SQLite database
+            source_db_path: Path to the Cowrie SQLite database (read-only source data)
+            clustering_db_path: Path to clustering database (writable, for storing results)
+                              If None, defaults to source_db_path + "_clustering.db"
         """
-        self.db_path = db_path
+        self.source_db_path = source_db_path
+        self.clustering_db_path = clustering_db_path or source_db_path.replace(".db", "_clustering.db")
+        logger.info(f"Clustering service: source={self.source_db_path}, clustering={self.clustering_db_path}")
         self._ensure_tables()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get a database connection with row factory."""
-        conn = sqlite3.connect(self.db_path)
+    def _get_source_connection(self) -> sqlite3.Connection:
+        """Get a read-only connection to the source Cowrie database."""
+        # Open in read-only mode using URI
+        conn = sqlite3.connect(f"file:{self.source_db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def _get_clustering_connection(self) -> sqlite3.Connection:
+        """Get a writable connection to the clustering database."""
+        conn = sqlite3.connect(self.clustering_db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get a connection to the clustering database (for backward compatibility)."""
+        return self._get_clustering_connection()
 
     def _ensure_tables(self):
         """Ensure clustering tables exist."""
@@ -108,6 +123,19 @@ class ClusteringService:
             )
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_cluster_members_ip ON cluster_members(src_ip)")
+
+        # Create cluster_enrichment table for threat intel data
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cluster_enrichment (
+                cluster_id TEXT PRIMARY KEY,
+                threat_families TEXT,
+                top_asns TEXT,
+                countries TEXT,
+                threat_score INTEGER DEFAULT 0,
+                tags TEXT,
+                enriched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
         conn.commit()
         conn.close()
@@ -183,14 +211,15 @@ class ClusteringService:
         Returns:
             Dict with statistics about fingerprints found
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
 
+        # Read from source database
+        source_conn = self._get_source_connection()
+        source_cursor = source_conn.cursor()
+
         # Get sessions with commands
-        cursor.execute(
+        source_cursor.execute(
             """
             SELECT session, GROUP_CONCAT(input, '|||') as commands
             FROM input
@@ -201,8 +230,15 @@ class ClusteringService:
             (cutoff_str,),
         )
 
+        rows = source_cursor.fetchall()
+        source_conn.close()
+
+        # Write to clustering database
+        cluster_conn = self._get_clustering_connection()
+        cluster_cursor = cluster_conn.cursor()
+
         fingerprints = {}
-        for row in cursor.fetchall():
+        for row in rows:
             session_id = row["session"]
             commands = row["commands"].split("|||") if row["commands"] else []
 
@@ -210,8 +246,8 @@ class ClusteringService:
                 fp = self.fingerprint_commands(commands)
                 normalized = [self.normalize_command(c) for c in commands]
 
-                # Store fingerprint
-                cursor.execute(
+                # Store fingerprint in clustering database
+                cluster_cursor.execute(
                     """
                     INSERT OR REPLACE INTO command_fingerprints
                     (session, fingerprint, normalized_commands, command_count, created_at)
@@ -222,8 +258,8 @@ class ClusteringService:
 
                 fingerprints[session_id] = fp
 
-        conn.commit()
-        conn.close()
+        cluster_conn.commit()
+        cluster_conn.close()
 
         # Count unique fingerprints
         fp_counts = Counter(fingerprints.values())
@@ -249,22 +285,23 @@ class ClusteringService:
         Returns:
             Dict with statistics about HASSH fingerprints found
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
 
+        # Read from source database
+        source_conn = self._get_source_connection()
+        source_cursor = source_conn.cursor()
+
         # Check if events table exists
-        cursor.execute(
+        source_cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='events'"
         )
-        if not cursor.fetchone():
-            conn.close()
+        if not source_cursor.fetchone():
+            source_conn.close()
             return {"error": "Events table not found", "sessions_processed": 0}
 
         # Get KEX events (cowrie.client.kex contains HASSH data)
-        cursor.execute(
+        source_cursor.execute(
             """
             SELECT session, src_ip, timestamp, data
             FROM events
@@ -274,8 +311,15 @@ class ClusteringService:
             (cutoff_str,),
         )
 
+        rows = source_cursor.fetchall()
+        source_conn.close()
+
+        # Write to clustering database
+        cluster_conn = self._get_clustering_connection()
+        cluster_cursor = cluster_conn.cursor()
+
         hassh_data = {}
-        for row in cursor.fetchall():
+        for row in rows:
             try:
                 event = json.loads(row["data"])
                 session_id = row["session"]
@@ -300,8 +344,8 @@ class ClusteringService:
                         hassh = hashlib.md5(hassh_input.encode()).hexdigest()
 
                 if hassh:
-                    # Store HASSH fingerprint
-                    cursor.execute(
+                    # Store HASSH fingerprint in clustering database
+                    cluster_cursor.execute(
                         """
                         INSERT OR REPLACE INTO hassh_fingerprints
                         (session, hassh, kex_algorithms, encryption_algorithms,
@@ -328,8 +372,8 @@ class ClusteringService:
                 logger.debug(f"Failed to parse KEX event: {e}")
                 continue
 
-        conn.commit()
-        conn.close()
+        cluster_conn.commit()
+        cluster_conn.close()
 
         # Count unique HASSH values
         hassh_counts = Counter(d["hassh"] for d in hassh_data.values())
@@ -354,45 +398,61 @@ class ClusteringService:
         Returns:
             List of cluster dicts
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
 
         # First, ensure fingerprints are extracted
         self.extract_command_fingerprints(days)
 
-        # Group sessions by fingerprint with IP info
-        cursor.execute(
-            """
-            SELECT
-                cf.fingerprint,
-                cf.session,
-                cf.normalized_commands,
-                cf.command_count,
-                s.ip as src_ip,
-                s.starttime as timestamp
-            FROM command_fingerprints cf
-            JOIN sessions s ON cf.session = s.id
-            WHERE s.starttime >= ?
-            AND cf.fingerprint != 'empty'
-            """,
-            (cutoff_str,),
-        )
+        # Get fingerprints from clustering DB
+        cluster_conn = self._get_clustering_connection()
+        cluster_cursor = cluster_conn.cursor()
 
-        # Group by fingerprint
-        clusters = defaultdict(list)
-        for row in cursor.fetchall():
-            clusters[row["fingerprint"]].append(
-                {
-                    "session": row["session"],
-                    "src_ip": row["src_ip"],
-                    "timestamp": row["timestamp"],
-                    "commands": row["normalized_commands"],
-                    "command_count": row["command_count"],
-                }
+        cluster_cursor.execute(
+            """
+            SELECT session, fingerprint, normalized_commands, command_count
+            FROM command_fingerprints
+            WHERE fingerprint != 'empty'
+            """
+        )
+        fingerprint_data = {row["session"]: dict(row) for row in cluster_cursor.fetchall()}
+
+        # Get session info from source DB
+        source_conn = self._get_source_connection()
+        source_cursor = source_conn.cursor()
+
+        # Get sessions with their IPs
+        if fingerprint_data:
+            placeholders = ",".join("?" * len(fingerprint_data))
+            source_cursor.execute(
+                f"""
+                SELECT id, ip, starttime
+                FROM sessions
+                WHERE id IN ({placeholders})
+                AND starttime >= ?
+                """,
+                list(fingerprint_data.keys()) + [cutoff_str],
             )
+        else:
+            source_cursor.execute("SELECT id, ip, starttime FROM sessions WHERE 1=0")
+
+        session_info = {row["id"]: dict(row) for row in source_cursor.fetchall()}
+        source_conn.close()
+
+        # Merge fingerprint data with session info and group by fingerprint
+        clusters = defaultdict(list)
+        for session_id, fp_data in fingerprint_data.items():
+            if session_id in session_info:
+                sess = session_info[session_id]
+                clusters[fp_data["fingerprint"]].append(
+                    {
+                        "session": session_id,
+                        "src_ip": sess["ip"],
+                        "timestamp": sess["starttime"],
+                        "commands": fp_data["normalized_commands"],
+                        "command_count": fp_data["command_count"],
+                    }
+                )
 
         # Filter to minimum size and create cluster records
         result_clusters = []
@@ -417,8 +477,8 @@ class ClusteringService:
 
             cluster_id = f"cmd-{fingerprint}"
 
-            # Store cluster
-            cursor.execute(
+            # Store cluster in clustering database
+            cluster_cursor.execute(
                 """
                 INSERT OR REPLACE INTO attack_clusters
                 (cluster_id, cluster_type, fingerprint, name, description,
@@ -447,7 +507,7 @@ class ClusteringService:
 
             for ip, ip_sess in ip_sessions.items():
                 ip_timestamps = [s["timestamp"] for s in ip_sess if s["timestamp"]]
-                cursor.execute(
+                cluster_cursor.execute(
                     """
                     INSERT OR REPLACE INTO cluster_members
                     (cluster_id, src_ip, first_seen, last_seen, session_count, metadata)
@@ -476,8 +536,8 @@ class ClusteringService:
                 }
             )
 
-        conn.commit()
-        conn.close()
+        cluster_conn.commit()
+        cluster_conn.close()
 
         return sorted(result_clusters, key=lambda x: x["size"], reverse=True)
 
@@ -492,17 +552,17 @@ class ClusteringService:
         Returns:
             List of cluster dicts
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
 
         # First, ensure HASSH fingerprints are extracted
         self.extract_hassh_from_events(days)
 
-        # Group by HASSH
-        cursor.execute(
+        # Get HASSH fingerprints from clustering DB (already contains src_ip from extraction)
+        cluster_conn = self._get_clustering_connection()
+        cluster_cursor = cluster_conn.cursor()
+
+        cluster_cursor.execute(
             """
             SELECT
                 hassh,
@@ -517,7 +577,7 @@ class ClusteringService:
         )
 
         clusters = defaultdict(list)
-        for row in cursor.fetchall():
+        for row in cluster_cursor.fetchall():
             clusters[row["hassh"]].append(
                 {
                     "session": row["session"],
@@ -540,8 +600,8 @@ class ClusteringService:
 
             cluster_id = f"hassh-{hassh[:16]}"
 
-            # Store cluster
-            cursor.execute(
+            # Store cluster in clustering database
+            cluster_cursor.execute(
                 """
                 INSERT OR REPLACE INTO attack_clusters
                 (cluster_id, cluster_type, fingerprint, name, description,
@@ -570,7 +630,7 @@ class ClusteringService:
 
             for ip, ip_sess in ip_sessions.items():
                 ip_timestamps = [s["timestamp"] for s in ip_sess if s["timestamp"]]
-                cursor.execute(
+                cluster_cursor.execute(
                     """
                     INSERT OR REPLACE INTO cluster_members
                     (cluster_id, src_ip, first_seen, last_seen, session_count, metadata)
@@ -598,8 +658,8 @@ class ClusteringService:
                 }
             )
 
-        conn.commit()
-        conn.close()
+        cluster_conn.commit()
+        cluster_conn.close()
 
         return sorted(result_clusters, key=lambda x: x["size"], reverse=True)
 
@@ -614,14 +674,15 @@ class ClusteringService:
         Returns:
             List of cluster dicts
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
 
-        # Group downloads by SHA256
-        cursor.execute(
+        # Read from source database
+        source_conn = self._get_source_connection()
+        source_cursor = source_conn.cursor()
+
+        # Group downloads by SHA256 (reading from source DB)
+        source_cursor.execute(
             """
             SELECT
                 d.shasum,
@@ -642,7 +703,7 @@ class ClusteringService:
         )
 
         clusters = defaultdict(list)
-        for row in cursor.fetchall():
+        for row in source_cursor.fetchall():
             clusters[row["shasum"]].append(
                 {
                     "session": row["session"],
@@ -653,6 +714,12 @@ class ClusteringService:
                     "vt_detections": row["vt_detections"],
                 }
             )
+
+        source_conn.close()
+
+        # Write results to clustering database
+        cluster_conn = self._get_clustering_connection()
+        cluster_cursor = cluster_conn.cursor()
 
         # Filter and create cluster records
         result_clusters = []
@@ -678,7 +745,7 @@ class ClusteringService:
             # Calculate score based on VT detections and cluster size
             score = min(100, (vt_detections * 2) + (len(unique_ips) * 5))
 
-            cursor.execute(
+            cluster_cursor.execute(
                 """
                 INSERT OR REPLACE INTO attack_clusters
                 (cluster_id, cluster_type, fingerprint, name, description,
@@ -714,7 +781,7 @@ class ClusteringService:
 
             for ip, ip_dls in ip_downloads.items():
                 ip_timestamps = [d["timestamp"] for d in ip_dls if d["timestamp"]]
-                cursor.execute(
+                cluster_cursor.execute(
                     """
                     INSERT OR REPLACE INTO cluster_members
                     (cluster_id, src_ip, first_seen, last_seen, session_count, metadata)
@@ -744,8 +811,8 @@ class ClusteringService:
                 }
             )
 
-        conn.commit()
-        conn.close()
+        cluster_conn.commit()
+        cluster_conn.close()
 
         return sorted(result_clusters, key=lambda x: x["score"], reverse=True)
 
@@ -957,20 +1024,26 @@ class ClusteringService:
 
         Returns detailed info about what data is available for clustering.
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
 
         result = {
-            "db_path": self.db_path,
+            "db_path": self.source_db_path,
+            "clustering_db_path": self.clustering_db_path,
             "cutoff": cutoff_str,
             "tables": {},
             "data_counts": {},
             "sample_timestamps": {},
             "issues": [],
         }
+
+        # First check if source database exists and is accessible
+        try:
+            conn = self._get_source_connection()
+            cursor = conn.cursor()
+        except Exception as e:
+            result["issues"].append(f"Cannot connect to source database: {e}")
+            return result
 
         # Check which tables exist
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1028,16 +1101,6 @@ class ClusteringService:
         else:
             result["issues"].append("downloads table not found")
 
-        # Check command_fingerprints table
-        if "command_fingerprints" in tables:
-            cursor.execute("SELECT COUNT(*) as cnt FROM command_fingerprints")
-            result["data_counts"]["fingerprints_stored"] = cursor.fetchone()["cnt"]
-
-            cursor.execute("SELECT COUNT(DISTINCT fingerprint) as cnt FROM command_fingerprints WHERE fingerprint != 'empty'")
-            result["data_counts"]["unique_fingerprints"] = cursor.fetchone()["cnt"]
-        else:
-            result["issues"].append("command_fingerprints table not found - will be created on first run")
-
         # Check for potential timestamp format issues
         if "sessions" in tables:
             cursor.execute("SELECT starttime FROM sessions LIMIT 1")
@@ -1064,4 +1127,33 @@ class ClusteringService:
             result["issues"].append("Less than 2 sessions with commands - minimum for clustering")
 
         conn.close()
+
+        # Check clustering database
+        result["clustering_tables"] = {}
+        try:
+            cluster_conn = self._get_clustering_connection()
+            cluster_cursor = cluster_conn.cursor()
+
+            # Check which tables exist in clustering DB
+            cluster_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            cluster_tables = [row["name"] for row in cluster_cursor.fetchall()]
+            result["clustering_tables"]["existing"] = cluster_tables
+
+            # Check command_fingerprints table
+            if "command_fingerprints" in cluster_tables:
+                cluster_cursor.execute("SELECT COUNT(*) as cnt FROM command_fingerprints")
+                result["data_counts"]["fingerprints_stored"] = cluster_cursor.fetchone()["cnt"]
+
+                cluster_cursor.execute("SELECT COUNT(DISTINCT fingerprint) as cnt FROM command_fingerprints WHERE fingerprint != 'empty'")
+                result["data_counts"]["unique_fingerprints"] = cluster_cursor.fetchone()["cnt"]
+
+            # Check attack_clusters table
+            if "attack_clusters" in cluster_tables:
+                cluster_cursor.execute("SELECT COUNT(*) as cnt FROM attack_clusters")
+                result["data_counts"]["stored_clusters"] = cluster_cursor.fetchone()["cnt"]
+
+            cluster_conn.close()
+        except Exception as e:
+            result["issues"].append(f"Cannot connect to clustering database: {e}")
+
         return result

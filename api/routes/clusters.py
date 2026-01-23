@@ -30,7 +30,10 @@ def get_clustering_service() -> ClusteringService:
     """Get or create clustering service instance."""
     global _clustering_service
     if _clustering_service is None:
-        _clustering_service = ClusteringService(config.COWRIE_DB_PATH)
+        _clustering_service = ClusteringService(
+            source_db_path=config.COWRIE_DB_PATH,
+            clustering_db_path=config.CLUSTERING_DB_PATH,
+        )
     return _clustering_service
 
 
