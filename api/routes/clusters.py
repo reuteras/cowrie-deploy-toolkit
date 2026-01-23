@@ -95,74 +95,8 @@ async def list_clusters(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/clusters/{cluster_id}")
-async def get_cluster_detail(cluster_id: str):
-    """
-    Get detailed information about a specific cluster.
-
-    Returns:
-    - Cluster metadata (type, fingerprint, score, etc.)
-    - Member IPs with per-IP session counts
-    - Enrichment data if available (threat families, ASNs, countries)
-    """
-    try:
-        service = get_clustering_service()
-        cluster = service.get_cluster_detail(cluster_id)
-        if not cluster:
-            raise HTTPException(status_code=404, detail="Cluster not found")
-        return cluster
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get cluster detail: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/clusters/{cluster_id}/members")
-async def get_cluster_members(
-    cluster_id: str,
-    limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
-):
-    """
-    Get members (IPs) of a cluster with threat intelligence.
-    """
-    try:
-        service = get_clustering_service()
-        cluster = service.get_cluster_detail(cluster_id)
-        if not cluster:
-            raise HTTPException(status_code=404, detail="Cluster not found")
-
-        members = cluster.get("members", [])[:limit]
-        return {
-            "cluster_id": cluster_id,
-            "members": members,
-            "total": len(cluster.get("members", [])),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get cluster members: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/ip/{ip}/clusters")
-async def get_ip_clusters(ip: str):
-    """
-    Get all clusters containing a specific IP address.
-
-    Useful for understanding the attack profile of a particular IP.
-    """
-    try:
-        service = get_clustering_service()
-        clusters = service.get_ip_clusters(ip)
-        return {
-            "ip": ip,
-            "clusters": clusters,
-            "total": len(clusters),
-        }
-    except Exception as e:
-        logger.error(f"Failed to get IP clusters: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# NOTE: Static paths (/clusters/diagnose, /clusters/analyze) MUST come before
+# dynamic paths (/clusters/{cluster_id}) to prevent route matching issues
 
 
 @router.get("/clusters/diagnose")
@@ -232,6 +166,76 @@ async def trigger_cluster_analysis(
 
     except Exception as e:
         logger.error(f"Failed to run cluster analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/clusters/{cluster_id}")
+async def get_cluster_detail(cluster_id: str):
+    """
+    Get detailed information about a specific cluster.
+
+    Returns:
+    - Cluster metadata (type, fingerprint, score, etc.)
+    - Member IPs with per-IP session counts
+    - Enrichment data if available (threat families, ASNs, countries)
+    """
+    try:
+        service = get_clustering_service()
+        cluster = service.get_cluster_detail(cluster_id)
+        if not cluster:
+            raise HTTPException(status_code=404, detail="Cluster not found")
+        return cluster
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get cluster detail: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/clusters/{cluster_id}/members")
+async def get_cluster_members(
+    cluster_id: str,
+    limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
+):
+    """
+    Get members (IPs) of a cluster with threat intelligence.
+    """
+    try:
+        service = get_clustering_service()
+        cluster = service.get_cluster_detail(cluster_id)
+        if not cluster:
+            raise HTTPException(status_code=404, detail="Cluster not found")
+
+        members = cluster.get("members", [])[:limit]
+        return {
+            "cluster_id": cluster_id,
+            "members": members,
+            "total": len(cluster.get("members", [])),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get cluster members: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/ip/{ip}/clusters")
+async def get_ip_clusters(ip: str):
+    """
+    Get all clusters containing a specific IP address.
+
+    Useful for understanding the attack profile of a particular IP.
+    """
+    try:
+        service = get_clustering_service()
+        clusters = service.get_ip_clusters(ip)
+        return {
+            "ip": ip,
+            "clusters": clusters,
+            "total": len(clusters),
+        }
+    except Exception as e:
+        logger.error(f"Failed to get IP clusters: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

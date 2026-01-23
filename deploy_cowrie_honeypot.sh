@@ -1742,6 +1742,12 @@ docker network rm cowrie-internal 2>/dev/null || true
 # Include API compose file if API is enabled to avoid network conflicts
 if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
   echo "[remote] API is enabled, including docker-compose.api.yml"
+
+  # Create cowrie-cache volume with correct permissions for API user (UID 1000)
+  echo "[remote] Setting up cowrie-cache volume with correct permissions..."
+  docker volume create cowrie-cache 2>/dev/null || true
+  docker run --rm -v cowrie-cache:/data alpine chown -R 1000:1000 /data
+
   if ! docker compose -f docker-compose.yml -f docker-compose.api.yml up -d 2>&1; then
     echo "[remote] ERROR: Failed to start services. Checking status..."
     docker compose -f docker-compose.yml -f docker-compose.api.yml ps
