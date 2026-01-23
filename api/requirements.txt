@@ -6,3 +6,7 @@ httpx==0.28.1
 python-multipart==0.0.21
 geoip2==5.2.0
 sse-starlette==3.1.2
+
+# Optional dependencies for enhanced features
+stix2>=3.0.0        # STIX 2.1 export (optional)
+pycti>=6.0.0        # OpenCTI integration (optional)

@@ -33,9 +33,15 @@ services:
        - VT_CACHE_DB=/cowrie/cowrie-git/var/cache/vt-cache.db
        - CANARY_WEBHOOKS_DB=/opt-cowrie-data/canary-webhooks.db
        - IPLOCK_DB=/cowrie-data/lib/cowrie/iplock.db
-       - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
-       - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
-       - LOG_LEVEL=${API_LOG_LEVEL:-INFO}
+        - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+        - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
+        - LOG_LEVEL=${API_LOG_LEVEL:-INFO}
+        # Optional OpenCTI integration
+        - OPENCTI_URL=${OPENCTI_URL:-}
+        - OPENCTI_API_KEY=${OPENCTI_API_KEY:-}
+        - OPENCTI_SSL_VERIFY=${OPENCTI_SSL_VERIFY:-true}
+        - OPENCTI_AUTO_PUSH=${OPENCTI_AUTO_PUSH:-false}
+        - OPENCTI_PUSH_THRESHOLD=${OPENCTI_PUSH_THRESHOLD:-70}
     # Security hardening
     security_opt:
       - no-new-privileges:true

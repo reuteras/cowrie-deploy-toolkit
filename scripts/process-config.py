@@ -113,12 +113,26 @@ def generate_env_file(config: dict) -> str:
     email = shared.get("email", config.get("email", {}))
     advanced = shared.get("advanced", config.get("advanced", {}))
 
-    # Paths
+    # Advanced settings (including OpenCTI)
     if advanced:
-        lines.append("# Paths")
+        lines.append("# Advanced Configuration")
+        # Handle OpenCTI settings specifically
+        opencti_keys = [
+            "opencti_enabled",
+            "opencti_url",
+            "opencti_api_key",
+            "opencti_ssl_verify",
+            "opencti_auto_push",
+            "opencti_push_threshold",
+        ]
         for key, value in advanced.items():
-            env_var = key.upper()
-            lines.append(f'export {env_var}="{value}"')
+            if key in opencti_keys:
+                # Convert TOML key to environment variable name
+                env_var = key.upper()
+                lines.append(f'export {env_var}="{value}"')
+            elif key not in opencti_keys:  # Other advanced settings
+                env_var = key.upper()
+                lines.append(f'export {env_var}="{value}"')
         lines.append("")
 
     # VirusTotal

@@ -16,6 +16,9 @@ Deploy realistic [Cowrie](https://github.com/cowrie/cowrie) SSH honeypots on Het
 - **Tailscale VPN** - Zero-trust management access with optional public SSH blocking
 - **Security hardening** - Automatic updates, Docker isolation, capability dropping, read-only containers
 - **Real-time YARA scanning** - Background daemon scans malware as it's downloaded
+- **TTP Clustering** - MITRE ATT&CK technique mapping and behavioral analysis
+- **STIX Export** - Standardized threat intelligence sharing (optional)
+- **OpenCTI Integration** - Centralized threat intelligence platform sync (optional)
 
 ## What's New in v2.1
 
@@ -36,6 +39,70 @@ Deploy realistic [Cowrie](https://github.com/cowrie/cowrie) SSH honeypots on Het
 - Support for different honeypot types (SSH, web, VPN - future)
 - Parallel querying with graceful degradation
 - Source filtering and tagging
+
+## TTP Clustering & Threat Intelligence (New)
+
+**Advanced threat analysis with MITRE ATT&CK mapping, STIX export, and OpenCTI integration.**
+
+### Core Features
+
+- **MITRE ATT&CK Integration** - Maps SSH activities to ATT&CK techniques (T1110 Brute Force, T1003 Credential Dumping, etc.)
+- **Behavioral Analysis** - Detects attack patterns beyond individual commands
+- **Confidence Scoring** - Multi-evidence validation with adjustable thresholds
+- **STIX 2.1 Export** - Standardized threat intelligence sharing (optional)
+- **OpenCTI Sync** - Bidirectional integration with threat intelligence platforms (optional)
+
+### Configuration
+
+**STIX Export**: Automatically enabled when containers are deployed (stix2 package pre-installed)
+- Use `/api/v1/stix/clusters/{id}` and `/api/v1/stix/export` endpoints
+
+**OpenCTI Integration**: Configure in `master-config.toml`:
+
+```toml
+[shared.advanced]
+opencti_enabled = true
+opencti_url = "https://your-opencti-instance.com"
+opencti_api_key = "your-api-key"
+opencti_ssl_verify = true
+opencti_auto_push = false
+opencti_push_threshold = 70
+```
+
+Then set environment variables before deployment:
+
+```bash
+# Generate environment variables from your config
+eval "$(python3 scripts/process-config.py master-config.toml --output env)"
+
+# Or set manually
+export OPENCTI_URL="https://your-opencti-instance.com"
+export OPENCTI_API_KEY="your-api-key"
+export OPENCTI_AUTO_PUSH=false
+export OPENCTI_PUSH_THRESHOLD=70
+```
+
+### API Endpoints
+
+```bash
+# TTP Analysis
+POST /api/v1/clusters/ttp/analyze     # Analyze session for TTPs
+GET  /api/v1/clusters/ttp             # Query TTP clusters
+GET  /api/v1/clusters/ttp/{technique} # Clusters by technique
+GET  /api/v1/intel/ttp/{technique}    # Technique details
+
+# STIX Export (when enabled)
+GET  /api/v1/stix/clusters/{id}       # Export cluster as STIX bundle
+POST /api/v1/stix/export              # Bulk STIX export
+GET  /api/v1/stix/info                # STIX capabilities
+```
+
+### Dashboard Features
+
+- **MITRE ATT&CK Matrix** - Interactive technique visualization (`/mitre-matrix`)
+- **TTP Breakdown** - Technique details in cluster views
+- **Confidence Visualization** - Color-coded threat levels
+- **STIX Export Buttons** - One-click bundle generation
 
 ## Quick Start
 

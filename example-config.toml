@@ -111,6 +111,15 @@ enabled = false
 # Report generation interval (hours)
 report_hours = 24
 
+# OpenCTI Integration (optional, requires pycti package)
+# Set these to enable threat intelligence platform synchronization
+opencti_enabled = false
+opencti_url = ""                    # https://your-opencti-instance.com
+opencti_api_key = ""                # Your OpenCTI API key
+opencti_ssl_verify = true           # Verify SSL certificates
+opencti_auto_push = false           # Auto-sync high-confidence clusters
+opencti_push_threshold = 70         # Minimum cluster score to sync (0-100)
+
 # =============================================================================
 # HONEYPOT DEFINITIONS (Unique settings per honeypot)
 # =============================================================================
