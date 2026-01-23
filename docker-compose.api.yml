@@ -9,10 +9,12 @@ services:
     volumes:
       # Writable cache for API processing only
       - cowrie-cache:/cowrie-cache
-      - remote-cowrie-data:/remote-cowrie-data
+      - cowrie-var:/remote-cowrie-data
+      # Mount local code for testing fixes
+      - ./api:/app
     environment:
       # Remote database configuration
-      - COWRIE_DB_PATH=/remote-cowrie-data/cowrie.db
+      - COWRIE_DB_PATH=/remote-cowrie-data/lib/cowrie/cowrie.db
       - CLUSTERING_DB_PATH=/cowrie-cache/clustering.db
       - LOG_LEVEL=${API_LOG_LEVEL:-INFO}
       # Optional OpenCTI integration
@@ -51,5 +53,3 @@ volumes:
     name: cowrie-etc
   cowrie-cache:
     name: cowrie-cache
-  remote-cowrie-data:
-    name: remote-cowrie-data
