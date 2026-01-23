@@ -390,12 +390,17 @@ async def cleanup_threat_intel_cache():
 
 
 @router.post("/clusters/ttp/analyze")
-async def analyze_session_ttp(session_id: str = Query(..., description="Session ID to analyze for TTPs")):
+async def analyze_session_ttp(request: dict):
     """
     Analyze TTPs for a specific session and store fingerprint.
 
+    Request body should contain: {"session_id": "session-id-here"}
+
     Returns TTP analysis results including extracted techniques and confidence scores.
     """
+    session_id = request.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required in request body")
     try:
         service = get_clustering_service()
         result = service.analyze_session_ttps(session_id)
