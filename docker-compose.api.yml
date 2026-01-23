@@ -7,41 +7,23 @@ services:
     networks:
       - cowrie-internal
     volumes:
-      # Read-only access to Cowrie data
-      - cowrie-var:/cowrie/cowrie-git/var:ro
-      - cowrie-etc:/cowrie-etc:ro
-      # Writable cache for API processing
+      # Writable cache for API processing only
       - cowrie-cache:/cowrie-cache
-      - /opt/cowrie/var:/opt-cowrie-data:ro
-      - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
-      - /opt/cowrie/identity:/identity:ro
-      - /var/lib/GeoIP:/geoip:ro
+      # No local Cowrie data - connects to remote servers via network
     environment:
-      - COWRIE_LOG_PATH=/cowrie/cowrie-git/var/log/cowrie/cowrie.json
-      - COWRIE_DB_PATH=/cowrie/cowrie-git/var/lib/cowrie/cowrie.db
+      # API-only configuration (no local Cowrie data)
+      - COWRIE_DB_PATH=/dev/null  # No local Cowrie database
       - CLUSTERING_DB_PATH=/cowrie-cache/clustering.db
-      - COWRIE_TTY_PATH=/cowrie/cowrie-git/var/lib/cowrie/tty
-      - COWRIE_DOWNLOADS_PATH=/cowrie/cowrie-git/var/lib/cowrie/downloads
-      - COWRIE_SHARE_PATH=/cowrie/cowrie-git/var/share/cowrie
-      - COWRIE_METADATA_PATH=/cowrie-metadata/metadata.json
-      - IDENTITY_PATH=/identity
-      - SERVER_IP=SERVER_IP_PLACEHOLDER
-      - HONEYPOT_HOSTNAME=HONEYPOT_HOSTNAME_PLACEHOLDER
-      - GEOIP_CITY_DB=/geoip/GeoLite2-City.mmdb
-      - GEOIP_ASN_DB=/geoip/GeoLite2-ASN.mmdb
-      - YARA_CACHE_DB=/cowrie/cowrie-git/var/cache/yara-cache.db
-      - VT_CACHE_DB=/cowrie/cowrie-git/var/cache/vt-cache.db
-      - CANARY_WEBHOOKS_DB=/opt-cowrie-data/canary-webhooks.db
-      - IPLOCK_DB=/cowrie-data/lib/cowrie/iplock.db
-      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
-      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
       - LOG_LEVEL=${API_LOG_LEVEL:-INFO}
       # Optional OpenCTI integration
       - OPENCTI_URL=${OPENCTI_URL:-}
-      - OPENCTI_API_KEY=${OPENCTI_API_KEY:-}
+       - OPENCTI_API_KEY=${OPENCTI_API_KEY:-}
       - OPENCTI_SSL_VERIFY=${OPENCTI_SSL_VERIFY:-true}
       - OPENCTI_AUTO_PUSH=${OPENCTI_AUTO_PUSH:-false}
       - OPENCTI_PUSH_THRESHOLD=${OPENCTI_PUSH_THRESHOLD:-70}
+      # Optional threat intelligence
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
     # Security hardening
     security_opt:
       - no-new-privileges:true
