@@ -1,7 +1,7 @@
 ---
 services:
   cowrie-api:
-    image: ghcr.io/reuteras/cowrie-api:fixed-1769158636
+    image: ghcr.io/reuteras/cowrie-api:latest
     container_name: cowrie-api
     restart: unless-stopped
     networks:
