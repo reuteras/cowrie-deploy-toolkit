@@ -14,6 +14,8 @@ services:
       - ./api:/app
       # Metadata from Cowrie container
       - /opt/cowrie/metadata.json:/cowrie-metadata/metadata.json:ro
+      # GeoIP databases for country/ASN enrichment
+      - /var/lib/GeoIP:/geoip:ro
     environment:
       # Remote database configuration
       - COWRIE_DB_PATH=/remote-cowrie-data/lib/cowrie/cowrie.db
