@@ -404,10 +404,24 @@ async def analyze_session_ttp(request: dict):
     try:
         service = get_clustering_service()
         result = service.analyze_session_ttps(session_id)
+
+        # Check if TTP service is properly initialized
+        if not result.get("ttps_found", 0) > 0 and "MITRE" in str(result):
+            raise HTTPException(
+                status_code=503,
+                detail="TTP analysis service not fully initialized. MITRE ATT&CK database may still be loading.",
+            )
+
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to analyze session TTPs: {e}")
+        if "no such table" in str(e):
+            raise HTTPException(
+                status_code=503, detail="TTP analysis database not ready. Please try again in a few moments."
+            )
         raise HTTPException(status_code=500, detail=str(e))
 
 

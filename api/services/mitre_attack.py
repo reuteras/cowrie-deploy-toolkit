@@ -29,15 +29,42 @@ class MITREAttackService:
 
     def _ensure_database(self):
         """Ensure MITRE ATT&CK database exists and is populated."""
-        if not Path(self.db_path).exists():
+        db_needs_creation = not Path(self.db_path).exists()
+
+        if db_needs_creation:
             logger.info(f"Creating MITRE ATT&CK database at {self.db_path}")
+        else:
+            # Check if required tables exist
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='techniques'")
+                table_exists = cursor.fetchone()
+                conn.close()
+
+                if not table_exists:
+                    logger.warning(f"MITRE database exists but tables missing. Recreating at {self.db_path}")
+                    db_needs_creation = True
+                    # Remove corrupted database
+                    Path(self.db_path).unlink(missing_ok=True)
+                else:
+                    logger.info(f"MITRE ATT&CK database already exists and is valid at {self.db_path}")
+            except Exception as e:
+                logger.warning(f"Error checking MITRE database integrity: {e}. Recreating.")
+                Path(self.db_path).unlink(missing_ok=True)
+                db_needs_creation = True
+
+        if db_needs_creation:
             self._create_schema()
             self._populate_database()
-        else:
-            logger.info(f"MITRE ATT&CK database already exists at {self.db_path}")
+            logger.info(f"MITRE ATT&CK database created successfully at {self.db_path}")
 
     def _create_schema(self):
         """Create the MITRE ATT&CK database schema."""
+        # Ensure directory exists
+        db_dir = Path(self.db_path).parent
+        db_dir.mkdir(parents=True, exist_ok=True)
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 

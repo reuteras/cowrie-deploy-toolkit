@@ -30,22 +30,43 @@ class TTPExtractionService:
             mitre_db_path: Path to MITRE ATT&CK database
         """
         self.source_db_path = source_db_path
-        self.mitre_service = MITREAttackService(mitre_db_path)
+        self.mitre_db_path = mitre_db_path
 
-        # Load TTP patterns into memory for performance
-        self.ttp_patterns = self._load_ttp_patterns()
-
-        logger.info(f"TTP Extraction Service initialized with {len(self.ttp_patterns)} patterns")
+        try:
+            self.mitre_service = MITREAttackService(mitre_db_path)
+            # Load TTP patterns into memory for performance
+            self.ttp_patterns = self._load_ttp_patterns()
+            self.initialized = True
+            logger.info(f"TTP Extraction Service initialized with {len(self.ttp_patterns)} patterns")
+        except Exception as e:
+            logger.error(f"Failed to initialize MITRE ATT&CK service: {e}")
+            self.mitre_service = None
+            self.ttp_patterns = {}
+            self.initialized = False
 
     def _load_ttp_patterns(self) -> Dict[str, List[dict]]:
         """Load TTP patterns from MITRE database into memory."""
-        patterns = defaultdict(list)
+        if not self.initialized or not self.mitre_service:
+            logger.warning("MITRE service not available, loading fallback patterns")
+            return self._get_fallback_patterns()
 
-        for pattern in self.mitre_service.get_ttp_patterns():
-            technique_id = pattern["technique_id"]
-            patterns[technique_id].append(pattern)
+        try:
+            patterns = defaultdict(list)
+            for pattern in self.mitre_service.get_ttp_patterns():
+                technique_id = pattern["technique_id"]
+                patterns[technique_id].append(pattern)
+            return dict(patterns)
+        except Exception as e:
+            logger.error(f"Failed to load TTP patterns: {e}")
+            return self._get_fallback_patterns()
 
-        return dict(patterns)
+    def _get_fallback_patterns(self) -> Dict[str, List[dict]]:
+        """Provide basic fallback TTP patterns when MITRE DB is unavailable."""
+        return {
+            "T1110": [{"pattern_type": "command", "pattern_data": ".*ssh.*", "confidence_weight": 0.5}],
+            "T1003": [{"pattern_type": "command", "pattern_data": ".*shadow.*", "confidence_weight": 0.7}],
+            "T1083": [{"pattern_type": "command", "pattern_data": ".*ls.*", "confidence_weight": 0.4}],
+        }
 
     def _get_source_connection(self) -> sqlite3.Connection:
         """Get read-only connection to Cowrie database."""
@@ -413,9 +434,23 @@ class TTPExtractionService:
 
     def _get_tactic_for_technique(self, technique_id: str) -> str:
         """Get the tactic ID for a technique."""
-        technique = self.mitre_service.get_technique(technique_id)
-        return technique["tactic_id"] if technique else "unknown"
+        if not self.initialized or not self.mitre_service:
+            return "unknown"
+        try:
+            if self.mitre_service:
+                technique = self.mitre_service.get_technique(technique_id)
+                return technique["tactic_id"] if technique else "unknown"
+            else:
+                return "unknown"
+        except Exception:
+            return "unknown"
 
     def get_technique_details(self, technique_id: str) -> Optional[dict]:
         """Get detailed information about a technique."""
-        return self.mitre_service.get_technique(technique_id)
+        if not self.initialized or not self.mitre_service:
+            return None
+        try:
+            return self.mitre_service.get_technique(technique_id)
+        except Exception as e:
+            logger.error(f"Failed to get technique details for {technique_id}: {e}")
+            return None
