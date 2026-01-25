@@ -1743,6 +1743,13 @@ docker network rm cowrie-internal 2>/dev/null || true
 if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
   echo "[remote] API is enabled, including docker-compose.api.yml"
 
+  # Source report.env to get OpenCTI and other API environment variables
+  if [ -f /opt/cowrie/etc/report.env ]; then
+    echo "[remote] Loading environment from report.env..."
+    # shellcheck source=/dev/null
+    source /opt/cowrie/etc/report.env
+  fi
+
   # Create cowrie-cache volume with correct permissions for API user (UID 1000)
   echo "[remote] Setting up cowrie-cache volume with correct permissions..."
   docker volume create cowrie-cache 2>/dev/null || true
