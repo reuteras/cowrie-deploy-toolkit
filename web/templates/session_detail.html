@@ -3,6 +3,13 @@
 {% block title %}Session {{ session.id | truncate_hash }} - Cowrie Honeypot{% endblock %}
 
 {% block content %}
+<style>
+.intel-summary { display: flex; flex-wrap: wrap; gap: 6px; }
+.intel-badge { background: rgba(52, 152, 219, 0.15); color: #2c6aa6; }
+.intel-badge.port { background: rgba(39, 174, 96, 0.15); color: #1e8449; }
+.intel-badge.vuln { background: rgba(231, 76, 60, 0.15); color: #c0392b; }
+.intel-loading { font-size: 0.8rem; color: var(--text-secondary); }
+</style>
 <div class="session-detail">
     <div class="page-header">
         <h1>Session Details</h1>
@@ -50,6 +57,12 @@
 
                 <dt>Client Version</dt>
                 <dd><code>{{ session.client_version or 'Unknown' }}</code></dd>
+
+                <dt>Threat Intel</dt>
+                <dd>
+                    <button class="btn btn-sm" id="intel-btn" data-ip="{{ session.src_ip }}">Load Intel</button>
+                    <div id="intel-content" style="margin-top: 8px;"></div>
+                </dd>
 
 
 
@@ -328,4 +341,88 @@ Event {{ loop.index }}: {{ event.eventid }}
         {% endif %}
     </div>
 </div>
+<script>
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function renderIntelSummary(intel) {
+    if (!intel || !intel.summary || Object.keys(intel.summary).length === 0) {
+        return '<span style="color: var(--text-secondary);">No intel</span>';
+    }
+
+    const summary = intel.summary;
+    const parts = [];
+
+    if (summary.is_known_threat) {
+        parts.push('<span class="badge badge-danger">Threat</span>');
+    }
+
+    if (summary.open_ports && summary.open_ports.length > 0) {
+        const ports = summary.open_ports.slice(0, 6).map(
+            p => '<span class="badge intel-badge port">' + escapeHtml(String(p)) + '</span>'
+        );
+        if (summary.open_ports.length > 6) {
+            ports.push('<span class="badge intel-badge">+' + (summary.open_ports.length - 6) + '</span>');
+        }
+        parts.push(...ports);
+    }
+
+    if (summary.tags && summary.tags.length > 0) {
+        const tags = summary.tags.slice(0, 4).map(
+            t => '<span class="badge intel-badge">' + escapeHtml(t) + '</span>'
+        );
+        if (summary.tags.length > 4) {
+            tags.push('<span class="badge intel-badge">+' + (summary.tags.length - 4) + '</span>');
+        }
+        parts.push(...tags);
+    }
+
+    if (summary.vulnerabilities && summary.vulnerabilities.length > 0) {
+        parts.push('<span class="badge intel-badge vuln">Vulns: ' + summary.vulnerabilities.length + '</span>');
+    }
+
+    if (parts.length === 0) {
+        return '<span style="color: var(--text-secondary);">No intel</span>';
+    }
+
+    return '<div class="intel-summary">' + parts.join(' ') + '</div>';
+}
+
+async function loadThreatIntel(button, container) {
+    const ip = button.getAttribute('data-ip');
+    if (!ip) return;
+    button.disabled = true;
+    container.innerHTML = '<span class="intel-loading">Loading intel...</span>';
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const response = await fetch(basePath + '/api/ip-intel/' + encodeURIComponent(ip), {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error('Server returned ' + response.status);
+        }
+
+        const data = await response.json();
+        container.innerHTML = renderIntelSummary(data);
+    } catch (e) {
+        container.innerHTML = '<span style="color: var(--text-secondary);">Intel unavailable</span>';
+    } finally {
+        button.disabled = false;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const button = document.getElementById('intel-btn');
+    const container = document.getElementById('intel-content');
+    if (!button || !container) return;
+    button.addEventListener('click', () => loadThreatIntel(button, container));
+});
+</script>
 {% endblock %}
