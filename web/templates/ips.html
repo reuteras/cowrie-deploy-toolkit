@@ -101,9 +101,10 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function renderIntelSummary(intel) {
+function renderIntelSummary(intel, ip) {
     if (!intel || !intel.summary || Object.keys(intel.summary).length === 0) {
-        return '<span class="text-muted">No intel</span>';
+        const noIntel = '<span class="text-muted">No intel</span>';
+        return noIntel + renderIntelLinks(ip);
     }
 
     const summary = intel.summary;
@@ -138,10 +139,21 @@ function renderIntelSummary(intel) {
     }
 
     if (parts.length === 0) {
-        return '<span class="text-muted">No intel</span>';
+        const noIntel = '<span class="text-muted">No intel</span>';
+        return noIntel + renderIntelLinks(ip);
     }
 
-    return '<div class="intel-summary">' + parts.join(' ') + '</div>';
+    return '<div class="intel-summary">' + parts.join(' ') + '</div>' + renderIntelLinks(ip);
+}
+
+function renderIntelLinks(ip) {
+    if (!ip) return '';
+    const shodanUrl = 'https://www.shodan.io/host/' + encodeURIComponent(ip);
+    const otxUrl = 'https://otx.alienvault.com/indicator/ip/' + encodeURIComponent(ip);
+    return '<div style="margin-top: 6px; font-size: 0.75rem;">' +
+        '<a class="external-link" href="' + shodanUrl + '" target="_blank" rel="noopener">Shodan</a>' +
+        '<a class="external-link" href="' + otxUrl + '" target="_blank" rel="noopener">OTX</a>' +
+        '</div>';
 }
 
 async function fetchThreatIntel(ip, cell) {
@@ -162,7 +174,7 @@ async function fetchThreatIntel(ip, cell) {
         }
 
         const data = await response.json();
-        cell.innerHTML = renderIntelSummary(data);
+        cell.innerHTML = renderIntelSummary(data, ip);
     } catch (e) {
         cell.innerHTML = '<span class="text-muted">Intel unavailable</span>';
     } finally {
