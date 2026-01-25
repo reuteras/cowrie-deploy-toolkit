@@ -227,11 +227,24 @@ function escapeHtml(text) {
 
 async function loadThreatIntel(ip) {
     try {
-        const response = await fetch(basePath + '/api/ip-intel/' + ip);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s client timeout
+
+        const response = await fetch(basePath + '/api/ip-intel/' + ip, {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
         if (!response.ok) return null;
-        return await response.json();
+        const data = await response.json();
+        // Return null if no useful data
+        if (!data.summary || Object.keys(data.summary).length === 0) return null;
+        return data;
     } catch (e) {
-        console.log('Failed to load threat intel for', ip);
+        // Don't log abort/timeout errors - expected for slow external APIs
+        if (e.name !== 'AbortError') {
+            console.log('Failed to load threat intel for', ip);
+        }
         return null;
     }
 }
@@ -387,23 +400,33 @@ async function enrichCluster() {
     btn.innerHTML = '<span>⏳</span> Enriching...';
 
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s client timeout
+
         const response = await fetch(basePath + '/api/cluster/' + clusterId + '/enrich', {
-            method: 'POST'
+            method: 'POST',
+            signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
-            throw new Error('Enrichment failed: ' + response.status);
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.detail || 'Enrichment failed: ' + response.status);
         }
 
         const result = await response.json();
         displayEnrichmentData(result);
 
     } catch (error) {
-        btn.innerHTML = '<span>❌</span> Failed: ' + error.message;
+        let errorMsg = error.message;
+        if (error.name === 'AbortError') {
+            errorMsg = 'Request timed out - OpenCTI may be slow';
+        }
+        btn.innerHTML = '<span>❌</span> ' + errorMsg.substring(0, 30);
         btn.disabled = false;
         setTimeout(() => {
             btn.innerHTML = '<span>🔍</span> Retry Enrichment';
-        }, 3000);
+        }, 5000);
     }
 }
 

@@ -102,8 +102,43 @@ def process_config(config_path: str) -> dict:
     return process_value(config)
 
 
+def generate_docker_env_file(config: dict) -> str:
+    """Generate docker-compose compatible .env file (no 'export', no quotes)."""
+    lines = ["# Docker Compose Environment Variables", "# Generated from master-config.toml", ""]
+
+    shared = config.get("shared", {})
+    reporting = shared.get("reporting", config.get("reporting", {}))
+    advanced = shared.get("advanced", config.get("advanced", {}))
+
+    # OpenCTI settings
+    if advanced:
+        for key in [
+            "opencti_enabled",
+            "opencti_url",
+            "opencti_api_key",
+            "opencti_ssl_verify",
+            "opencti_auto_push",
+            "opencti_push_threshold",
+        ]:
+            if key in advanced:
+                value = advanced[key]
+                # Convert boolean to string
+                if isinstance(value, bool):
+                    value = "true" if value else "false"
+                lines.append(f"{key.upper()}={value}")
+
+    # VirusTotal and AbuseIPDB
+    if reporting:
+        if "virustotal_api_key" in reporting:
+            lines.append(f"VIRUSTOTAL_API_KEY={reporting['virustotal_api_key']}")
+        if "abuseipdb_api_key" in reporting:
+            lines.append(f"ABUSEIPDB_API_KEY={reporting['abuseipdb_api_key']}")
+
+    return "\n".join(lines)
+
+
 def generate_env_file(config: dict) -> str:
-    """Generate environment variable file for server."""
+    """Generate environment variable file for server (bash format with export)."""
     lines = ["#!/bin/bash", "# Cowrie Daily Report Configuration", "# Generated from master-config.toml", ""]
 
     # Handle both direct config and shared.* prefixed config
@@ -201,6 +236,8 @@ def main():
     # Output in requested format
     if output_format == "env":
         print(generate_env_file(config))
+    elif output_format == "docker":
+        print(generate_docker_env_file(config))
     elif output_format == "json":
         import json
 

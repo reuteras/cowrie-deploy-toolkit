@@ -472,7 +472,7 @@ sync_filesystem() {
     return 0
 }
 
-# Sync configuration (report.env) to honeypot
+# Sync configuration (report.env + docker.env) to honeypot
 sync_config() {
     local name="$1"
     local ts_host="$2"
@@ -486,7 +486,7 @@ sync_config() {
         return 1
     fi
 
-    # Generate report.env from master-config.toml
+    # Generate report.env from master-config.toml (bash format with export)
     local temp_report_env
     temp_report_env=$(mktemp)
 
@@ -497,10 +497,21 @@ sync_config() {
         return 1
     fi
 
+    # Generate docker.env from master-config.toml (docker-compose format)
+    local temp_docker_env
+    temp_docker_env=$(mktemp)
+
+    log_info "  - Generating docker.env from ${CONFIG_FILE}..."
+    if ! uv run --quiet "${SCRIPT_DIR}/scripts/process-config.py" "${CONFIG_FILE}" --format docker > "${temp_docker_env}" 2>/dev/null; then
+        log_warning "Failed to generate docker.env (may not be supported yet)"
+        rm -f "${temp_docker_env}"
+        temp_docker_env=""
+    fi
+
     # Verify report.env was generated (should have content)
     if [ ! -s "${temp_report_env}" ]; then
         log_error "Generated report.env is empty"
-        rm -f "${temp_report_env}"
+        rm -f "${temp_report_env}" "${temp_docker_env}"
         return 1
     fi
 
@@ -508,15 +519,26 @@ sync_config() {
     log_info "  - Uploading report.env to ${name}..."
     if ! scp_copy "${temp_report_env}" "root@${ts_host}:/opt/cowrie/etc/report.env" "${ssh_port}" > /dev/null 2>&1; then
         log_error "Failed to upload report.env"
-        rm -f "${temp_report_env}"
+        rm -f "${temp_report_env}" "${temp_docker_env}"
         return 1
+    fi
+
+    # Upload docker.env if generated
+    if [ -n "${temp_docker_env}" ] && [ -s "${temp_docker_env}" ]; then
+        log_info "  - Uploading docker.env to ${name}..."
+        if scp_copy "${temp_docker_env}" "root@${ts_host}:/opt/cowrie/etc/docker.env" "${ssh_port}" > /dev/null 2>&1; then
+            ssh_exec "${ts_host}" "chmod 600 /opt/cowrie/etc/docker.env" "${ssh_port}" > /dev/null 2>&1
+            log_success "docker.env uploaded (OpenCTI, VT, AbuseIPDB env vars)"
+        else
+            log_warning "Failed to upload docker.env"
+        fi
     fi
 
     # Set permissions
     ssh_exec "${ts_host}" "chmod 600 /opt/cowrie/etc/report.env" "${ssh_port}" > /dev/null 2>&1
 
-    # Clean up temp file
-    rm -f "${temp_report_env}"
+    # Clean up temp files
+    rm -f "${temp_report_env}" "${temp_docker_env}"
 
     log_success "Configuration synced successfully"
 
@@ -526,6 +548,14 @@ sync_config() {
         log_success "Event-indexer service restarted"
     else
         log_warning "Could not restart event-indexer (may not be installed)"
+    fi
+
+    # Restart API container to pick up new docker.env (OpenCTI config)
+    log_info "Restarting API container to apply new configuration..."
+    if ssh_exec "${ts_host}" "cd /opt/cowrie && docker compose -f docker-compose.yml -f docker-compose.api.yml up -d --no-deps --force-recreate cowrie-api 2>/dev/null || true" "${ssh_port}" > /dev/null 2>&1; then
+        log_success "API container restarted with new configuration"
+    else
+        log_warning "Could not restart API container (may not be running)"
     fi
 
     return 0

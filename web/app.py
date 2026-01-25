@@ -2783,9 +2783,10 @@ def cluster_enrich(cluster_id: str):
         try:
             import requests as req
 
+            # OpenCTI queries can be slow, use longer timeout
             response = req.post(
                 f"{api_url}/api/v1/clusters/{cluster_id}/enrich",
-                timeout=60,
+                timeout=120,  # 2 minutes for OpenCTI queries
             )
             if response.ok:
                 return jsonify(response.json())
@@ -2793,10 +2794,19 @@ def cluster_enrich(cluster_id: str):
                 return jsonify({"error": "Cluster not found"}), 404
             elif response.status_code == 503:
                 return jsonify(response.json()), 503
+        except req.exceptions.Timeout:
+            return jsonify({
+                "error": "OpenCTI query timed out",
+                "enriched": False,
+                "opencti_available": True,
+                "threat_actors": [],
+                "campaigns": [],
+                "malware_families": [],
+            }), 504
         except Exception as e:
             print(f"[!] Failed to enrich cluster from API: {e}")
 
-    return jsonify({"error": "Clustering API not available"}), 503
+    return jsonify({"error": "Clustering API not available", "enriched": False}), 503
 
 
 @app.route("/api/opencti/health")
@@ -2851,16 +2861,21 @@ def ip_intel(ip: str):
         try:
             import requests as req
 
+            # External threat intel APIs can be slow, use longer timeout
             response = req.get(
                 f"{api_url}/api/v1/intel/ip/{ip}",
-                timeout=30,
+                timeout=15,  # Reduced - fail fast, let frontend retry
             )
             if response.ok:
                 return jsonify(response.json())
+        except req.exceptions.Timeout:
+            # Don't log timeout as error - expected for slow external APIs
+            pass
         except Exception as e:
             print(f"[!] Failed to fetch IP intel from API: {e}")
 
-    return jsonify({"error": "Threat intel API not available"}), 503
+    # Return empty result instead of error - non-critical data
+    return jsonify({"ip": ip, "summary": {}, "sources": {}, "cached": False})
 
 
 @app.route("/api/clusters-diagnose")

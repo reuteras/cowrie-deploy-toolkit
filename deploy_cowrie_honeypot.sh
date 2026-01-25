@@ -1412,8 +1412,10 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
     # Process master config to generate server config
     echo_info "Processing master-config.toml..."
     SERVER_REPORT_ENV=$(create_temp_file ".env")
+    SERVER_DOCKER_ENV=$(create_temp_file ".docker.env")
     if command -v uv &> /dev/null; then
         uv run --quiet scripts/process-config.py "$MASTER_CONFIG" > "$SERVER_REPORT_ENV"
+        uv run --quiet scripts/process-config.py "$MASTER_CONFIG" --format docker > "$SERVER_DOCKER_ENV"
     else
         echo_warn " Error: uv not found. Cannot process config."
         exit 1
@@ -1423,12 +1425,14 @@ if [ "$ENABLE_REPORTING" = "true" ] && [ -f "$MASTER_CONFIG" ]; then
         # Upload reporting config (scripts/ and pyproject.toml already from git)
         echo_info "Uploading reporting configuration..."
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -P "$REAL_SSH_PORT" \
-            "$SERVER_REPORT_ENV" "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
+            "$SERVER_REPORT_ENV" "$SERVER_DOCKER_ENV" "root@$SERVER_IP:/opt/cowrie/" > /dev/null 2>&1
 
-        # Move config to correct location (get basename of temp file for remote path)
+        # Move configs to correct location
         REPORT_ENV_BASENAME=$(basename "$SERVER_REPORT_ENV")
+        DOCKER_ENV_BASENAME=$(basename "$SERVER_DOCKER_ENV")
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" \
-            "mv /opt/cowrie/$REPORT_ENV_BASENAME /opt/cowrie/etc/report.env && chmod 600 /opt/cowrie/etc/report.env"
+            "mv /opt/cowrie/$REPORT_ENV_BASENAME /opt/cowrie/etc/report.env && chmod 600 /opt/cowrie/etc/report.env && \
+             mv /opt/cowrie/$DOCKER_ENV_BASENAME /opt/cowrie/etc/docker.env && chmod 600 /opt/cowrie/etc/docker.env"
 
         # Run setup-reporting.sh on the server
         echo_info "Running setup-reporting.sh on server..."

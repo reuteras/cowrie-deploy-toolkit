@@ -31,11 +31,39 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Global client instance cache
+_opencti_client_cache: Optional["OpenCTIClientService"] = None
+_opencti_client_config: Optional[tuple] = None
+
+
+def get_opencti_client(url: str, api_key: str, ssl_verify: bool = True) -> Optional["OpenCTIClientService"]:
+    """
+    Get or create a cached OpenCTI client instance.
+
+    Reuses existing client if config matches, otherwise creates new one.
+    This avoids the overhead of initializing pycti on every request.
+    """
+    global _opencti_client_cache, _opencti_client_config
+
+    config_key = (url, api_key, ssl_verify)
+
+    if _opencti_client_cache is not None and _opencti_client_config == config_key:
+        return _opencti_client_cache
+
+    try:
+        client = OpenCTIClientService(url, api_key, ssl_verify, test_connection=False)
+        _opencti_client_cache = client
+        _opencti_client_config = config_key
+        return client
+    except Exception as e:
+        logger.error(f"Failed to create OpenCTI client: {e}")
+        return None
+
 
 class OpenCTIClientService:
     """Service for interacting with OpenCTI platform."""
 
-    def __init__(self, url: str, api_key: str, ssl_verify: bool = True):
+    def __init__(self, url: str, api_key: str, ssl_verify: bool = True, test_connection: bool = True):
         """
         Initialize OpenCTI client service.
 
@@ -43,6 +71,7 @@ class OpenCTIClientService:
             url: OpenCTI instance URL (e.g., https://your-opencti-instance.com)
             api_key: OpenCTI API key with appropriate permissions
             ssl_verify: Whether to verify SSL certificates
+            test_connection: Whether to test connection on init (can be slow)
         """
         if not OPENCTI_AVAILABLE:
             raise ImportError("pycti library is required for OpenCTI integration")
@@ -50,6 +79,7 @@ class OpenCTIClientService:
         self.url = url.rstrip("/")
         self.api_key = api_key
         self.ssl_verify = ssl_verify
+        self._connected = False
 
         # Initialize client
         try:
@@ -59,8 +89,10 @@ class OpenCTIClientService:
             logger.error(f"Failed to initialize OpenCTI client: {e}")
             raise
 
-        # Test connection
-        self._test_connection()
+        # Test connection (optional - can be slow)
+        if test_connection:
+            self._test_connection()
+            self._connected = True
 
     def _test_connection(self) -> bool:
         """

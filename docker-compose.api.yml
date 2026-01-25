@@ -6,6 +6,9 @@ services:
     restart: unless-stopped
     networks:
       - cowrie-internal
+    env_file:
+      - path: /opt/cowrie/etc/docker.env
+        required: false
     volumes:
       # Writable cache for API processing only
       - cowrie-cache:/cowrie-cache

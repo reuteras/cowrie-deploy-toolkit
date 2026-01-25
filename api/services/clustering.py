@@ -1733,12 +1733,18 @@ class ClusteringService:
                 result["errors"].append(f"Cluster {cluster_id} not found")
                 return result
 
-            # Initialize OpenCTI client
-            opencti = OpenCTIClientService(
+            # Get cached OpenCTI client (avoids slow init on every request)
+            from services.opencti_client import get_opencti_client
+
+            opencti = get_opencti_client(
                 url=opencti_url,
                 api_key=opencti_key,
                 ssl_verify=config.OPENCTI_SSL_VERIFY,
             )
+
+            if not opencti:
+                result["errors"].append("Failed to initialize OpenCTI client")
+                return result
 
             # Build search queries based on cluster type
             cluster_type = cluster.get("cluster_type", "unknown")
