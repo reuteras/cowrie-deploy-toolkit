@@ -48,15 +48,23 @@ def get_opencti_client(url: str, api_key: str, ssl_verify: bool = True) -> Optio
     config_key = (url, api_key, ssl_verify)
 
     if _opencti_client_cache is not None and _opencti_client_config == config_key:
+        logger.debug("Using cached OpenCTI client")
         return _opencti_client_cache
 
     try:
+        logger.info(f"Creating new OpenCTI client for {url} (ssl_verify={ssl_verify})")
         client = OpenCTIClientService(url, api_key, ssl_verify, test_connection=False)
         _opencti_client_cache = client
         _opencti_client_config = config_key
+        logger.info("OpenCTI client created and cached successfully")
         return client
+    except ImportError as e:
+        logger.error(f"Failed to create OpenCTI client - missing library: {e}")
+        return None
     except Exception as e:
-        logger.error(f"Failed to create OpenCTI client: {e}")
+        logger.error(f"Failed to create OpenCTI client: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return None
 
 
