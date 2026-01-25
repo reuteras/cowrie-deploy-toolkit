@@ -152,9 +152,21 @@ class STIXExportService:
         """Create STIX objects for payload-based clusters."""
         objects = []
 
+        # Get metadata for threat label
+        metadata = cluster_data.get("metadata", {})
+        if isinstance(metadata, str):
+            import json
+            try:
+                metadata = json.loads(metadata)
+            except (json.JSONDecodeError, TypeError):
+                metadata = {}
+
+        threat_label = metadata.get("threat_label") or cluster_data.get("threat_label")
+        malware_name = threat_label if threat_label else f"Malware Cluster {cluster_data.get('cluster_id', 'unknown')}"
+
         # Create malware object for the payload
         malware = Malware(
-            name=f"Malware Cluster {cluster_data.get('cluster_id', 'unknown')}",
+            name=malware_name,
             labels=["trojan", "downloader"],  # Would be enriched from VT data
             description=f"Malware downloaded by {cluster_data.get('size', 0)} unique IPs",
             created_by_ref=self.identity_id,
@@ -162,15 +174,15 @@ class STIXExportService:
         )
         objects.append(malware)
 
-        # Create indicators for file hashes
-        metadata = cluster_data.get("metadata", {})
-        sample_hashes = metadata.get("sample_hashes", [])
-        for hash_value in sample_hashes[:5]:  # Limit to 5 samples
+        # Create indicator for the file hash
+        # For payload clusters, fingerprint IS the full SHA-256 hash
+        shasum = cluster_data.get("fingerprint") or metadata.get("shasum")
+        if shasum and len(shasum) == 64:  # Validate it's a proper SHA-256
             indicator = Indicator(
-                pattern=f"[file:hashes.'SHA-256' = '{hash_value}']",
+                pattern=f"[file:hashes.'SHA-256' = '{shasum}']",
                 pattern_type="stix",
-                labels=["malicious-file"],
-                description="Malware file hash from honeypot captures",
+                labels=["malicious-file", "honeypot"],
+                description=f"Malware file hash from honeypot: {threat_label or 'unknown'}",
                 created_by_ref=self.identity_id,
                 confidence=85,  # High confidence for actual file hashes
             )
