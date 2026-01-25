@@ -844,6 +844,7 @@ class ClusteringService:
                     "last_seen": last_seen,
                     "threat_label": threat_label,
                     "vt_detections": vt_detections,
+                    "score": score,
                 }
             )
 

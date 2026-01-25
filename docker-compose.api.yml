@@ -20,6 +20,9 @@ services:
       # Remote database configuration
       - COWRIE_DB_PATH=/remote-cowrie-data/lib/cowrie/cowrie.db
       - COWRIE_LOG_PATH=/remote-cowrie-data/log/cowrie/cowrie.log
+      - COWRIE_TTY_PATH=/remote-cowrie-data/lib/cowrie/tty
+      - COWRIE_DOWNLOADS_PATH=/remote-cowrie-data/lib/cowrie/downloads
+      - IPLOCK_DB=/remote-cowrie-data/lib/cowrie/iplock.db
       - CLUSTERING_DB_PATH=/cowrie-cache/clustering.db
       - LOG_LEVEL=${API_LOG_LEVEL:-INFO}
       # System info (replaced by deploy script)

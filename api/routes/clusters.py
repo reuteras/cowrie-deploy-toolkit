@@ -542,7 +542,7 @@ async def get_technique_details(technique_id: str):
 
 @router.get("/stix/clusters/{cluster_id}")
 async def export_cluster_stix(
-    cluster_id: str, format: str = Query("json", description="Output format: 'json' or 'dict'", regex="^(json|dict)$")
+    cluster_id: str, format: str = Query("json", description="Output format: 'json' or 'dict'", pattern="^(json|dict)$")
 ):
     """
     Export a single cluster as a STIX bundle.
@@ -591,7 +591,7 @@ async def bulk_stix_export(
     cluster_type: str = Query(None, description="Filter by cluster type: 'command', 'hassh', 'payload', 'ttp'"),
     min_score: int = Query(0, description="Minimum cluster score", ge=0, le=100),
     days: int = Query(7, description="Days to look back", ge=1, le=365),
-    format: str = Query("json", description="Output format: 'json' or 'dict'", regex="^(json|dict)$"),
+    format: str = Query("json", description="Output format: 'json' or 'dict'", pattern="^(json|dict)$"),
     validate: bool = Query(True, description="Validate STIX bundle"),
 ):
     """
