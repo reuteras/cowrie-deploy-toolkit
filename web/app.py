@@ -2775,6 +2775,50 @@ def cluster_detail_data(cluster_id: str):
     return jsonify({"error": "Clustering API not available"}), 503
 
 
+@app.route("/api/cluster/<cluster_id>/enrich", methods=["POST"])
+def cluster_enrich(cluster_id: str):
+    """API endpoint for enriching a cluster with OpenCTI threat intelligence."""
+    api_url = get_local_api_url()
+    if api_url:
+        try:
+            import requests as req
+
+            response = req.post(
+                f"{api_url}/api/v1/clusters/{cluster_id}/enrich",
+                timeout=60,
+            )
+            if response.ok:
+                return jsonify(response.json())
+            elif response.status_code == 404:
+                return jsonify({"error": "Cluster not found"}), 404
+            elif response.status_code == 503:
+                return jsonify(response.json()), 503
+        except Exception as e:
+            print(f"[!] Failed to enrich cluster from API: {e}")
+
+    return jsonify({"error": "Clustering API not available"}), 503
+
+
+@app.route("/api/opencti/health")
+def opencti_health():
+    """API endpoint for checking OpenCTI connection health."""
+    api_url = get_local_api_url()
+    if api_url:
+        try:
+            import requests as req
+
+            response = req.get(
+                f"{api_url}/api/v1/opencti/health",
+                timeout=30,
+            )
+            if response.ok:
+                return jsonify(response.json())
+        except Exception as e:
+            print(f"[!] Failed to check OpenCTI health: {e}")
+
+    return jsonify({"error": "API not available", "available": False}), 503
+
+
 @app.route("/api/clusters-analyze", methods=["POST"])
 def clusters_analyze():
     """API endpoint for triggering cluster analysis."""

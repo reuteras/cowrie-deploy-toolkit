@@ -37,6 +37,27 @@
 .command-list { background: var(--bg-tertiary); padding: 15px; border-radius: 6px; font-family: monospace; font-size: 0.9em; }
 .command-item { padding: 5px 0; border-bottom: 1px solid var(--border-color); }
 .command-item:last-child { border-bottom: none; }
+.enrichment-section { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid #0f3460; border-radius: 8px; padding: 20px; margin-top: 20px; }
+.enrichment-title { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+.enrichment-title h3 { margin: 0; color: #e94560; }
+.enrichment-badge { background: #e94560; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; }
+.enrichment-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }
+.enrichment-card { background: rgba(255,255,255,0.05); border-radius: 6px; padding: 15px; }
+.enrichment-card-title { font-size: 0.85em; color: #888; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.enrichment-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.enrichment-item:last-child { border-bottom: none; }
+.enrichment-item-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-size: 0.8em; }
+.enrichment-item-icon.actor { background: #e74c3c; }
+.enrichment-item-icon.campaign { background: #f39c12; }
+.enrichment-item-icon.malware { background: #9b59b6; }
+.enrichment-item-name { font-weight: 500; }
+.enrichment-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.enrichment-tag { background: rgba(233, 69, 96, 0.2); color: #e94560; padding: 4px 10px; border-radius: 4px; font-size: 0.8em; }
+.enrich-btn { background: #e94560; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9em; display: inline-flex; align-items: center; gap: 6px; }
+.enrich-btn:hover { background: #c73e54; }
+.enrich-btn:disabled { background: #555; cursor: not-allowed; }
+.interest-reasons { margin-top: 10px; }
+.interest-reason { display: inline-block; background: rgba(52, 152, 219, 0.2); color: #3498db; padding: 3px 8px; border-radius: 4px; font-size: 0.8em; margin: 2px; }
 </style>
 
 <div class="page">
@@ -100,6 +121,39 @@
         <div class="section" id="commands-section" style="display: none;">
             <div class="section-title">Sample Commands</div>
             <div class="command-list" id="commands-list"></div>
+            <div id="interest-reasons" class="interest-reasons" style="display: none;"></div>
+        </div>
+
+        <div class="section" id="enrichment-section" class="enrichment-section" style="display: none;">
+            <div class="enrichment-title">
+                <h3>OpenCTI Threat Intelligence</h3>
+                <span class="enrichment-badge" id="enrichment-status">Not Enriched</span>
+            </div>
+            <div id="enrichment-content">
+                <p style="color: var(--text-secondary);">
+                    Click the button below to enrich this cluster with threat intelligence from OpenCTI.
+                </p>
+                <button class="enrich-btn" id="enrich-btn" onclick="enrichCluster()">
+                    <span>🔍</span> Enrich with OpenCTI
+                </button>
+            </div>
+            <div id="enrichment-data" style="display: none;">
+                <div class="enrichment-grid">
+                    <div class="enrichment-card" id="threat-actors-card" style="display: none;">
+                        <div class="enrichment-card-title">Threat Actors</div>
+                        <div id="threat-actors-list"></div>
+                    </div>
+                    <div class="enrichment-card" id="campaigns-card" style="display: none;">
+                        <div class="enrichment-card-title">Campaigns</div>
+                        <div id="campaigns-list"></div>
+                    </div>
+                    <div class="enrichment-card" id="malware-card" style="display: none;">
+                        <div class="enrichment-card-title">Malware Families</div>
+                        <div id="malware-list"></div>
+                    </div>
+                </div>
+                <div id="enrichment-tags" class="enrichment-tags" style="display: none;"></div>
+            </div>
         </div>
 
         <div class="section" id="payload-section" style="display: none;">
@@ -258,6 +312,28 @@ async function loadData() {
             document.getElementById('commands-list').innerHTML = cluster.metadata.sample_commands
                 .map(cmd => `<div class="command-item">$ ${escapeHtml(cmd)}</div>`)
                 .join('');
+
+            // Show interest reasons for command clusters
+            if (cluster.metadata.interest_reasons) {
+                displayInterestReasons(cluster.metadata.interest_reasons);
+            }
+        }
+
+        // Show OpenCTI enrichment section
+        document.getElementById('enrichment-section').style.display = 'block';
+
+        // If cluster already has enrichment data, display it
+        if (cluster.enrichment) {
+            displayEnrichmentData({
+                enriched: true,
+                opencti_available: true,
+                threat_actors: cluster.enrichment.threat_families ?
+                    cluster.enrichment.threat_families.map(f => ({name: f})) : [],
+                campaigns: [],
+                malware_families: cluster.enrichment.threat_families ?
+                    cluster.enrichment.threat_families.map(f => ({name: f})) : [],
+                tags: cluster.enrichment.tags || [],
+            });
         }
 
         // Members
@@ -303,6 +379,120 @@ async function loadData() {
         document.getElementById('error-state').style.display = 'block';
         document.getElementById('error-message').textContent = error.message;
     }
+}
+
+async function enrichCluster() {
+    const btn = document.getElementById('enrich-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳</span> Enriching...';
+
+    try {
+        const response = await fetch(basePath + '/api/cluster/' + clusterId + '/enrich', {
+            method: 'POST'
+        });
+
+        if (!response.ok) {
+            throw new Error('Enrichment failed: ' + response.status);
+        }
+
+        const result = await response.json();
+        displayEnrichmentData(result);
+
+    } catch (error) {
+        btn.innerHTML = '<span>❌</span> Failed: ' + error.message;
+        btn.disabled = false;
+        setTimeout(() => {
+            btn.innerHTML = '<span>🔍</span> Retry Enrichment';
+        }, 3000);
+    }
+}
+
+function displayEnrichmentData(enrichment) {
+    const contentEl = document.getElementById('enrichment-content');
+    const dataEl = document.getElementById('enrichment-data');
+    const statusEl = document.getElementById('enrichment-status');
+
+    if (!enrichment.opencti_available) {
+        contentEl.innerHTML = '<p style="color: #f39c12;">⚠️ OpenCTI not available: ' +
+            (enrichment.errors?.[0] || 'Library not installed') + '</p>';
+        return;
+    }
+
+    if (enrichment.enriched) {
+        statusEl.textContent = 'Enriched';
+        statusEl.style.background = '#27ae60';
+        contentEl.style.display = 'none';
+        dataEl.style.display = 'block';
+
+        // Threat Actors
+        if (enrichment.threat_actors && enrichment.threat_actors.length > 0) {
+            document.getElementById('threat-actors-card').style.display = 'block';
+            document.getElementById('threat-actors-list').innerHTML = enrichment.threat_actors
+                .map(actor => `
+                    <div class="enrichment-item">
+                        <div class="enrichment-item-icon actor">👤</div>
+                        <div>
+                            <div class="enrichment-item-name">${escapeHtml(actor.name)}</div>
+                            ${actor.description ? `<div style="font-size: 0.8em; color: #888;">${escapeHtml(actor.description.substring(0, 100))}...</div>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+        }
+
+        // Campaigns
+        if (enrichment.campaigns && enrichment.campaigns.length > 0) {
+            document.getElementById('campaigns-card').style.display = 'block';
+            document.getElementById('campaigns-list').innerHTML = enrichment.campaigns
+                .map(campaign => `
+                    <div class="enrichment-item">
+                        <div class="enrichment-item-icon campaign">🎯</div>
+                        <div>
+                            <div class="enrichment-item-name">${escapeHtml(campaign.name)}</div>
+                            ${campaign.description ? `<div style="font-size: 0.8em; color: #888;">${escapeHtml(campaign.description.substring(0, 100))}...</div>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+        }
+
+        // Malware Families
+        if (enrichment.malware_families && enrichment.malware_families.length > 0) {
+            document.getElementById('malware-card').style.display = 'block';
+            document.getElementById('malware-list').innerHTML = enrichment.malware_families
+                .map(malware => `
+                    <div class="enrichment-item">
+                        <div class="enrichment-item-icon malware">🦠</div>
+                        <div>
+                            <div class="enrichment-item-name">${escapeHtml(malware.name)}</div>
+                            ${malware.description ? `<div style="font-size: 0.8em; color: #888;">${escapeHtml(malware.description.substring(0, 100))}...</div>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+        }
+
+        // Tags
+        if (enrichment.tags && enrichment.tags.length > 0) {
+            const tagsEl = document.getElementById('enrichment-tags');
+            tagsEl.style.display = 'flex';
+            tagsEl.innerHTML = enrichment.tags
+                .map(tag => `<span class="enrichment-tag">${escapeHtml(tag)}</span>`)
+                .join('');
+        }
+
+    } else {
+        statusEl.textContent = 'No Matches';
+        statusEl.style.background = '#7f8c8d';
+        contentEl.innerHTML = '<p style="color: var(--text-secondary);">No matching threat intelligence found in OpenCTI for this cluster.</p>';
+    }
+}
+
+function displayInterestReasons(reasons) {
+    if (!reasons || reasons.length === 0) return;
+
+    const container = document.getElementById('interest-reasons');
+    container.style.display = 'block';
+    container.innerHTML = '<div style="margin-top: 10px; font-size: 0.85em; color: var(--text-secondary);">Interest factors: ' +
+        reasons.map(r => `<span class="interest-reason">${escapeHtml(r)}</span>`).join('') +
+        '</div>';
 }
 
 document.addEventListener('DOMContentLoaded', loadData);
