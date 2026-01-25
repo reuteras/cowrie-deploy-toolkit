@@ -743,11 +743,15 @@ async def get_stix_info():
 
 
 @router.get("/opencti/health")
-async def opencti_health_check():
+async def opencti_health_check(
+    quick: bool = Query(False, description="Quick check (skip connection test)")
+):
     """
     Check OpenCTI connection health.
 
     Returns connection status, OpenCTI version, and configuration info.
+
+    Use `?quick=true` for fast response (only checks if configured, doesn't test connection).
     """
     try:
         from services.opencti_client import OPENCTI_AVAILABLE
@@ -759,6 +763,7 @@ async def opencti_health_check():
             "version": None,
             "url": None,
             "error": None,
+            "quick_check": quick,
         }
 
         if not OPENCTI_AVAILABLE:
@@ -775,20 +780,30 @@ async def opencti_health_check():
         result["configured"] = True
         result["url"] = opencti_url
 
-        # Test connection
-        try:
-            from services.opencti_client import OpenCTIClientService
+        # Quick mode: just return configured status without testing connection
+        if quick:
+            result["connected"] = None  # Unknown - didn't test
+            return result
 
-            client = OpenCTIClientService(
+        # Full mode: test connection using cached client (faster after first call)
+        try:
+            from services.opencti_client import get_opencti_client
+
+            client = get_opencti_client(
                 url=opencti_url,
                 api_key=opencti_key,
                 ssl_verify=config.OPENCTI_SSL_VERIFY,
             )
-            health = client.health_check()
-            result["connected"] = health.get("healthy", False)
-            result["version"] = health.get("version")
-            if not result["connected"]:
-                result["error"] = health.get("error")
+
+            if client:
+                # Use cached client's health check (may still be slow on first call)
+                health = client.health_check()
+                result["connected"] = health.get("healthy", False)
+                result["version"] = health.get("version")
+                if not result["connected"]:
+                    result["error"] = health.get("error")
+            else:
+                result["error"] = "Failed to initialize OpenCTI client"
         except Exception as e:
             result["error"] = str(e)
 
