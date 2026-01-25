@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 class STIXExportService:
     """Service for creating STIX 2.1 bundles from threat intelligence data."""
 
-    def __init__(self, identity_name: str = "Cowrie Honeypot", identity_id: str = "identity--c0wrie-h0ney"):
+    def __init__(self, identity_name: str = "Cowrie Honeypot", identity_id: str = "identity--a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"):
         """
         Initialize STIX export service.
 
