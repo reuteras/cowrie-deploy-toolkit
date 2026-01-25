@@ -180,6 +180,146 @@ class ClusteringService:
     # Command Fingerprinting
     # =========================================================================
 
+    # Common reconnaissance commands that are not interesting for clustering
+    COMMON_RECON_COMMANDS = {
+        "uname", "uname -a", "uname -r", "uname -m", "uname -s",
+        "id", "whoami", "pwd", "hostname", "w", "who",
+        "cat /etc/passwd", "cat /etc/issue", "cat /proc/cpuinfo",
+        "cat /proc/meminfo", "cat /proc/version",
+        "ls", "ls -la", "ls -l", "ls -a", "dir",
+        "ps", "ps aux", "ps -ef", "top",
+        "ifconfig", "ip addr", "ip a", "netstat", "ss",
+        "free", "free -m", "df", "df -h", "uptime",
+        "env", "export", "echo $PATH", "echo $HOME",
+        "exit", "logout", "quit", "q",
+        "help", "?", "man",
+        "history", "last",
+        "nproc", "lscpu", "arch",
+    }
+
+    # High-interest commands indicating malicious activity
+    HIGH_INTEREST_PATTERNS = [
+        # User/account manipulation
+        (r"\buseradd\b", 30),
+        (r"\badduser\b", 30),
+        (r"\busermod\b", 25),
+        (r"\bpasswd\b", 25),
+        (r"\bchpasswd\b", 30),
+        (r"\bgroupadd\b", 20),
+        # Persistence mechanisms
+        (r"\bcrontab\b", 25),
+        (r"/etc/cron", 25),
+        (r"\.bashrc", 20),
+        (r"\.profile", 20),
+        (r"/etc/rc\.local", 30),
+        (r"systemctl\s+enable", 30),
+        (r"chmod\s+\+x", 15),
+        # Download/execution
+        (r"\bwget\b", 20),
+        (r"\bcurl\b", 20),
+        (r"\btftp\b", 25),
+        (r"\bftp\b", 15),
+        (r"\bscp\b", 20),
+        (r"python\s+-c", 25),
+        (r"perl\s+-e", 25),
+        (r"base64\s+-d", 30),
+        (r"\beval\b", 20),
+        # Crypto mining indicators
+        (r"xmrig", 40),
+        (r"minerd", 40),
+        (r"cryptonight", 40),
+        (r"stratum\+tcp", 40),
+        # Lateral movement
+        (r"\bssh\b.*@", 25),
+        (r"\bsshpass\b", 30),
+        (r"\.ssh/authorized_keys", 35),
+        (r"\.ssh/id_rsa", 30),
+        # Evasion/cleanup
+        (r"\brm\s+-rf\s+/", 25),
+        (r"history\s+-c", 20),
+        (r"unset\s+HISTFILE", 25),
+        (r"/dev/null\s+2>&1", 15),
+        # Network tools
+        (r"\bnmap\b", 25),
+        (r"\bnetcat\b|\bnc\b", 20),
+        (r"\bsocat\b", 25),
+        # Process hiding
+        (r"\bnohup\b", 15),
+        (r"&\s*$", 10),
+        (r"disown", 15),
+    ]
+
+    def calculate_command_interest_score(self, commands: list[str]) -> tuple[int, list[str]]:
+        """
+        Calculate an interest score for a command sequence.
+
+        High scores indicate sophisticated/malicious activity.
+        Low scores indicate common reconnaissance that's not interesting to cluster.
+
+        Args:
+            commands: List of raw command strings
+
+        Returns:
+            Tuple of (score, list of reasons for the score)
+        """
+        if not commands:
+            return 0, ["empty"]
+
+        score = 0
+        reasons = []
+
+        # Normalize commands for comparison
+        normalized = [self.normalize_command(cmd) for cmd in commands if cmd]
+        raw_lower = [cmd.lower().strip() for cmd in commands if cmd]
+
+        # Check if ALL commands are common recon (boring cluster)
+        non_recon_count = 0
+        for cmd in raw_lower:
+            cmd_base = cmd.split()[0] if cmd.split() else cmd
+            if cmd not in self.COMMON_RECON_COMMANDS and cmd_base not in self.COMMON_RECON_COMMANDS:
+                non_recon_count += 1
+
+        if non_recon_count == 0:
+            return 5, ["only_common_recon"]
+
+        # Base score from command count and diversity
+        unique_commands = len(set(normalized))
+        if unique_commands >= 10:
+            score += 20
+            reasons.append(f"diverse_commands:{unique_commands}")
+        elif unique_commands >= 5:
+            score += 10
+            reasons.append(f"moderate_diversity:{unique_commands}")
+
+        # Check for high-interest patterns
+        full_sequence = " ; ".join(raw_lower)
+        for pattern, pattern_score in self.HIGH_INTEREST_PATTERNS:
+            if re.search(pattern, full_sequence, re.IGNORECASE):
+                score += pattern_score
+                # Extract pattern name for reason
+                pattern_name = pattern.replace(r"\b", "").replace("\\", "").split()[0]
+                reasons.append(f"pattern:{pattern_name}")
+
+        # Bonus for multi-stage attacks (download + execute)
+        has_download = any(re.search(r"\b(wget|curl|tftp)\b", cmd, re.I) for cmd in raw_lower)
+        has_execute = any(re.search(r"\b(chmod|sh|bash|python|perl)\b", cmd, re.I) for cmd in raw_lower)
+        if has_download and has_execute:
+            score += 25
+            reasons.append("download_and_execute")
+
+        # Bonus for unique strings (passwords, keys, specific paths)
+        for cmd in commands:
+            # Long random-looking strings (potential passwords/keys)
+            if re.search(r"[a-zA-Z0-9]{16,}", cmd):
+                score += 15
+                reasons.append("long_random_string")
+                break
+
+        # Cap at 100
+        score = min(100, score)
+
+        return score, reasons
+
     def normalize_command(self, cmd: str) -> str:
         """
         Normalize a command for fingerprinting.
@@ -421,16 +561,20 @@ class ClusteringService:
     # Cluster Building
     # =========================================================================
 
-    def build_command_clusters(self, days: int = 7, min_size: int = 2) -> list[dict]:
+    def build_command_clusters(self, days: int = 7, min_interest_score: int = 20) -> list[dict]:
         """
-        Build clusters based on command fingerprints.
+        Build clusters based on command fingerprints and interest scoring.
+
+        Clusters are filtered by command interest/complexity rather than IP count.
+        Common reconnaissance commands (uname, id, ls, etc.) are deprioritized.
+        Sophisticated attack patterns (useradd, wget+chmod, persistence) are prioritized.
 
         Args:
             days: Number of days to analyze
-            min_size: Minimum cluster size (unique IPs)
+            min_interest_score: Minimum interest score (0-100) to include cluster
 
         Returns:
-            List of cluster dicts
+            List of cluster dicts sorted by interest score
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -455,7 +599,7 @@ class ClusteringService:
         source_conn = self._get_source_connection()
         source_cursor = source_conn.cursor()
 
-        # Get sessions with their IPs
+        # Get sessions with their IPs and raw commands
         if fingerprint_data:
             placeholders = ",".join("?" * len(fingerprint_data))
             source_cursor.execute(
@@ -471,6 +615,23 @@ class ClusteringService:
             source_cursor.execute("SELECT id, ip, starttime FROM sessions WHERE 1=0")
 
         session_info = {row["id"]: dict(row) for row in source_cursor.fetchall()}
+
+        # Get raw commands for interest scoring
+        raw_commands_by_session = {}
+        if fingerprint_data:
+            placeholders = ",".join("?" * len(fingerprint_data))
+            source_cursor.execute(
+                f"""
+                SELECT session, GROUP_CONCAT(input, '|||') as commands
+                FROM input
+                WHERE session IN ({placeholders})
+                GROUP BY session
+                """,
+                list(fingerprint_data.keys()),
+            )
+            for row in source_cursor.fetchall():
+                raw_commands_by_session[row["session"]] = row["commands"].split("|||") if row["commands"] else []
+
         source_conn.close()
 
         # Merge fingerprint data with session info and group by fingerprint
@@ -484,15 +645,22 @@ class ClusteringService:
                         "src_ip": sess["ip"],
                         "timestamp": sess["starttime"],
                         "commands": fp_data["normalized_commands"],
+                        "raw_commands": raw_commands_by_session.get(session_id, []),
                         "command_count": fp_data["command_count"],
                     }
                 )
 
-        # Filter to minimum size and create cluster records
+        # Filter by interest score and create cluster records
         result_clusters = []
         for fingerprint, sessions in clusters.items():
             unique_ips = set(s["src_ip"] for s in sessions if s["src_ip"])
-            if len(unique_ips) < min_size:
+
+            # Get raw commands from first session for interest scoring
+            raw_cmds = sessions[0].get("raw_commands", []) if sessions else []
+            interest_score, score_reasons = self.calculate_command_interest_score(raw_cmds)
+
+            # Skip low-interest clusters (common recon)
+            if interest_score < min_interest_score:
                 continue
 
             # Calculate cluster metadata
@@ -528,8 +696,12 @@ class ClusteringService:
                     last_seen,
                     len(unique_ips),
                     len(sessions),
-                    min(100, len(unique_ips) * 10),  # Simple scoring
-                    json.dumps({"sample_commands": sample_commands}),
+                    interest_score,
+                    json.dumps({
+                        "sample_commands": sample_commands,
+                        "interest_reasons": score_reasons,
+                        "raw_sample": raw_cmds[:10],  # First 10 raw commands
+                    }),
                 ),
             )
 
@@ -566,6 +738,8 @@ class ClusteringService:
                     "session_count": len(sessions),
                     "first_seen": first_seen,
                     "last_seen": last_seen,
+                    "score": interest_score,
+                    "interest_reasons": score_reasons,
                     "sample_commands": sample_commands,
                 }
             )
@@ -573,7 +747,8 @@ class ClusteringService:
         cluster_conn.commit()
         cluster_conn.close()
 
-        return sorted(result_clusters, key=lambda x: x["size"], reverse=True)
+        # Sort by interest score (most interesting first)
+        return sorted(result_clusters, key=lambda x: x["score"], reverse=True)
 
     def build_hassh_clusters(self, days: int = 7, min_size: int = 2) -> list[dict]:
         """
@@ -697,16 +872,19 @@ class ClusteringService:
 
         return sorted(result_clusters, key=lambda x: x["size"], reverse=True)
 
-    def build_payload_clusters(self, days: int = 7, min_size: int = 2) -> list[dict]:
+    def build_payload_clusters(self, days: int = 7, min_size: int = 1) -> list[dict]:
         """
         Build clusters based on downloaded malware payloads.
 
+        Any download of the same malware is interesting regardless of IP count.
+        Score is based on VT detections and unique URL count.
+
         Args:
             days: Number of days to analyze
-            min_size: Minimum cluster size (unique IPs)
+            min_size: Minimum cluster size (default 1 - all payloads are interesting)
 
         Returns:
-            List of cluster dicts
+            List of cluster dicts sorted by score
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -761,10 +939,13 @@ class ClusteringService:
         cluster_conn = self._get_clustering_connection()
         cluster_cursor = cluster_conn.cursor()
 
-        # Filter and create cluster records
+        # Create cluster records for all payloads (no min_size filter for payloads)
         result_clusters = []
         for shasum, downloads in clusters.items():
             unique_ips = set(d["src_ip"] for d in downloads if d["src_ip"])
+            unique_urls = set(d["url"] for d in downloads if d["url"])
+
+            # Skip if below min_size (default is 1, so effectively no filter)
             if len(unique_ips) < min_size:
                 continue
 
@@ -778,8 +959,9 @@ class ClusteringService:
 
             cluster_id = f"payload-{shasum[:16]}"
 
-            # Calculate score based on VT detections and cluster size
-            score = min(100, (vt_detections * 2) + (len(unique_ips) * 5))
+            # Calculate score based on VT detections, unique IPs, and unique URLs
+            # VT detections are strongest signal, then distribution breadth
+            score = min(100, (vt_detections * 3) + (len(unique_ips) * 5) + (len(unique_urls) * 3))
 
             cluster_cursor.execute(
                 """
@@ -1494,3 +1676,288 @@ class ClusteringService:
             result["issues"].append(f"Cannot connect to clustering database: {e}")
 
         return result
+
+    # =========================================================================
+    # OpenCTI Enrichment
+    # =========================================================================
+
+    def enrich_cluster_with_opencti(self, cluster_id: str) -> dict:
+        """
+        Enrich a cluster with threat intelligence from OpenCTI.
+
+        Queries OpenCTI for related threat actors, campaigns, and malware
+        based on the cluster's IOCs (IPs, hashes, techniques).
+
+        Args:
+            cluster_id: Cluster ID to enrich
+
+        Returns:
+            Enrichment results including matched entities
+        """
+        import os
+        from config import config
+
+        result = {
+            "cluster_id": cluster_id,
+            "enriched": False,
+            "opencti_available": False,
+            "threat_actors": [],
+            "campaigns": [],
+            "malware_families": [],
+            "vulnerabilities": [],
+            "tags": [],
+            "threat_score": 0,
+            "errors": [],
+        }
+
+        # Check if OpenCTI is configured
+        opencti_url = os.getenv("OPENCTI_URL", config.OPENCTI_URL)
+        opencti_key = os.getenv("OPENCTI_API_KEY", config.OPENCTI_API_KEY)
+
+        if not opencti_url or not opencti_key:
+            result["errors"].append("OpenCTI not configured (missing URL or API key)")
+            return result
+
+        try:
+            from services.opencti_client import OpenCTIClientService, OPENCTI_AVAILABLE
+
+            if not OPENCTI_AVAILABLE:
+                result["errors"].append("OpenCTI client library (pycti) not available")
+                return result
+
+            result["opencti_available"] = True
+
+            # Get cluster details
+            cluster = self.get_cluster_detail(cluster_id)
+            if not cluster:
+                result["errors"].append(f"Cluster {cluster_id} not found")
+                return result
+
+            # Initialize OpenCTI client
+            opencti = OpenCTIClientService(
+                url=opencti_url,
+                api_key=opencti_key,
+                ssl_verify=config.OPENCTI_SSL_VERIFY,
+            )
+
+            # Build search queries based on cluster type
+            cluster_type = cluster.get("cluster_type", "unknown")
+            search_queries = []
+
+            if cluster_type == "payload":
+                # Search by file hash
+                fingerprint = cluster.get("fingerprint", "")
+                if fingerprint and len(fingerprint) == 64:
+                    search_queries.append(("hash", fingerprint))
+                # Search by threat label
+                metadata = cluster.get("metadata", {})
+                threat_label = metadata.get("threat_label") if isinstance(metadata, dict) else None
+                if threat_label:
+                    search_queries.append(("malware", threat_label))
+
+            elif cluster_type == "ttp":
+                # Search by MITRE technique
+                technique = cluster.get("dominant_technique") or cluster.get("fingerprint", "")
+                if technique and technique.startswith("T"):
+                    search_queries.append(("technique", technique))
+
+            elif cluster_type == "command":
+                # Search by notable patterns in commands
+                metadata = cluster.get("metadata", {})
+                interest_reasons = metadata.get("interest_reasons", []) if isinstance(metadata, dict) else []
+                for reason in interest_reasons:
+                    if reason.startswith("pattern:"):
+                        pattern = reason.replace("pattern:", "")
+                        search_queries.append(("keyword", pattern))
+
+            # Search for cluster member IPs
+            members = cluster.get("members", [])
+            for member in members[:10]:  # Limit to first 10 IPs
+                ip = member.get("src_ip")
+                if ip:
+                    search_queries.append(("ip", ip))
+
+            # Execute searches
+            all_results = {"threat_actors": [], "campaigns": [], "malware": [], "vulnerabilities": []}
+
+            for query_type, query_value in search_queries:
+                try:
+                    if query_type == "ip":
+                        # Search for IP in indicators
+                        search_result = opencti.search_threat_intelligence(
+                            query=query_value,
+                            entity_types=["Indicator", "Infrastructure"]
+                        )
+                    elif query_type == "hash":
+                        search_result = opencti.search_threat_intelligence(
+                            query=query_value,
+                            entity_types=["Indicator", "Malware"]
+                        )
+                    elif query_type == "technique":
+                        search_result = opencti.search_threat_intelligence(
+                            query=query_value,
+                            entity_types=["Attack-Pattern"]
+                        )
+                    else:
+                        search_result = opencti.search_threat_intelligence(
+                            query=query_value,
+                            entity_types=["Malware", "Threat-Actor", "Campaign"]
+                        )
+
+                    if search_result.get("success"):
+                        for entity_type, entities in search_result.get("results", {}).items():
+                            if entities:
+                                if "threat" in entity_type or "actor" in entity_type:
+                                    all_results["threat_actors"].extend(entities)
+                                elif "campaign" in entity_type:
+                                    all_results["campaigns"].extend(entities)
+                                elif "malware" in entity_type:
+                                    all_results["malware"].extend(entities)
+                                elif "vulnerability" in entity_type:
+                                    all_results["vulnerabilities"].extend(entities)
+
+                except Exception as e:
+                    logger.warning(f"OpenCTI search failed for {query_type}={query_value}: {e}")
+
+            # Deduplicate and format results
+            seen_ids = set()
+            for actor in all_results["threat_actors"]:
+                actor_id = actor.get("id") or actor.get("standard_id")
+                if actor_id and actor_id not in seen_ids:
+                    seen_ids.add(actor_id)
+                    result["threat_actors"].append({
+                        "id": actor_id,
+                        "name": actor.get("name", "Unknown"),
+                        "description": actor.get("description", "")[:200] if actor.get("description") else "",
+                    })
+
+            for campaign in all_results["campaigns"]:
+                campaign_id = campaign.get("id") or campaign.get("standard_id")
+                if campaign_id and campaign_id not in seen_ids:
+                    seen_ids.add(campaign_id)
+                    result["campaigns"].append({
+                        "id": campaign_id,
+                        "name": campaign.get("name", "Unknown"),
+                        "description": campaign.get("description", "")[:200] if campaign.get("description") else "",
+                    })
+
+            for malware in all_results["malware"]:
+                malware_id = malware.get("id") or malware.get("standard_id")
+                if malware_id and malware_id not in seen_ids:
+                    seen_ids.add(malware_id)
+                    result["malware_families"].append({
+                        "id": malware_id,
+                        "name": malware.get("name", "Unknown"),
+                        "description": malware.get("description", "")[:200] if malware.get("description") else "",
+                    })
+
+            # Calculate threat score based on matches
+            threat_score = cluster.get("score", 0)
+            if result["threat_actors"]:
+                threat_score = min(100, threat_score + 20)
+            if result["campaigns"]:
+                threat_score = min(100, threat_score + 15)
+            if result["malware_families"]:
+                threat_score = min(100, threat_score + 10)
+            result["threat_score"] = threat_score
+
+            # Generate tags from matches
+            tags = []
+            for actor in result["threat_actors"][:3]:
+                tags.append(f"threat-actor:{actor['name']}")
+            for campaign in result["campaigns"][:3]:
+                tags.append(f"campaign:{campaign['name']}")
+            for malware in result["malware_families"][:3]:
+                tags.append(f"malware:{malware['name']}")
+            result["tags"] = tags
+
+            # Store enrichment in database
+            if result["threat_actors"] or result["campaigns"] or result["malware_families"]:
+                result["enriched"] = True
+                self._store_cluster_enrichment(cluster_id, result)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"OpenCTI enrichment failed for cluster {cluster_id}: {e}")
+            result["errors"].append(str(e))
+            return result
+
+    def _store_cluster_enrichment(self, cluster_id: str, enrichment: dict):
+        """Store cluster enrichment data in the database."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO cluster_enrichment
+            (cluster_id, threat_families, top_asns, countries, threat_score, tags, enriched_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                cluster_id,
+                json.dumps([m["name"] for m in enrichment.get("malware_families", [])]),
+                json.dumps([]),  # ASNs would need GeoIP lookup
+                json.dumps([]),  # Countries would need GeoIP lookup
+                enrichment.get("threat_score", 0),
+                json.dumps(enrichment.get("tags", [])),
+            ),
+        )
+
+        conn.commit()
+        conn.close()
+
+    def enrich_all_clusters(self, min_score: int = 50, days: int = 7, limit: int = 50) -> dict:
+        """
+        Enrich multiple clusters with OpenCTI threat intelligence.
+
+        Args:
+            min_score: Minimum cluster score to enrich
+            days: Look back period
+            limit: Maximum clusters to enrich
+
+        Returns:
+            Summary of enrichment results
+        """
+        clusters = self.get_clusters(min_score=min_score, days=days, limit=limit, min_size=1)
+
+        results = {
+            "total_clusters": len(clusters),
+            "enriched": 0,
+            "failed": 0,
+            "skipped": 0,
+            "details": [],
+        }
+
+        for cluster in clusters:
+            cluster_id = cluster.get("cluster_id")
+            if not cluster_id:
+                results["skipped"] += 1
+                continue
+
+            enrichment = self.enrich_cluster_with_opencti(cluster_id)
+
+            if enrichment.get("enriched"):
+                results["enriched"] += 1
+                results["details"].append({
+                    "cluster_id": cluster_id,
+                    "status": "enriched",
+                    "threat_actors": len(enrichment.get("threat_actors", [])),
+                    "campaigns": len(enrichment.get("campaigns", [])),
+                    "malware_families": len(enrichment.get("malware_families", [])),
+                })
+            elif enrichment.get("errors"):
+                results["failed"] += 1
+                results["details"].append({
+                    "cluster_id": cluster_id,
+                    "status": "failed",
+                    "error": enrichment["errors"][0] if enrichment["errors"] else "Unknown",
+                })
+            else:
+                results["skipped"] += 1
+                results["details"].append({
+                    "cluster_id": cluster_id,
+                    "status": "no_matches",
+                })
+
+        return results

@@ -122,13 +122,22 @@ async def diagnose_clustering(
 @router.post("/clusters/analyze")
 async def trigger_cluster_analysis(
     days: int = Query(7, ge=1, le=365, description="Days to analyze"),
-    min_size: int = Query(2, ge=1, description="Minimum cluster size"),
+    min_size: int = Query(2, ge=1, description="Minimum cluster size (for HASSH clusters)"),
+    min_interest_score: int = Query(20, ge=0, le=100, description="Minimum interest score for command clusters"),
     cluster_types: Optional[str] = Query(None, description="Comma-separated types: command,hassh,payload"),
 ):
     """
     Trigger manual cluster analysis.
 
     This runs all clustering algorithms and updates the database.
+
+    Clustering logic:
+    - **Command clusters**: Filtered by interest score (not IP count). Common recon
+      commands (uname, id, ls) are deprioritized. Sophisticated attacks (useradd,
+      wget+chmod, persistence) are prioritized.
+    - **HASSH clusters**: Filtered by min_size (unique IPs with same SSH fingerprint).
+    - **Payload clusters**: No minimum - any shared malware download is interesting.
+
     Note: This can be CPU-intensive for large datasets.
     """
     try:
@@ -139,17 +148,23 @@ async def trigger_cluster_analysis(
         if cluster_types:
             types_to_run = [t.strip() for t in cluster_types.split(",")]
 
-        results = {"days": days, "min_size": min_size}
+        results = {
+            "days": days,
+            "min_size": min_size,
+            "min_interest_score": min_interest_score,
+        }
 
         if types_to_run is None or "command" in types_to_run:
             try:
-                results["command_clusters"] = service.build_command_clusters(days, min_size)
+                # Command clusters use interest score, not min_size
+                results["command_clusters"] = service.build_command_clusters(days, min_interest_score)
             except Exception as e:
                 logger.warning(f"Command clustering failed: {e}")
                 results["command_clusters"] = []
 
         if types_to_run is None or "hassh" in types_to_run:
             try:
+                # HASSH clusters still use min_size
                 results["hassh_clusters"] = service.build_hassh_clusters(days, min_size)
             except Exception as e:
                 logger.warning(f"HASSH clustering failed: {e}")
@@ -157,7 +172,8 @@ async def trigger_cluster_analysis(
 
         if types_to_run is None or "payload" in types_to_run:
             try:
-                results["payload_clusters"] = service.build_payload_clusters(days, min_size)
+                # Payload clusters: min_size=1 (all payloads interesting)
+                results["payload_clusters"] = service.build_payload_clusters(days, min_size=1)
             except Exception as e:
                 logger.warning(f"Payload clustering failed: {e}")
                 results["payload_clusters"] = []
@@ -718,4 +734,220 @@ async def get_stix_info():
 
     except Exception as e:
         logger.error(f"Failed to get STIX info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# OpenCTI Integration Endpoints
+# =============================================================================
+
+
+@router.get("/opencti/health")
+async def opencti_health_check():
+    """
+    Check OpenCTI connection health.
+
+    Returns connection status, OpenCTI version, and configuration info.
+    """
+    try:
+        from services.opencti_client import OPENCTI_AVAILABLE
+
+        result = {
+            "available": OPENCTI_AVAILABLE,
+            "configured": False,
+            "connected": False,
+            "version": None,
+            "url": None,
+            "error": None,
+        }
+
+        if not OPENCTI_AVAILABLE:
+            result["error"] = "pycti library not installed"
+            return result
+
+        opencti_url = os.getenv("OPENCTI_URL", config.OPENCTI_URL)
+        opencti_key = os.getenv("OPENCTI_API_KEY", config.OPENCTI_API_KEY)
+
+        if not opencti_url or not opencti_key:
+            result["error"] = "OpenCTI URL or API key not configured"
+            return result
+
+        result["configured"] = True
+        result["url"] = opencti_url
+
+        # Test connection
+        try:
+            from services.opencti_client import OpenCTIClientService
+
+            client = OpenCTIClientService(
+                url=opencti_url,
+                api_key=opencti_key,
+                ssl_verify=config.OPENCTI_SSL_VERIFY,
+            )
+            health = client.health_check()
+            result["connected"] = health.get("healthy", False)
+            result["version"] = health.get("version")
+            if not result["connected"]:
+                result["error"] = health.get("error")
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"OpenCTI health check failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/opencti/search")
+async def opencti_search(
+    query: str = Query(..., description="Search query (IP, hash, keyword, etc.)"),
+    entity_types: Optional[str] = Query(
+        None, description="Comma-separated entity types: Malware,Threat-Actor,Campaign,Indicator"
+    ),
+):
+    """
+    Search OpenCTI for threat intelligence.
+
+    Search across various entity types for matching threat data.
+    """
+    try:
+        from services.opencti_client import OPENCTI_AVAILABLE
+
+        if not OPENCTI_AVAILABLE:
+            raise HTTPException(status_code=503, detail="OpenCTI client library not available")
+
+        opencti_url = os.getenv("OPENCTI_URL", config.OPENCTI_URL)
+        opencti_key = os.getenv("OPENCTI_API_KEY", config.OPENCTI_API_KEY)
+
+        if not opencti_url or not opencti_key:
+            raise HTTPException(status_code=503, detail="OpenCTI not configured")
+
+        from services.opencti_client import OpenCTIClientService
+
+        client = OpenCTIClientService(
+            url=opencti_url,
+            api_key=opencti_key,
+            ssl_verify=config.OPENCTI_SSL_VERIFY,
+        )
+
+        types_list = None
+        if entity_types:
+            types_list = [t.strip() for t in entity_types.split(",")]
+
+        result = client.search_threat_intelligence(query, types_list)
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"OpenCTI search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/clusters/{cluster_id}/enrich")
+async def enrich_cluster(cluster_id: str):
+    """
+    Enrich a specific cluster with OpenCTI threat intelligence.
+
+    Queries OpenCTI for related threat actors, campaigns, and malware
+    based on the cluster's IOCs.
+    """
+    try:
+        service = get_clustering_service()
+        result = service.enrich_cluster_with_opencti(cluster_id)
+
+        if result.get("errors") and not result.get("enriched"):
+            if "not configured" in result["errors"][0].lower():
+                raise HTTPException(status_code=503, detail=result["errors"][0])
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to enrich cluster {cluster_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/clusters/enrich")
+async def enrich_clusters_bulk(
+    min_score: int = Query(50, ge=0, le=100, description="Minimum cluster score to enrich"),
+    days: int = Query(7, ge=1, le=365, description="Look back period"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum clusters to enrich"),
+):
+    """
+    Bulk enrich clusters with OpenCTI threat intelligence.
+
+    Enriches high-scoring clusters with related threat intelligence data.
+    """
+    try:
+        service = get_clustering_service()
+        result = service.enrich_all_clusters(min_score=min_score, days=days, limit=limit)
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to bulk enrich clusters: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/opencti/push/{cluster_id}")
+async def push_cluster_to_opencti(cluster_id: str):
+    """
+    Push a cluster's IOCs to OpenCTI.
+
+    Creates STIX objects in OpenCTI for the cluster's indicators.
+    """
+    try:
+        from services.opencti_client import OPENCTI_AVAILABLE
+
+        if not OPENCTI_AVAILABLE:
+            raise HTTPException(status_code=503, detail="OpenCTI client library not available")
+
+        opencti_url = os.getenv("OPENCTI_URL", config.OPENCTI_URL)
+        opencti_key = os.getenv("OPENCTI_API_KEY", config.OPENCTI_API_KEY)
+
+        if not opencti_url or not opencti_key:
+            raise HTTPException(status_code=503, detail="OpenCTI not configured")
+
+        # Get cluster data
+        service = get_clustering_service()
+        cluster = service.get_cluster_detail(cluster_id)
+
+        if not cluster:
+            raise HTTPException(status_code=404, detail=f"Cluster {cluster_id} not found")
+
+        # Create STIX bundle
+        from services.stix_export import STIX_AVAILABLE, STIXExportService
+
+        if not STIX_AVAILABLE:
+            raise HTTPException(status_code=503, detail="STIX export not available")
+
+        stix_service = STIXExportService()
+        stix_bundle = stix_service.create_cluster_bundle(cluster)
+        stix_dict = stix_service.bundle_to_dict(stix_bundle)
+
+        # Push to OpenCTI
+        from services.opencti_client import OpenCTIClientService
+
+        client = OpenCTIClientService(
+            url=opencti_url,
+            api_key=opencti_key,
+            ssl_verify=config.OPENCTI_SSL_VERIFY,
+        )
+
+        push_result = client.push_cluster(cluster, stix_dict)
+
+        return {
+            "cluster_id": cluster_id,
+            "pushed": push_result.get("success", False),
+            "entities_created": push_result.get("entities_created", []),
+            "entities_updated": push_result.get("entities_updated", []),
+            "errors": push_result.get("errors", []),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to push cluster {cluster_id} to OpenCTI: {e}")
         raise HTTPException(status_code=500, detail=str(e))
