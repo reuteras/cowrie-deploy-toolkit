@@ -112,11 +112,16 @@ class STIXExportService:
         # Create an indicator for the command pattern
         fingerprint = cluster_data.get("fingerprint", "")
         if fingerprint:
+            # Get sample commands for description
+            metadata = cluster_data.get("metadata", {})
+            sample_cmds = metadata.get("sample_commands", [])[:3] if isinstance(metadata, dict) else []
+            cmd_desc = f" Commands: {', '.join(sample_cmds)}" if sample_cmds else ""
+
             indicator = Indicator(
-                pattern=f"[file:hashes.'SHA-256' = '{fingerprint}']",  # Placeholder pattern
+                pattern=f"[process:x_command_fingerprint = '{fingerprint}']",
                 pattern_type="stix",
-                labels=["command-pattern"],
-                description=f"Command cluster with {cluster_data.get('size', 0)} unique IPs",
+                labels=["command-pattern", "honeypot"],
+                description=f"Command cluster with {cluster_data.get('size', 0)} unique IPs.{cmd_desc}",
                 created_by_ref=self.identity_id,
                 confidence=cluster_data.get("score", 50),
             )
