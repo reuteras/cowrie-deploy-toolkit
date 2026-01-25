@@ -571,10 +571,78 @@ update_code() {
 
     if ssh_exec "${ts_host}" "cd /opt/cowrie && bash scripts/update-agent.sh" "${ssh_port}" 2>&1 | tee -a "${LOG_FILE}"; then
         log_success "Code update completed successfully for ${name}"
+        # Ensure new systemd timers are installed
+        ensure_systemd_timers "${ts_host}" "${ssh_port}"
         return 0
     else
         log_error "Code update failed for ${name}"
         return 1
+    fi
+}
+
+# Ensure all required systemd timers are installed
+ensure_systemd_timers() {
+    local ts_host="$1"
+    local ssh_port="$2"
+
+    log_info "Checking systemd timers..."
+
+    # Check and install TTP analyzer timer if missing
+    local ttp_timer_exists
+    ttp_timer_exists=$(ssh_exec "${ts_host}" "systemctl is-enabled ttp-analyzer.timer 2>/dev/null || echo 'missing'" "${ssh_port}")
+
+    if [ "${ttp_timer_exists}" = "missing" ]; then
+        log_info "Installing TTP analyzer timer..."
+        ssh_exec "${ts_host}" "bash -s" "${ssh_port}" << 'TTPTIMEREOF'
+# Install TTP analyzer systemd service
+cat > /etc/systemd/system/ttp-analyzer.service << 'SERVICE'
+[Unit]
+Description=Cowrie TTP Analyzer Service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cowrie
+ExecStart=/root/.local/bin/uv run scripts/ttp-analyzer.py --days 7 --build-clusters
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ttp-analyzer
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+# Install TTP analyzer systemd timer
+cat > /etc/systemd/system/ttp-analyzer.timer << 'TIMER'
+[Unit]
+Description=Cowrie TTP Analyzer Timer
+Requires=ttp-analyzer.service
+
+[Timer]
+# Run every 6 hours
+OnCalendar=*-*-* 00,06,12,18:00:00
+# Add randomized delay of 0-15 minutes
+RandomizedDelaySec=15min
+# Ensure timer runs if system was down during scheduled time
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+systemctl daemon-reload
+systemctl enable ttp-analyzer.timer
+systemctl start ttp-analyzer.timer
+echo "TTP analyzer timer installed and enabled"
+TTPTIMEREOF
+        log_success "TTP analyzer timer installed"
+    else
+        log_info "TTP analyzer timer already installed (${ttp_timer_exists})"
     fi
 }
 

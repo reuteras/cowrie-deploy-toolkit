@@ -1513,6 +1513,67 @@ echo_info "Automatic update timer configured successfully"
 
 
 # ============================================================
+# STEP 12.6 — Set up TTP analyzer timer
+# ============================================================
+
+echo_info "Setting up TTP analyzer timer..."
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p "$REAL_SSH_PORT" "root@$SERVER_IP" bash << 'TTPTIMEREOF'
+# Install TTP analyzer systemd service
+cat > /etc/systemd/system/ttp-analyzer.service << 'SERVICE'
+[Unit]
+Description=Cowrie TTP Analyzer Service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cowrie
+ExecStart=/root/.local/bin/uv run scripts/ttp-analyzer.py --days 7 --build-clusters
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ttp-analyzer
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+# Install TTP analyzer systemd timer
+cat > /etc/systemd/system/ttp-analyzer.timer << 'TIMER'
+[Unit]
+Description=Cowrie TTP Analyzer Timer
+Requires=ttp-analyzer.service
+
+[Timer]
+# Run every 6 hours
+OnCalendar=*-*-* 00,06,12,18:00:00
+# Add randomized delay of 0-15 minutes
+RandomizedDelaySec=15min
+# Ensure timer runs if system was down during scheduled time
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+# Reload systemd and enable timer
+systemctl daemon-reload
+systemctl enable ttp-analyzer.timer
+systemctl start ttp-analyzer.timer
+
+echo "[*] TTP analyzer timer installed and enabled"
+echo "[*] TTP analysis will run every 6 hours"
+systemctl status ttp-analyzer.timer --no-pager
+
+TTPTIMEREOF
+
+echo_info "TTP analyzer timer configured successfully"
+
+
+# ============================================================
 # STEP 13.o — Set up Cowrie API first
 # ============================================================
 

@@ -1,0 +1,14 @@
+[Unit]
+Description=Cowrie TTP Analyzer Timer
+Requires=ttp-analyzer.service
+
+[Timer]
+# Run every 6 hours
+OnCalendar=*-*-* 00,06,12,18:00:00
+# Add randomized delay of 0-15 minutes
+RandomizedDelaySec=15min
+# Ensure timer runs if system was down during scheduled time
+Persistent=true
+
+[Install]
+WantedBy=timers.target

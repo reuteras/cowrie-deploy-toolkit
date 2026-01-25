@@ -1,0 +1,19 @@
+[Unit]
+Description=Cowrie TTP Analyzer Service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cowrie
+ExecStart=/root/.local/bin/uv run scripts/ttp-analyzer.py --days 7 --build-clusters
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ttp-analyzer
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

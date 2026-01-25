@@ -1322,8 +1322,43 @@ class ClusteringService:
         conn.close()
 
         if not session_ttps:
-            logger.info("No TTP fingerprints found")
-            return []
+            logger.info("No TTP fingerprints found - running batch analysis first")
+            # Auto-analyze sessions to populate fingerprints
+            batch_result = self.batch_analyze_ttps(days=days)
+            logger.info(
+                f"Batch analysis complete: {batch_result.get('analyzed', 0)} sessions analyzed, "
+                f"{batch_result.get('ttps_found', 0)} TTPs found"
+            )
+
+            # Re-query fingerprints after batch analysis
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT session, ttp_sequence, dominant_techniques, confidence_score, tactics
+                FROM ttp_fingerprints
+                WHERE created_at >= ?
+                ORDER BY confidence_score DESC
+            """,
+                (cutoff_date.isoformat(),),
+            )
+
+            for row in cursor.fetchall():
+                try:
+                    session_ttps[row["session"]] = {
+                        "ttp_sequence": json.loads(row["ttp_sequence"]),
+                        "dominant_techniques": json.loads(row["dominant_techniques"]),
+                        "confidence_score": row["confidence_score"],
+                        "tactics": json.loads(row["tactics"]),
+                    }
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            conn.close()
+
+            if not session_ttps:
+                logger.info("No TTP fingerprints found even after batch analysis")
+                return []
 
         # Group sessions by dominant technique
         technique_clusters = defaultdict(list)
@@ -1556,6 +1591,110 @@ class ClusteringService:
             conn.close()
 
         return {"session_id": session_id, "ttps_found": len(ttps), "ttp_details": ttps, "fingerprint": fingerprint}
+
+    def batch_analyze_ttps(self, days: int = 7, batch_size: int = 100) -> dict:
+        """
+        Analyze TTPs for all sessions in the given time period that haven't been analyzed yet.
+
+        This method should be called periodically (e.g., via scheduled task) to ensure
+        TTP fingerprints are populated for clustering.
+
+        Args:
+            days: Number of days to look back
+            batch_size: Number of sessions to process per batch
+
+        Returns:
+            Summary of analysis results
+        """
+        from services.ttp_extraction import TTPExtractionService
+
+        logger.info(f"Starting batch TTP analysis for last {days} days")
+
+        # Initialize TTP extraction service
+        mitre_db_path = (
+            self.clustering_db_path.replace("_clustering.db", "_mitre.db")
+            if self.clustering_db_path
+            else self.source_db_path.replace(".db", "_mitre.db")
+        )
+
+        try:
+            ttp_service = TTPExtractionService(self.source_db_path, mitre_db_path)
+        except Exception as e:
+            logger.error(f"Failed to initialize TTP service: {e}")
+            return {"error": str(e), "analyzed": 0, "skipped": 0, "failed": 0}
+
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+
+        # Get existing fingerprints to skip
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT session FROM ttp_fingerprints")
+        existing_sessions = {row["session"] for row in cursor.fetchall()}
+        conn.close()
+
+        # Get sessions with commands that need analysis
+        source_conn = self._get_source_connection()
+        source_cursor = source_conn.cursor()
+
+        source_cursor.execute(
+            """
+            SELECT DISTINCT s.id
+            FROM sessions s
+            INNER JOIN input i ON s.id = i.session
+            WHERE s.starttime >= ?
+            ORDER BY s.starttime DESC
+        """,
+            (cutoff_date.isoformat(),),
+        )
+
+        all_sessions = [row["id"] for row in source_cursor.fetchall()]
+        source_conn.close()
+
+        # Filter out already analyzed sessions
+        sessions_to_analyze = [s for s in all_sessions if s not in existing_sessions]
+
+        logger.info(
+            f"Found {len(all_sessions)} sessions with commands, "
+            f"{len(existing_sessions)} already analyzed, "
+            f"{len(sessions_to_analyze)} to analyze"
+        )
+
+        results = {
+            "total_sessions": len(all_sessions),
+            "already_analyzed": len(existing_sessions),
+            "to_analyze": len(sessions_to_analyze),
+            "analyzed": 0,
+            "ttps_found": 0,
+            "skipped": 0,
+            "failed": 0,
+            "errors": [],
+        }
+
+        # Process in batches
+        for i in range(0, len(sessions_to_analyze), batch_size):
+            batch = sessions_to_analyze[i : i + batch_size]
+            logger.info(f"Processing batch {i // batch_size + 1}: sessions {i + 1} to {i + len(batch)}")
+
+            for session_id in batch:
+                try:
+                    result = self.analyze_session_ttps(session_id)
+                    if result.get("ttps_found", 0) > 0:
+                        results["analyzed"] += 1
+                        results["ttps_found"] += result["ttps_found"]
+                    else:
+                        results["skipped"] += 1
+                except Exception as e:
+                    logger.error(f"Failed to analyze session {session_id}: {e}")
+                    results["failed"] += 1
+                    if len(results["errors"]) < 10:  # Keep first 10 errors
+                        results["errors"].append({"session": session_id, "error": str(e)})
+
+        logger.info(
+            f"Batch TTP analysis complete: {results['analyzed']} analyzed, "
+            f"{results['skipped']} skipped (no TTPs), {results['failed']} failed"
+        )
+
+        return results
 
         # Check which tables exist
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")

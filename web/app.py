@@ -1550,9 +1550,19 @@ def api_stats():
 
 @app.route("/api/sessions")
 def api_sessions():
-    """API endpoint for sessions list."""
+    """API endpoint for sessions list.
+
+    Query parameters:
+        hours: Time range in hours (default: 168 = 7 days)
+        limit: Number of sessions to return (default: 0 = all sessions)
+        offset: Offset for pagination (default: 0)
+        source: Filter by specific source name (optional)
+
+    Returns:
+        JSON object with sessions array and pagination info
+    """
     hours = request.args.get("hours", 168, type=int)
-    limit = request.args.get("limit", 100, type=int)
+    limit = request.args.get("limit", 0, type=int)  # Default 0 = all sessions
     offset = request.args.get("offset", 0, type=int)
     source_filter = request.args.get("source", None)
 
@@ -1567,14 +1577,24 @@ def api_sessions():
         )
         sessions = result.get("sessions", [])
         total = result.get("total", len(sessions))
+        returned = result.get("returned", len(sessions))
 
-        print(f"[/api/sessions] Fetched {len(sessions)} sessions (limit={limit}, offset={offset}, total={total})")
+        print(f"[/api/sessions] Fetched {returned} sessions (limit={limit}, offset={offset}, total={total})")
 
-        return jsonify(sessions)
+        # Return full response with pagination info
+        return jsonify({
+            "sessions": sessions,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "returned": returned,
+        })
     except Exception as e:
         print(f"[/api/sessions] Error fetching sessions: {e}")
-        # Fallback to empty list
-        return jsonify([])
+        import traceback
+        traceback.print_exc()
+        # Return error response
+        return jsonify({"sessions": [], "total": 0, "error": str(e)})
 
 
 @app.route("/api/system-info")
@@ -2062,7 +2082,10 @@ def ips_data():
 
 @app.route("/api/sessions-data")
 def sessions_data():
-    """API endpoint for sessions data - called via AJAX from sessions page."""
+    """API endpoint for sessions data - called via AJAX from sessions page.
+
+    Fetches ALL sessions matching the time range and filters, then paginates.
+    """
     hours = request.args.get("hours", 168, type=int)
     page = request.args.get("page", 1, type=int)
     per_page = 50
@@ -2078,39 +2101,22 @@ def sessions_data():
     has_tty = request.args.get("has_tty", "")
     successful_login = request.args.get("successful_login", "")
 
-    # Use the DataSource/MultiSource API layer instead of parse_all()
-    # Fetch sessions in batches from SQLite via API
-    batch_size = 500
-    offset = 0
-    all_sessions_list = []
-
-    while True:
-        try:
-            result = session_parser.get_sessions(
-                hours=hours,
-                limit=batch_size,
-                offset=offset,
-                src_ip=ip_filter if ip_filter else None,
-                source_filter=source_filter if source_filter else None,
-            )
-            batch = result.get("sessions", [])
-            if not batch:
-                break
-
-            all_sessions_list.extend(batch)
-            offset += batch_size
-
-            # If we got fewer than batch_size, we've reached the end
-            if len(batch) < batch_size:
-                break
-
-            # Stop fetching if we have enough for 10 pages (optimization)
-            if len(all_sessions_list) >= per_page * 10:
-                break
-
-        except Exception as e:
-            print(f"[/api/sessions-data] Error fetching sessions: {e}")
-            break
+    # Fetch ALL sessions - no artificial limits
+    # The get_sessions method now fetches all data and caches it
+    try:
+        result = session_parser.get_sessions(
+            hours=hours,
+            limit=0,  # 0 = fetch all sessions
+            offset=0,
+            src_ip=ip_filter if ip_filter else None,
+            source_filter=source_filter if source_filter else None,
+        )
+        all_sessions_list = result.get("sessions", [])
+    except Exception as e:
+        print(f"[/api/sessions-data] Error fetching sessions: {e}")
+        import traceback
+        traceback.print_exc()
+        all_sessions_list = []
 
     print(
         f"[/api/sessions-data] Fetched {len(all_sessions_list)} sessions from API (hours={hours}, source={source_filter})"

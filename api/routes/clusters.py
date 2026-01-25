@@ -498,6 +498,36 @@ async def build_ttp_clusters(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/clusters/ttp/batch-analyze")
+async def batch_analyze_ttps(
+    days: int = Query(7, description="Number of days to analyze", ge=1, le=365),
+    batch_size: int = Query(100, description="Sessions per batch", ge=10, le=1000),
+):
+    """
+    Batch analyze TTP fingerprints for all sessions in the time period.
+
+    This endpoint populates the TTP fingerprints table by analyzing all sessions
+    that haven't been analyzed yet. Should be called periodically or before
+    building clusters for the first time.
+
+    Returns:
+        Summary of analysis including sessions analyzed, TTPs found, and errors.
+    """
+    try:
+        service = get_clustering_service()
+        result = service.batch_analyze_ttps(days=days, batch_size=batch_size)
+
+        return {
+            "message": f"Batch analysis complete: {result.get('analyzed', 0)} sessions analyzed",
+            "result": result,
+            "parameters": {"days": days, "batch_size": batch_size},
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to batch analyze TTPs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/clusters/ttp/{technique_id}")
 async def get_clusters_by_technique(technique_id: str):
     """
