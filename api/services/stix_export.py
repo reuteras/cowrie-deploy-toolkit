@@ -167,7 +167,8 @@ class STIXExportService:
         # Create malware object for the payload
         malware = Malware(
             name=malware_name,
-            labels=["trojan", "downloader"],  # Would be enriched from VT data
+            is_family=False,  # Individual sample, not a malware family
+            malware_types=["trojan", "downloader"],
             description=f"Malware downloaded by {cluster_data.get('size', 0)} unique IPs",
             created_by_ref=self.identity_id,
             confidence=cluster_data.get("score", 50),
