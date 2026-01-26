@@ -264,6 +264,12 @@ function renderThreatIntel(intel, container) {
 
     let html = '<div class="intel-card">';
 
+    const asnValue = intel.asn || (intel.geo && intel.geo.asn);
+    const asnOrg = intel.asn_org || (intel.geo && intel.geo.asn_org);
+    if (asnValue) {
+        html += `<div><strong>ASN:</strong> AS${escapeHtml(String(asnValue))}${asnOrg ? ` - ${escapeHtml(String(asnOrg))}` : ''}</div>`;
+    }
+
     if (intel.summary.is_known_threat) {
         html += '<span class="intel-tag threat">Known Threat</span> ';
     }
@@ -419,16 +425,26 @@ async function loadData() {
 
         document.getElementById('members-list').innerHTML = membersHtml;
 
-        // Load threat intel for first 10 members
-        for (const member of members.slice(0, 10)) {
-            const intel = await loadThreatIntel(member.src_ip);
-            if (intel) {
-                const container = document.getElementById('member-' + member.src_ip.replace(/\./g, '-'));
-                if (container) {
-                    renderThreatIntel(intel, container);
+        // Load threat intel for all members with limited concurrency
+        const concurrency = 5;
+        let index = 0;
+
+        async function loadNext() {
+            while (index < members.length) {
+                const currentIndex = index++;
+                const member = members[currentIndex];
+                const intel = await loadThreatIntel(member.src_ip);
+                if (intel) {
+                    const container = document.getElementById('member-' + member.src_ip.replace(/\./g, '-'));
+                    if (container) {
+                        renderThreatIntel(intel, container);
+                    }
                 }
             }
         }
+
+        const workers = Array.from({length: Math.min(concurrency, members.length)}, () => loadNext());
+        await Promise.all(workers);
 
     } catch (error) {
         document.getElementById('loading-state').style.display = 'none';

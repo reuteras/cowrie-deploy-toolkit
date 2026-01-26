@@ -2932,8 +2932,25 @@ def ip_intel(ip: str):
                 f"{api_url}/api/v1/intel/ip/{ip}",
                 timeout=15,  # Reduced - fail fast, let frontend retry
             )
-            if response.ok:
-                return jsonify(response.json())
+            intel_data = response.json() if response.ok else None
+
+            geo_response = req.get(
+                f"{api_url}/api/v1/threat/ip/{ip}",
+                timeout=10,
+            )
+            geo_data = geo_response.json() if geo_response.ok else {}
+
+            if intel_data is None:
+                intel_data = {"ip": ip, "summary": {}, "sources": {}, "cached": False}
+
+            if geo_data:
+                intel_data["geo"] = geo_data.get("geo") or intel_data.get("geo")
+                if geo_data.get("asn") is not None:
+                    intel_data["asn"] = geo_data.get("asn")
+                if geo_data.get("asn_org"):
+                    intel_data["asn_org"] = geo_data.get("asn_org")
+
+            return jsonify(intel_data)
         except req.exceptions.Timeout:
             # Don't log timeout as error - expected for slow external APIs
             pass
