@@ -147,14 +147,17 @@ class MultiSourceDataSource:
         source_filter: Optional[str] = None,
     ) -> dict:
         """
-        Get ALL sessions from all sources (or filtered sources) with caching.
+        Get sessions from sources with efficient pagination.
 
-        Fetches all matching sessions from each source, combines them, and applies
-        pagination (offset/limit) only at the end for API response.
+        For paginated requests (limit > 0): Fetches limit+offset from each source,
+        merges and sorts, then returns the requested page. This is efficient for
+        displaying paginated results.
+
+        For unpaginated requests (limit = 0): Fetches all sessions. Use sparingly.
 
         Args:
             hours: Time range in hours
-            limit: Number of sessions to return (for pagination, 0 = all)
+            limit: Number of sessions to return (0 = all sessions)
             offset: Offset for pagination
             src_ip: Filter by source IP
             username: Filter by username
@@ -165,140 +168,266 @@ class MultiSourceDataSource:
         Returns:
             Aggregated sessions dict with source tags and pagination info
         """
-        # Build cache key for ALL sessions (without pagination params)
-        # We cache all data and paginate from cache
-        filter_key = f"{src_ip or ''}{username or ''}{start_time or ''}{end_time or ''}"
-        cache_key = f"sessions_all_{hours}_{source_filter or 'all'}_{filter_key}"
-        cached = self.sessions_cache.get(cache_key)
+        # Determine which sources to query
+        sources_to_query = self.sources
+        if source_filter and source_filter in self.sources:
+            sources_to_query = {source_filter: self.sources[source_filter]}
 
-        if cached is not None:
-            print(f"[MultiSource] Cache hit for all sessions (hours={hours}, filter={source_filter})")
-            all_sessions = cached["all_sessions"]
-            total_count = cached["total"]
-            sources_queried = cached["sources_queried"]
-            source_errors = cached["source_errors"]
-        else:
-            print(f"[MultiSource] get_sessions: fetching ALL sessions (hours={hours}, source_filter='{source_filter}')")
+        # Filter out sources in backoff
+        available_sources = {
+            name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
+        }
 
-            # Determine which sources to query
-            sources_to_query = self.sources
-            if source_filter and source_filter in self.sources:
-                print(f"[MultiSource] Filtering to single source: {source_filter}")
-                sources_to_query = {source_filter: self.sources[source_filter]}
-            else:
-                print(f"[MultiSource] Querying all sources: {list(self.sources.keys())}")
+        if not available_sources:
+            print("[MultiSource] No sources available (all in backoff)")
+            return {"total": 0, "sessions": [], "sources_queried": [], "source_errors": {}}
 
-            # Filter out sources in backoff
-            available_sources = {
-                name: source for name, source in sources_to_query.items() if self.backoff.should_retry(name)
-            }
-            print(f"[MultiSource] Available sources after backoff filter: {list(available_sources.keys())}")
+        # For single source, pass through pagination directly (most efficient)
+        if len(available_sources) == 1:
+            source = list(available_sources.values())[0]
+            return self._get_sessions_single_source(
+                source, hours, limit, offset, src_ip, username, start_time, end_time
+            )
 
-            if len(available_sources) < len(sources_to_query):
-                skipped = set(sources_to_query.keys()) - set(available_sources.keys())
-                print(f"[MultiSource] Skipping sources in backoff: {skipped}")
-
-            all_sessions = []
-            total_count = 0
-            source_errors = {}
-
-            if not available_sources:
-                print("[MultiSource] No sources available (all in backoff)")
-                result = {"total": 0, "sessions": [], "sources_queried": [], "source_errors": {}}
-                self.sessions_cache.set(cache_key, result, ttl=5)
-                return result
-
-            # Fetch ALL sessions from each source using pagination
-            max_workers = min(len(available_sources), MAX_WORKERS)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_source = {
-                    executor.submit(
-                        self._fetch_all_sessions_from_source,
-                        source,
-                        hours,
-                        src_ip,
-                        username,
-                        start_time,
-                        end_time,
-                    ): source
-                    for source in available_sources.values()
-                }
-
-                for future in concurrent.futures.as_completed(future_to_source):
-                    source = future_to_source[future]
-                    try:
-                        sessions = future.result(timeout=120)  # Longer timeout for pagination
-                        self.backoff.record_success(source.name)
-                        session_count = len(sessions)
-                        print(f"[MultiSource] Fetched {session_count} sessions from '{source.name}'")
-                        all_sessions.extend(sessions)
-                        total_count += session_count
-                    except Exception as e:
-                        print(f"[MultiSource] Error fetching sessions from '{source.name}': {e}")
-                        import traceback
-                        traceback.print_exc()
-                        source_errors[source.name] = str(e)
-                        self.backoff.record_failure(source.name)
-
-            # Sort combined sessions by start_time (most recent first)
-            all_sessions.sort(key=lambda x: x.get("start_time") or "", reverse=True)
-            sources_queried = list(sources_to_query.keys())
-
-            print(f"[MultiSource] Total sessions fetched from all sources: {total_count}")
-
-            # Cache all sessions
-            self.sessions_cache.set(cache_key, {
-                "all_sessions": all_sessions,
-                "total": total_count,
-                "sources_queried": sources_queried,
-                "source_errors": source_errors,
-            })
-
-        # Apply pagination (offset/limit) for API response
+        # For multiple sources, use merge strategy
         if limit > 0:
-            paginated_sessions = all_sessions[offset:offset + limit]
+            # Paginated request: fetch enough from each source to fill the page
+            return self._get_sessions_paginated(
+                available_sources, hours, limit, offset, src_ip, username, start_time, end_time
+            )
         else:
-            # limit=0 means return all
-            paginated_sessions = all_sessions[offset:] if offset > 0 else all_sessions
+            # Unpaginated request: fetch all (expensive, use sparingly)
+            return self._get_sessions_all(
+                available_sources, hours, src_ip, username, start_time, end_time
+            )
 
-        return {
+    def _get_sessions_single_source(
+        self,
+        source,
+        hours: int,
+        limit: int,
+        offset: int,
+        src_ip: Optional[str],
+        username: Optional[str],
+        start_time: Optional[str],
+        end_time: Optional[str],
+    ) -> dict:
+        """Pass through pagination to single source (most efficient)."""
+        print(f"[MultiSource] Single source '{source.name}': limit={limit}, offset={offset}")
+
+        try:
+            result = source.datasource.get_sessions(
+                hours=hours,
+                limit=limit if limit > 0 else 10000,  # API needs a limit
+                offset=offset,
+                src_ip=src_ip,
+                username=username,
+                start_time=start_time,
+                end_time=end_time,
+            )
+            self.backoff.record_success(source.name)
+
+            sessions = result.get("sessions", [])
+            # Tag sessions with source info
+            for session in sessions:
+                session["_source"] = source.name
+                session["_source_type"] = source.type
+
+            return {
+                "total": result.get("total", len(sessions)),
+                "sessions": sessions,
+                "sources_queried": [source.name],
+                "source_errors": {},
+                "offset": offset,
+                "limit": limit,
+                "returned": len(sessions),
+            }
+        except Exception as e:
+            print(f"[MultiSource] Error fetching from '{source.name}': {e}")
+            self.backoff.record_failure(source.name)
+            return {
+                "total": 0,
+                "sessions": [],
+                "sources_queried": [source.name],
+                "source_errors": {source.name: str(e)},
+                "offset": offset,
+                "limit": limit,
+                "returned": 0,
+            }
+
+    def _get_sessions_paginated(
+        self,
+        available_sources: dict,
+        hours: int,
+        limit: int,
+        offset: int,
+        src_ip: Optional[str],
+        username: Optional[str],
+        start_time: Optional[str],
+        end_time: Optional[str],
+    ) -> dict:
+        """
+        Get paginated sessions from multiple sources.
+
+        Strategy: Fetch (limit + offset) from each source to ensure we have enough
+        sessions after merge-sorting to return the requested page.
+        """
+        # Calculate how many to fetch from each source
+        # We need enough to fill offset + limit after merge-sorting
+        fetch_per_source = limit + offset
+
+        print(
+            f"[MultiSource] Paginated multi-source: limit={limit}, offset={offset}, "
+            f"fetching {fetch_per_source} per source from {list(available_sources.keys())}"
+        )
+
+        # Check cache
+        filter_key = f"{src_ip or ''}{username or ''}{start_time or ''}{end_time or ''}"
+        cache_key = f"sessions_page_{hours}_{limit}_{offset}_{filter_key}"
+        cached = self.sessions_cache.get(cache_key)
+        if cached is not None:
+            print(f"[MultiSource] Cache hit for paginated sessions")
+            return cached
+
+        all_sessions = []
+        total_count = 0
+        source_errors = {}
+
+        # Query sources in parallel
+        max_workers = min(len(available_sources), MAX_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(
+                    source.datasource.get_sessions,
+                    hours=hours,
+                    limit=fetch_per_source,
+                    offset=0,  # Always start from 0, we'll merge-sort
+                    src_ip=src_ip,
+                    username=username,
+                    start_time=start_time,
+                    end_time=end_time,
+                ): source
+                for source in available_sources.values()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    result = future.result(timeout=30)
+                    self.backoff.record_success(source.name)
+
+                    sessions = result.get("sessions", [])
+                    # Tag sessions with source info
+                    for session in sessions:
+                        session["_source"] = source.name
+                        session["_source_type"] = source.type
+
+                    all_sessions.extend(sessions)
+                    # Add to total (use source's total, not fetched count)
+                    total_count += result.get("total", len(sessions))
+
+                    print(f"[MultiSource] '{source.name}': got {len(sessions)} sessions (source total: {result.get('total', '?')})")
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching from '{source.name}': {e}")
+                    source_errors[source.name] = str(e)
+                    self.backoff.record_failure(source.name)
+
+        # Sort combined sessions by start_time (most recent first)
+        all_sessions.sort(key=lambda x: x.get("start_time") or "", reverse=True)
+
+        # Apply pagination
+        paginated_sessions = all_sessions[offset:offset + limit]
+
+        result = {
             "total": total_count,
             "sessions": paginated_sessions,
-            "sources_queried": sources_queried,
+            "sources_queried": list(available_sources.keys()),
             "source_errors": source_errors,
             "offset": offset,
             "limit": limit,
             "returned": len(paginated_sessions),
         }
 
-    def _fetch_all_sessions_from_source(
+        # Cache the result
+        self.sessions_cache.set(cache_key, result)
+
+        return result
+
+    def _get_sessions_all(
+        self,
+        available_sources: dict,
+        hours: int,
+        src_ip: Optional[str],
+        username: Optional[str],
+        start_time: Optional[str],
+        end_time: Optional[str],
+    ) -> dict:
+        """
+        Get ALL sessions from multiple sources (expensive - use sparingly).
+
+        Used for exports, reports, or when limit=0 is explicitly requested.
+        """
+        print(f"[MultiSource] Fetching ALL sessions from {list(available_sources.keys())} (this may be slow)")
+
+        all_sessions = []
+        total_count = 0
+        source_errors = {}
+
+        # Fetch all from each source using pagination
+        max_workers = min(len(available_sources), MAX_WORKERS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_source = {
+                executor.submit(
+                    self._fetch_all_from_source,
+                    source,
+                    hours,
+                    src_ip,
+                    username,
+                    start_time,
+                    end_time,
+                ): source
+                for source in available_sources.values()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    sessions = future.result(timeout=300)  # Longer timeout for all data
+                    self.backoff.record_success(source.name)
+                    all_sessions.extend(sessions)
+                    total_count += len(sessions)
+                    print(f"[MultiSource] '{source.name}': got {len(sessions)} total sessions")
+                except Exception as e:
+                    print(f"[MultiSource] Error fetching all from '{source.name}': {e}")
+                    source_errors[source.name] = str(e)
+                    self.backoff.record_failure(source.name)
+
+        # Sort combined sessions
+        all_sessions.sort(key=lambda x: x.get("start_time") or "", reverse=True)
+
+        return {
+            "total": total_count,
+            "sessions": all_sessions,
+            "sources_queried": list(available_sources.keys()),
+            "source_errors": source_errors,
+            "offset": 0,
+            "limit": 0,
+            "returned": len(all_sessions),
+        }
+
+    def _fetch_all_from_source(
         self,
         source,
         hours: int,
-        src_ip: Optional[str] = None,
-        username: Optional[str] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
+        src_ip: Optional[str],
+        username: Optional[str],
+        start_time: Optional[str],
+        end_time: Optional[str],
     ) -> list:
-        """
-        Fetch ALL sessions from a single source using pagination.
-
-        Args:
-            source: HoneypotSource instance
-            hours: Time range in hours
-            src_ip: Filter by source IP
-            username: Filter by username
-            start_time: Filter by start time
-            end_time: Filter by end time
-
-        Returns:
-            List of all sessions from this source (tagged with source info)
-        """
+        """Fetch ALL sessions from a single source using pagination."""
         all_sessions = []
         offset = 0
         page_size = 1000
-
-        print(f"[MultiSource] Fetching ALL sessions from '{source.name}' (hours={hours})")
 
         while True:
             try:
@@ -320,12 +449,7 @@ class MultiSourceDataSource:
                     session["_source_type"] = source.type
 
                 all_sessions.extend(sessions)
-                print(
-                    f"[MultiSource] '{source.name}': fetched {len(sessions)} sessions "
-                    f"(offset={offset}, total={len(all_sessions)})"
-                )
 
-                # If we got fewer results than page size, we're done
                 if len(sessions) < page_size:
                     break
 
@@ -335,7 +459,6 @@ class MultiSourceDataSource:
                 print(f"[MultiSource] Error fetching from '{source.name}' at offset {offset}: {e}")
                 break
 
-        print(f"[MultiSource] '{source.name}': finished with {len(all_sessions)} total sessions")
         return all_sessions
 
     def get_all_sessions_from_source(self, source, hours: int, max_sessions: Optional[int] = None) -> list:

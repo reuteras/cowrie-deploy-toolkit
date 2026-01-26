@@ -2084,7 +2084,8 @@ def ips_data():
 def sessions_data():
     """API endpoint for sessions data - called via AJAX from sessions page.
 
-    Fetches ALL sessions matching the time range and filters, then paginates.
+    Uses efficient pagination when possible. Only fetches more data when
+    client-side filters (country, credentials, commands, etc.) are needed.
     """
     hours = request.args.get("hours", 168, type=int)
     page = request.args.get("page", 1, type=int)
@@ -2101,26 +2102,61 @@ def sessions_data():
     has_tty = request.args.get("has_tty", "")
     successful_login = request.args.get("successful_login", "")
 
-    # Fetch ALL sessions - no artificial limits
-    # The get_sessions method now fetches all data and caches it
+    # Check if we have client-side only filters
+    has_client_filters = any([
+        country_filter, credentials_filter, client_version_filter,
+        command_filter, has_commands, has_tty, successful_login
+    ])
+
     try:
+        if not has_client_filters:
+            # EFFICIENT PATH: No client-side filters, use direct pagination
+            # This is much faster - only fetches the exact page needed
+            offset = (page - 1) * per_page
+            result = session_parser.get_sessions(
+                hours=hours,
+                limit=per_page,
+                offset=offset,
+                src_ip=ip_filter if ip_filter else None,
+                source_filter=source_filter if source_filter else None,
+            )
+
+            sessions = result.get("sessions", [])
+            total = result.get("total", len(sessions))
+
+            print(f"[/api/sessions-data] Efficient pagination: page={page}, got {len(sessions)} of {total} total")
+
+            return jsonify({
+                "sessions": sessions,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "pages": (total + per_page - 1) // per_page,
+            })
+
+        # CLIENT-SIDE FILTER PATH: Need to fetch more data to filter
+        # Fetch enough pages to likely have enough filtered results
+        # Cap at 10 pages worth to avoid fetching everything
+        fetch_limit = per_page * 10
         result = session_parser.get_sessions(
             hours=hours,
-            limit=0,  # 0 = fetch all sessions
+            limit=fetch_limit,
             offset=0,
             src_ip=ip_filter if ip_filter else None,
             source_filter=source_filter if source_filter else None,
         )
         all_sessions_list = result.get("sessions", [])
+
+        print(
+            f"[/api/sessions-data] Client filters active, fetched {len(all_sessions_list)} sessions "
+            f"(hours={hours}, source={source_filter})"
+        )
     except Exception as e:
         print(f"[/api/sessions-data] Error fetching sessions: {e}")
         import traceback
         traceback.print_exc()
         all_sessions_list = []
-
-    print(
-        f"[/api/sessions-data] Fetched {len(all_sessions_list)} sessions from API (hours={hours}, source={source_filter})"
-    )
+        has_client_filters = True  # Fall through to empty filter path
 
     # Apply client-side filters (filters not supported by API)
     filtered_sessions = []
