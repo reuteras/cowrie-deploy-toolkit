@@ -41,9 +41,13 @@
                 <select id="type-filter" onchange="reloadPage()">
                     <option value="" {% if not cluster_type %}selected{% endif %}>All Types</option>
                     <option value="command" {% if cluster_type == 'command' %}selected{% endif %}>Command</option>
-                    <option value="hassh" {% if cluster_type == 'hassh' %}selected{% endif %}>HASSH</option>
+                    <option value="hassh" id="type-filter-hassh" {% if cluster_type == 'hassh' %}selected{% endif %}>HASSH</option>
                     <option value="payload" {% if cluster_type == 'payload' %}selected{% endif %}>Payload</option>
                 </select>
+                <label style="margin-left: 10px;">
+                    <input type="checkbox" id="show-hassh-filter" onchange="reloadPage()">
+                    Show HASSH clusters
+                </label>
                 <label>Min Size:</label>
                 <select id="size-filter" onchange="reloadPage()">
                     <option value="2" {% if min_size == 2 %}selected{% endif %}>2+ IPs</option>
@@ -83,7 +87,7 @@
                 <div class="stat-card-value" id="command-clusters">0</div>
                 <div class="stat-card-label">Command Clusters</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" id="hassh-stat-card">
                 <div class="stat-card-value" id="hassh-clusters">0</div>
                 <div class="stat-card-label">HASSH Clusters</div>
             </div>
@@ -120,8 +124,10 @@ function reloadPage() {
     const type = document.getElementById('type-filter').value;
     const size = document.getElementById('size-filter').value;
     const hours = document.getElementById('hours-filter').value;
+    const showHassh = document.getElementById('show-hassh-filter').checked ? '1' : '';
     let url = '?hours=' + hours + '&min_size=' + size;
     if (type) url += '&type=' + type;
+    if (showHassh) url += '&show_hassh=1';
     window.location.href = url;
 }
 
@@ -224,7 +230,18 @@ function loadData() {
     const urlParams = new URLSearchParams(window.location.search);
     const hours = urlParams.get('hours') || '168';
     const minSize = urlParams.get('min_size') || '2';
-    const clusterType = urlParams.get('type') || '';
+    let clusterType = urlParams.get('type') || '';
+    const showHassh = urlParams.get('show_hassh') === '1';
+    const hasshToggle = document.getElementById('show-hassh-filter');
+    if (hasshToggle) hasshToggle.checked = showHassh;
+    const hasshOption = document.getElementById('type-filter-hassh');
+    if (hasshOption) hasshOption.style.display = showHassh ? 'inline' : 'none';
+    const hasshStatCard = document.getElementById('hassh-stat-card');
+    if (hasshStatCard) hasshStatCard.style.display = showHassh ? 'block' : 'none';
+    if (!showHassh && clusterType === 'hassh') {
+        clusterType = '';
+        document.getElementById('type-filter').value = '';
+    }
 
     document.getElementById('loading-state').style.display = 'block';
     document.getElementById('error-state').style.display = 'none';
@@ -245,7 +262,10 @@ function loadData() {
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('content').style.display = 'block';
 
-            const clusters = data.clusters || [];
+            let clusters = data.clusters || [];
+            if (!showHassh) {
+                clusters = clusters.filter(c => c.cluster_type !== 'hassh');
+            }
 
             // Update stats
             document.getElementById('total-clusters').textContent = clusters.length;
@@ -326,13 +346,18 @@ function runAnalysis() {
     const urlParams = new URLSearchParams(window.location.search);
     const hours = urlParams.get('hours') || '168';
     const minSize = urlParams.get('min_size') || '2';
+    const showHassh = urlParams.get('show_hassh') === '1';
     const days = Math.max(1, Math.floor(parseInt(hours) / 24));
 
     document.getElementById('loading-state').style.display = 'block';
     document.getElementById('content').style.display = 'none';
     document.getElementById('loading-state').querySelector('p').textContent = 'Running cluster analysis...';
 
-    fetch(basePath + '/api/clusters-analyze?days=' + days + '&min_size=' + minSize, {
+    let analyzeUrl = basePath + '/api/clusters-analyze?days=' + days + '&min_size=' + minSize;
+    if (showHassh) {
+        analyzeUrl += '&cluster_types=command,payload,ttp,hassh';
+    }
+    fetch(analyzeUrl, {
         method: 'POST'
     })
         .then(response => response.json())
