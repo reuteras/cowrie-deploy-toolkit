@@ -2084,34 +2084,40 @@ def ips_data():
 def sessions_data():
     """API endpoint for sessions data - called via AJAX from sessions page.
 
-    Uses efficient pagination when possible. Only fetches more data when
-    client-side filters (country, credentials, commands, etc.) are needed.
+    Uses efficient server-side pagination for most filters. Only country,
+    credentials, client_version, and command text search require client-side filtering.
     """
     hours = request.args.get("hours", 168, type=int)
     page = request.args.get("page", 1, type=int)
     per_page = 50
     source_filter = request.args.get("source", "")
 
-    # Filter parameters
+    # Server-side filter parameters (supported by API)
     ip_filter = request.args.get("ip", "")
+    has_commands_param = request.args.get("has_commands", "")
+    has_tty_param = request.args.get("has_tty", "")
+    successful_login_param = request.args.get("successful_login", "")
+
+    # Client-side only filter parameters (not supported by API)
     country_filter = request.args.get("country", "")
     credentials_filter = request.args.get("credentials", "")
     client_version_filter = request.args.get("client_version", "")
     command_filter = request.args.get("command", "")
-    has_commands = request.args.get("has_commands", "")
-    has_tty = request.args.get("has_tty", "")
-    successful_login = request.args.get("successful_login", "")
+
+    # Convert string params to booleans for server-side filters
+    has_commands = True if has_commands_param else None
+    has_tty = True if has_tty_param else None
+    login_success = True if successful_login_param else None
 
     # Check if we have client-side only filters
     has_client_filters = any([
-        country_filter, credentials_filter, client_version_filter,
-        command_filter, has_commands, has_tty, successful_login
+        country_filter, credentials_filter, client_version_filter, command_filter
     ])
 
     try:
         if not has_client_filters:
-            # EFFICIENT PATH: No client-side filters, use direct pagination
-            # This is much faster - only fetches the exact page needed
+            # EFFICIENT PATH: All filters can be done server-side
+            # This is fast - only fetches the exact page needed
             offset = (page - 1) * per_page
             result = session_parser.get_sessions(
                 hours=hours,
@@ -2119,12 +2125,15 @@ def sessions_data():
                 offset=offset,
                 src_ip=ip_filter if ip_filter else None,
                 source_filter=source_filter if source_filter else None,
+                has_commands=has_commands,
+                has_tty=has_tty,
+                login_success=login_success,
             )
 
             sessions = result.get("sessions", [])
             total = result.get("total", len(sessions))
 
-            print(f"[/api/sessions-data] Efficient pagination: page={page}, got {len(sessions)} of {total} total")
+            print(f"[/api/sessions-data] Server-side pagination: page={page}, got {len(sessions)} of {total} total")
 
             return jsonify({
                 "sessions": sessions,
@@ -2134,16 +2143,18 @@ def sessions_data():
                 "pages": (total + per_page - 1) // per_page,
             })
 
-        # CLIENT-SIDE FILTER PATH: Need to fetch more data to filter
-        # Fetch enough pages to likely have enough filtered results
-        # Cap at 10 pages worth to avoid fetching everything
-        fetch_limit = per_page * 10
+        # CLIENT-SIDE FILTER PATH: Some filters need post-processing
+        # Fetch more data since we need to filter client-side
+        fetch_limit = per_page * 20  # Fetch more to account for filtering
         result = session_parser.get_sessions(
             hours=hours,
             limit=fetch_limit,
             offset=0,
             src_ip=ip_filter if ip_filter else None,
             source_filter=source_filter if source_filter else None,
+            has_commands=has_commands,
+            has_tty=has_tty,
+            login_success=login_success,
         )
         all_sessions_list = result.get("sessions", [])
 
@@ -2158,13 +2169,9 @@ def sessions_data():
         all_sessions_list = []
         has_client_filters = True  # Fall through to empty filter path
 
-    # Apply client-side filters (filters not supported by API)
+    # Apply client-side only filters (not supported by API)
     filtered_sessions = []
     for session in all_sessions_list:
-        # IP filter
-        if ip_filter and ip_filter not in session.get("src_ip", ""):
-            continue
-
         # Country filter
         session_country = ""
         if session.get("geo") and session["geo"].get("country"):
@@ -2183,23 +2190,18 @@ def sessions_data():
         if client_version_filter and client_version_filter not in session.get("client_version", ""):
             continue
 
-        # Command filter
+        # Command text filter (search within command inputs)
         if command_filter:
-            session_commands = " ".join(session.get("commands", []))
+            commands = session.get("commands", [])
+            # Handle both list of dicts and list of strings
+            if commands and isinstance(commands[0], dict):
+                session_commands = " ".join(cmd.get("input", "") or cmd.get("command", "") for cmd in commands)
+            else:
+                session_commands = " ".join(str(cmd) for cmd in commands)
             if command_filter not in session_commands:
                 continue
 
-        # Has commands filter
-        if has_commands and len(session.get("commands", [])) == 0:
-            continue
-
-        # Has TTY filter
-        if has_tty and not session.get("tty_log"):
-            continue
-
-        # Successful login filter
-        if successful_login and not session.get("login_success"):
-            continue
+        # Note: has_commands, has_tty, login_success are now server-side filters
 
         filtered_sessions.append(session)
 

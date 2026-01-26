@@ -67,6 +67,9 @@ class DataSource:
         username: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
+        has_commands: Optional[bool] = None,
+        has_tty: Optional[bool] = None,
+        login_success: Optional[bool] = None,
     ) -> dict:
         """
         Get sessions with optional filtering and pagination.
@@ -79,16 +82,22 @@ class DataSource:
             username: Filter by username
             start_time: Filter by start time (ISO format)
             end_time: Filter by end time (ISO format)
+            has_commands: Filter for sessions with commands
+            has_tty: Filter for sessions with TTY recordings
+            login_success: Filter for successful logins
 
         Returns:
             Dict with "total" and "sessions" keys
         """
         if self.mode == "local":
-            return self._get_sessions_local(hours, limit, offset, src_ip, username, start_time, end_time)
+            return self._get_sessions_local(hours, limit, offset, src_ip, username, start_time, end_time,
+                                            has_commands, has_tty, login_success)
         else:
-            return self._get_sessions_remote(hours, limit, offset, src_ip, username, start_time, end_time)
+            return self._get_sessions_remote(hours, limit, offset, src_ip, username, start_time, end_time,
+                                             has_commands, has_tty, login_success)
 
-    def _get_sessions_local(self, hours, limit, offset, src_ip, username, start_time, end_time) -> dict:
+    def _get_sessions_local(self, hours, limit, offset, src_ip, username, start_time, end_time,
+                             has_commands=None, has_tty=None, login_success=None) -> dict:
         """Get sessions from local files (uses existing SessionParser)."""
         from app import session_parser
 
@@ -102,7 +111,18 @@ class DataSource:
             sessions_list = [s for s in sessions_list if s.get("src_ip") == src_ip]
         if username:
             sessions_list = [s for s in sessions_list if s.get("username") == username]
-        # Note: start_time/end_time filtering could be added if needed
+        if has_commands is True:
+            sessions_list = [s for s in sessions_list if len(s.get("commands", [])) > 0]
+        elif has_commands is False:
+            sessions_list = [s for s in sessions_list if len(s.get("commands", [])) == 0]
+        if has_tty is True:
+            sessions_list = [s for s in sessions_list if s.get("tty_log")]
+        elif has_tty is False:
+            sessions_list = [s for s in sessions_list if not s.get("tty_log")]
+        if login_success is True:
+            sessions_list = [s for s in sessions_list if s.get("login_success")]
+        elif login_success is False:
+            sessions_list = [s for s in sessions_list if not s.get("login_success")]
 
         # Sort by start time (most recent first)
         sessions_list = sorted(sessions_list, key=lambda x: x.get("start_time") or "", reverse=True)
@@ -113,7 +133,8 @@ class DataSource:
 
         return {"total": total, "sessions": paginated}
 
-    def _get_sessions_remote(self, hours, limit, offset, src_ip, username, start_time, end_time) -> dict:
+    def _get_sessions_remote(self, hours, limit, offset, src_ip, username, start_time, end_time,
+                              has_commands=None, has_tty=None, login_success=None) -> dict:
         """Get sessions from remote API with pagination."""
         from datetime import datetime, timedelta, timezone
 
@@ -138,6 +159,13 @@ class DataSource:
             params["start_time"] = start_time
         if end_time:
             params["end_time"] = end_time
+        # Server-side filters
+        if has_commands is not None:
+            params["has_commands"] = str(has_commands).lower()
+        if has_tty is not None:
+            params["has_tty"] = str(has_tty).lower()
+        if login_success is not None:
+            params["login_success"] = str(login_success).lower()
 
         try:
             response = self.session.get(

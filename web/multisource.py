@@ -145,6 +145,9 @@ class MultiSourceDataSource:
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
         source_filter: Optional[str] = None,
+        has_commands: Optional[bool] = None,
+        has_tty: Optional[bool] = None,
+        login_success: Optional[bool] = None,
     ) -> dict:
         """
         Get sessions from sources with efficient pagination.
@@ -164,6 +167,9 @@ class MultiSourceDataSource:
             start_time: Filter by start time
             end_time: Filter by end time
             source_filter: Filter by specific source name (None = all sources)
+            has_commands: Filter for sessions with commands (server-side)
+            has_tty: Filter for sessions with TTY recordings (server-side)
+            login_success: Filter for successful logins (server-side)
 
         Returns:
             Aggregated sessions dict with source tags and pagination info
@@ -186,19 +192,22 @@ class MultiSourceDataSource:
         if len(available_sources) == 1:
             source = list(available_sources.values())[0]
             return self._get_sessions_single_source(
-                source, hours, limit, offset, src_ip, username, start_time, end_time
+                source, hours, limit, offset, src_ip, username, start_time, end_time,
+                has_commands, has_tty, login_success
             )
 
         # For multiple sources, use merge strategy
         if limit > 0:
             # Paginated request: fetch enough from each source to fill the page
             return self._get_sessions_paginated(
-                available_sources, hours, limit, offset, src_ip, username, start_time, end_time
+                available_sources, hours, limit, offset, src_ip, username, start_time, end_time,
+                has_commands, has_tty, login_success
             )
         else:
             # Unpaginated request: fetch all (expensive, use sparingly)
             return self._get_sessions_all(
-                available_sources, hours, src_ip, username, start_time, end_time
+                available_sources, hours, src_ip, username, start_time, end_time,
+                has_commands, has_tty, login_success
             )
 
     def _get_sessions_single_source(
@@ -211,6 +220,9 @@ class MultiSourceDataSource:
         username: Optional[str],
         start_time: Optional[str],
         end_time: Optional[str],
+        has_commands: Optional[bool] = None,
+        has_tty: Optional[bool] = None,
+        login_success: Optional[bool] = None,
     ) -> dict:
         """Pass through pagination to single source (most efficient)."""
         print(f"[MultiSource] Single source '{source.name}': limit={limit}, offset={offset}")
@@ -224,6 +236,9 @@ class MultiSourceDataSource:
                 username=username,
                 start_time=start_time,
                 end_time=end_time,
+                has_commands=has_commands,
+                has_tty=has_tty,
+                login_success=login_success,
             )
             self.backoff.record_success(source.name)
 
@@ -265,6 +280,9 @@ class MultiSourceDataSource:
         username: Optional[str],
         start_time: Optional[str],
         end_time: Optional[str],
+        has_commands: Optional[bool] = None,
+        has_tty: Optional[bool] = None,
+        login_success: Optional[bool] = None,
     ) -> dict:
         """
         Get paginated sessions from multiple sources.
@@ -281,8 +299,9 @@ class MultiSourceDataSource:
             f"fetching {fetch_per_source} per source from {list(available_sources.keys())}"
         )
 
-        # Check cache
-        filter_key = f"{src_ip or ''}{username or ''}{start_time or ''}{end_time or ''}"
+        # Check cache - include filter params in key
+        filter_key = (f"{src_ip or ''}{username or ''}{start_time or ''}{end_time or ''}"
+                      f"{has_commands}{has_tty}{login_success}")
         cache_key = f"sessions_page_{hours}_{limit}_{offset}_{filter_key}"
         cached = self.sessions_cache.get(cache_key)
         if cached is not None:
@@ -306,6 +325,9 @@ class MultiSourceDataSource:
                     username=username,
                     start_time=start_time,
                     end_time=end_time,
+                    has_commands=has_commands,
+                    has_tty=has_tty,
+                    login_success=login_success,
                 ): source
                 for source in available_sources.values()
             }
@@ -361,6 +383,9 @@ class MultiSourceDataSource:
         username: Optional[str],
         start_time: Optional[str],
         end_time: Optional[str],
+        has_commands: Optional[bool] = None,
+        has_tty: Optional[bool] = None,
+        login_success: Optional[bool] = None,
     ) -> dict:
         """
         Get ALL sessions from multiple sources (expensive - use sparingly).
@@ -385,6 +410,9 @@ class MultiSourceDataSource:
                     username,
                     start_time,
                     end_time,
+                    has_commands,
+                    has_tty,
+                    login_success,
                 ): source
                 for source in available_sources.values()
             }
@@ -423,6 +451,9 @@ class MultiSourceDataSource:
         username: Optional[str],
         start_time: Optional[str],
         end_time: Optional[str],
+        has_commands: Optional[bool] = None,
+        has_tty: Optional[bool] = None,
+        login_success: Optional[bool] = None,
     ) -> list:
         """Fetch ALL sessions from a single source using pagination."""
         all_sessions = []
@@ -439,6 +470,9 @@ class MultiSourceDataSource:
                     username=username,
                     start_time=start_time,
                     end_time=end_time,
+                    has_commands=has_commands,
+                    has_tty=has_tty,
+                    login_success=login_success,
                 )
 
                 sessions = result.get("sessions", [])

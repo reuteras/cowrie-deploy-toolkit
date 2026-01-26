@@ -21,6 +21,9 @@ async def get_sessions(
     username: Optional[str] = Query(None, description="Filter by username"),
     start_time: Optional[str] = Query(None, description="Filter by start time (ISO format)"),
     end_time: Optional[str] = Query(None, description="Filter by end time (ISO format)"),
+    has_commands: Optional[bool] = Query(None, description="Filter for sessions with commands"),
+    has_tty: Optional[bool] = Query(None, description="Filter for sessions with TTY recordings"),
+    login_success: Optional[bool] = Query(None, description="Filter for successful logins"),
 ):
     """
     Get list of sessions with filtering and pagination
@@ -47,7 +50,15 @@ async def get_sessions(
         raise HTTPException(status_code=503, detail="Database not available")
 
     sessions = sqlite_parser.get_sessions(
-        limit=limit, offset=offset, src_ip=src_ip, username=username, start_time=start_dt, end_time=end_dt
+        limit=limit,
+        offset=offset,
+        src_ip=src_ip,
+        username=username,
+        start_time=start_dt,
+        end_time=end_dt,
+        has_commands=has_commands,
+        has_tty=has_tty,
+        login_success=login_success,
     )
 
     return {"total": len(sessions), "limit": limit, "offset": offset, "sessions": sessions}

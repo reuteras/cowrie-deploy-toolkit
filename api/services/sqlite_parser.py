@@ -913,6 +913,9 @@ class SQLiteStatsParser:
         username: str = None,
         start_time: datetime = None,
         end_time: datetime = None,
+        has_commands: bool = None,
+        has_tty: bool = None,
+        login_success: bool = None,
     ) -> list[dict]:
         """
         Get sessions from SQLite database with TTY logs, commands, and auth data
@@ -924,6 +927,9 @@ class SQLiteStatsParser:
             username: Filter by username
             start_time: Filter by start time
             end_time: Filter by end time
+            has_commands: Filter for sessions with commands (True) or without (False)
+            has_tty: Filter for sessions with TTY recordings (True) or without (False)
+            login_success: Filter for successful logins (True) or failed (False)
 
         Returns:
             List of session dictionaries
@@ -957,6 +963,24 @@ class SQLiteStatsParser:
                 where_clauses.append("s.starttime <= ?")
                 # Format as ISO8601 to match database format (YYYY-MM-DDTHH:MM:SS.ffffffZ)
                 params.append(end_time.strftime("%Y-%m-%dT%H:%M:%S"))
+
+            # Server-side filter: has_commands
+            if has_commands is True:
+                where_clauses.append("EXISTS (SELECT 1 FROM input i WHERE i.session = s.id)")
+            elif has_commands is False:
+                where_clauses.append("NOT EXISTS (SELECT 1 FROM input i WHERE i.session = s.id)")
+
+            # Server-side filter: has_tty
+            if has_tty is True:
+                where_clauses.append("EXISTS (SELECT 1 FROM ttylog t WHERE t.session = s.id AND t.size > 0)")
+            elif has_tty is False:
+                where_clauses.append("NOT EXISTS (SELECT 1 FROM ttylog t WHERE t.session = s.id AND t.size > 0)")
+
+            # Server-side filter: login_success
+            if login_success is True:
+                where_clauses.append("EXISTS (SELECT 1 FROM auth a WHERE a.session = s.id AND a.success = 1)")
+            elif login_success is False:
+                where_clauses.append("NOT EXISTS (SELECT 1 FROM auth a WHERE a.session = s.id AND a.success = 1)")
 
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
