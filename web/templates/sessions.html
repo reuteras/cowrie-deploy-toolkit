@@ -218,7 +218,10 @@ function loadSessions(page = 1) {
                 const credentialsCell = session.username ?
                     '<a href="?credentials=' + encodeURIComponent(session.username + ':' + (session.password || '***')) + '&hours=' + hours + '"><code>' + session.username + ':' + (session.password || '***') + '</code></a>' :
                     '<span class="no-data">N/A</span>';
-                const commandsCount = (session.commands ? session.commands.length : 0) +
+                const commandsTotal = session.commands_count !== undefined
+                    ? session.commands_count
+                    : (session.commands ? session.commands.length : 0);
+                const commandsCount = commandsTotal +
                     (session.downloads && session.downloads.length > 0 ?
                         ' <span class="badge badge-warning" title="Downloaded ' + session.downloads.length + ' file(s)">' + session.downloads.length + '</span>' : '');
                 const actionsCell = '<a href="' + basePath + '/session/' + session.id + '" class="btn btn-sm">View</a>' +

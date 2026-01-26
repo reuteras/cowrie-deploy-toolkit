@@ -449,9 +449,11 @@ class SessionParser:
                                 session["password"] = entry.get("password")
 
                         elif event_id == "cowrie.command.input":
-                            session["commands"].append(
-                                {"command": entry.get("input", ""), "timestamp": entry["timestamp"]}
-                            )
+                            cmd_input = (entry.get("input") or "").strip()
+                            if cmd_input:
+                                session["commands"].append(
+                                    {"command": cmd_input, "timestamp": entry["timestamp"]}
+                                )
 
                         elif event_id == "cowrie.session.file_download":
                             session["downloads"].append(
@@ -1422,6 +1424,16 @@ def sessions():
         available_sources = list(session_parser.sources.keys())
 
     # Return page immediately with loading state - data loaded via AJAX
+    def normalize_checkbox(value: str) -> str:
+        if not value:
+            return ""
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return "1"
+        if normalized in {"0", "false", "no", "off"}:
+            return ""
+        return ""
+
     return render_template(
         "sessions.html",
         hours=hours,
@@ -1432,9 +1444,9 @@ def sessions():
         credentials_filter=request.args.get("credentials", ""),
         client_version_filter=request.args.get("client_version", ""),
         command_filter=request.args.get("command", ""),
-        has_commands=request.args.get("has_commands", ""),
-        has_tty=request.args.get("has_tty", ""),
-        successful_login=request.args.get("successful_login", ""),
+        has_commands=normalize_checkbox(request.args.get("has_commands", "")),
+        has_tty=normalize_checkbox(request.args.get("has_tty", "")),
+        successful_login=normalize_checkbox(request.args.get("successful_login", "")),
         config=CONFIG,
     )
 
@@ -2104,10 +2116,20 @@ def sessions_data():
     client_version_filter = request.args.get("client_version", "")
     command_filter = request.args.get("command", "")
 
+    def parse_bool_param(value: str) -> Optional[bool]:
+        if value is None or value == "":
+            return None
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        return None
+
     # Convert string params to booleans for server-side filters
-    has_commands = True if has_commands_param else None
-    has_tty = True if has_tty_param else None
-    login_success = True if successful_login_param else None
+    has_commands = parse_bool_param(has_commands_param)
+    has_tty = parse_bool_param(has_tty_param)
+    login_success = parse_bool_param(successful_login_param)
 
     # Check if we have client-side only filters
     has_client_filters = any([

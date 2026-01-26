@@ -966,9 +966,13 @@ class SQLiteStatsParser:
 
             # Server-side filter: has_commands
             if has_commands is True:
-                where_clauses.append("EXISTS (SELECT 1 FROM input i WHERE i.session = s.id)")
+                where_clauses.append(
+                    "EXISTS (SELECT 1 FROM input i WHERE i.session = s.id AND i.input IS NOT NULL AND TRIM(i.input) != '')"
+                )
             elif has_commands is False:
-                where_clauses.append("NOT EXISTS (SELECT 1 FROM input i WHERE i.session = s.id)")
+                where_clauses.append(
+                    "NOT EXISTS (SELECT 1 FROM input i WHERE i.session = s.id AND i.input IS NOT NULL AND TRIM(i.input) != '')"
+                )
 
             # Server-side filter: has_tty
             if has_tty is True:
@@ -1071,11 +1075,14 @@ class SQLiteStatsParser:
                     (session_id,),
                 )
                 for cmd_row in cursor.fetchall():
+                    cmd_input = (cmd_row["input"] or "").strip()
+                    if not cmd_input:
+                        continue
                     session["commands"].append(
                         {
                             "timestamp": cmd_row["timestamp"],
-                            "input": cmd_row["input"],
-                            "command": cmd_row["input"],  # Add for compatibility
+                            "input": cmd_input,
+                            "command": cmd_input,  # Add for compatibility
                             "success": bool(cmd_row["success"]),
                         }
                     )
