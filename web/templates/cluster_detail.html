@@ -124,6 +124,16 @@
             <div id="interest-reasons" class="interest-reasons" style="display: none;"></div>
         </div>
 
+        <div class="section" id="shared-payloads-section" style="display: none;">
+            <div class="section-title">Shared Payloads</div>
+            <div class="command-list" id="shared-payloads-list"></div>
+        </div>
+
+        <div class="section" id="hassh-section" style="display: none;">
+            <div class="section-title">HASSH Fingerprints</div>
+            <div class="command-list" id="hassh-list"></div>
+        </div>
+
         <div class="section" id="enrichment-section" class="enrichment-section" style="display: none;">
             <div class="enrichment-title">
                 <h3>OpenCTI Threat Intelligence</h3>
@@ -330,6 +340,39 @@ async function loadData() {
             if (cluster.metadata.interest_reasons) {
                 displayInterestReasons(cluster.metadata.interest_reasons);
             }
+        }
+
+        // Shared payloads (for command clusters)
+        const sharedPayloads = cluster.metadata?.shared_payloads || [];
+        if (sharedPayloads.length > 0) {
+            document.getElementById('shared-payloads-section').style.display = 'block';
+            document.getElementById('shared-payloads-list').innerHTML = sharedPayloads.map(payload => {
+                const hashLabel = payload.shasum ? payload.shasum.substring(0, 16) + '...' : 'unknown';
+                const vtLabel = payload.vt_detections !== undefined && payload.vt_detections !== null
+                    ? ` • VT: ${payload.vt_detections}`
+                    : '';
+                const threatLabel = payload.threat_label ? ` • ${escapeHtml(payload.threat_label)}` : '';
+                const execLabel = payload.execution_attempts > 0
+                    ? ` • Exec attempts: ${payload.execution_attempts}`
+                    : '';
+                const execSamples = payload.execution_samples && payload.execution_samples.length > 0
+                    ? `<div style="margin-top: 4px; font-size: 0.85em; color: var(--text-secondary);">Exec samples: ${payload.execution_samples.map(cmd => `<code style="word-break: break-all;">${escapeHtml(cmd)}</code>`).join(', ')}</div>`
+                    : '';
+                const urlList = payload.sample_urls && payload.sample_urls.length > 0
+                    ? `<div style="margin-top: 4px; font-size: 0.85em; color: var(--text-secondary);">URLs: ${payload.sample_urls.map(u => `<code style="word-break: break-all;">${escapeHtml(u)}</code>`).join(', ')}</div>`
+                    : '';
+                return `<div class="command-item">SHA256 ${hashLabel} • ${payload.session_count} sessions • ${payload.unique_ips} IPs${vtLabel}${threatLabel}${execLabel}${urlList}${execSamples}</div>`;
+            }).join('');
+        }
+
+        // Shared HASSH values (for command clusters)
+        const sharedHassh = cluster.metadata?.shared_hassh || [];
+        if (sharedHassh.length > 0) {
+            document.getElementById('hassh-section').style.display = 'block';
+            document.getElementById('hassh-list').innerHTML = sharedHassh.map(item => {
+                const hasshLabel = item.hassh ? item.hassh.substring(0, 16) + '...' : 'unknown';
+                return `<div class="command-item">HASSH ${hasshLabel} • ${item.session_count} sessions • ${item.unique_ips} IPs</div>`;
+            }).join('');
         }
 
         // Show OpenCTI enrichment section

@@ -16,6 +16,7 @@ import sqlite3
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlparse
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -632,7 +633,60 @@ class ClusteringService:
             for row in source_cursor.fetchall():
                 raw_commands_by_session[row["session"]] = row["commands"].split("|||") if row["commands"] else []
 
+        # Get payload downloads per session (if available)
+        payloads_by_session = defaultdict(list)
+        if fingerprint_data:
+            source_cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='downloads'")
+            if source_cursor.fetchone():
+                placeholders = ",".join("?" * len(fingerprint_data))
+                source_cursor.execute(
+                    f"""
+                    SELECT
+                        d.session,
+                        s.ip as src_ip,
+                        d.shasum,
+                        d.url,
+                        v.threat_label,
+                        v.positives as vt_detections
+                    FROM downloads d
+                    JOIN sessions s ON d.session = s.id
+                    LEFT JOIN virustotal_scans v ON d.shasum = v.shasum
+                    WHERE d.session IN ({placeholders})
+                    AND d.shasum IS NOT NULL
+                    AND d.shasum != ''
+                    """,
+                    list(fingerprint_data.keys()),
+                )
+                for row in source_cursor.fetchall():
+                    payloads_by_session[row["session"]].append(
+                        {
+                            "session": row["session"],
+                            "src_ip": row["src_ip"],
+                            "shasum": row["shasum"],
+                            "url": row["url"],
+                            "threat_label": row["threat_label"],
+                            "vt_detections": row["vt_detections"],
+                        }
+                    )
+
         source_conn.close()
+
+        # Get HASSH fingerprints for sessions (if available)
+        hassh_by_session = {}
+        if fingerprint_data:
+            self.extract_hassh_from_events(days)
+            placeholders = ",".join("?" * len(fingerprint_data))
+            cluster_cursor.execute(
+                f"""
+                SELECT session, hassh
+                FROM hassh_fingerprints
+                WHERE session IN ({placeholders})
+                """,
+                list(fingerprint_data.keys()),
+            )
+            for row in cluster_cursor.fetchall():
+                if row["hassh"]:
+                    hassh_by_session[row["session"]] = row["hassh"]
 
         # Merge fingerprint data with session info and group by fingerprint
         clusters = defaultdict(list)
@@ -679,6 +733,152 @@ class ClusteringService:
 
             cluster_id = f"cmd-{fingerprint}"
 
+            # Summarize shared payloads within this command cluster
+            payload_summary = {}
+            payload_files = defaultdict(set)
+            for s in sessions:
+                for payload in payloads_by_session.get(s["session"], []):
+                    shasum = payload.get("shasum")
+                    if not shasum:
+                        continue
+                    entry = payload_summary.setdefault(
+                        shasum,
+                        {
+                            "shasum": shasum,
+                            "sessions": set(),
+                            "ips": set(),
+                            "urls": set(),
+                            "threat_label": None,
+                            "vt_detections": 0,
+                        },
+                    )
+                    entry["sessions"].add(payload.get("session"))
+                    if payload.get("src_ip"):
+                        entry["ips"].add(payload["src_ip"])
+                    if payload.get("url"):
+                        entry["urls"].add(payload["url"])
+                        parsed = urlparse(payload["url"])
+                        filename = parsed.path.rsplit("/", 1)[-1] if parsed.path else ""
+                        if filename:
+                            payload_files[shasum].add(filename.lower())
+                    if payload.get("threat_label") and not entry["threat_label"]:
+                        entry["threat_label"] = payload["threat_label"]
+                    if payload.get("vt_detections") is not None:
+                        entry["vt_detections"] = max(entry["vt_detections"], payload["vt_detections"] or 0)
+
+            # Detect payload execution attempts from raw commands
+            execution_sessions_by_payload = defaultdict(set)
+            execution_samples_by_payload = defaultdict(list)
+            pipe_exec_pattern = re.compile(r"\|\s*(/bin/)?(sh|bash|dash)\b")
+
+            def is_execution_cmd(cmd: str, filename: str, urls: set[str]) -> bool:
+                if not cmd or not filename:
+                    return False
+                cmd_lower = cmd.lower()
+                filename_lower = filename.lower()
+                filename_variants = {
+                    filename_lower,
+                    f"/tmp/{filename_lower}",
+                    f"./{filename_lower}",
+                }
+                filename_present = any(var in cmd_lower for var in filename_variants)
+                escaped = re.escape(filename_lower)
+                patterns = [
+                    rf"\bchmod\s+\+x\b.*{escaped}",
+                    rf"\bchmod\s+(?:7[0-7]5|7[0-7]7|755|777)\b.*{escaped}",
+                    rf"\b(sh|bash|perl|python)\b.*{escaped}",
+                    rf"\b(\/tmp\/|\.\/)?{escaped}\b",
+                    rf"\bnohup\b.*{escaped}",
+                    rf"\bsetsid\b.*{escaped}",
+                    rf"\b(bash|sh|dash)\b\s+-c\b.*{escaped}",
+                    rf"\b(php|ruby|node)\b.*{escaped}",
+                ]
+                if filename_present and any(re.search(pat, cmd_lower) for pat in patterns):
+                    return True
+                if urls and re.search(r"\b(curl|wget)\b.*\|\s*(sh|bash|dash)\b", cmd_lower):
+                    return any(url in cmd_lower for url in urls)
+                return False
+
+            for s in sessions:
+                raw_cmds_for_session = s.get("raw_commands") or []
+                if not raw_cmds_for_session:
+                    continue
+                aggressive_cmds = [cmd for cmd in raw_cmds_for_session if pipe_exec_pattern.search(cmd.lower())]
+                session_payloads = payloads_by_session.get(s["session"], [])
+                if aggressive_cmds and session_payloads:
+                    for payload in session_payloads:
+                        shasum = payload.get("shasum")
+                        if not shasum:
+                            continue
+                        execution_sessions_by_payload[shasum].add(s["session"])
+                        for cmd in aggressive_cmds:
+                            if len(execution_samples_by_payload[shasum]) < 3:
+                                execution_samples_by_payload[shasum].append(cmd)
+                for shasum, filenames in payload_files.items():
+                    urls_lower = {url.lower() for url in payload_summary.get(shasum, {}).get("urls", [])}
+                    for filename in filenames:
+                        for cmd in raw_cmds_for_session:
+                            if is_execution_cmd(cmd, filename, urls_lower):
+                                execution_sessions_by_payload[shasum].add(s["session"])
+                                if len(execution_samples_by_payload[shasum]) < 3:
+                                    execution_samples_by_payload[shasum].append(cmd)
+                                break
+                        if s["session"] in execution_sessions_by_payload[shasum]:
+                            break
+
+            shared_payloads = []
+            for shasum, entry in payload_summary.items():
+                if len(entry["sessions"]) > 1:
+                    exec_sessions = execution_sessions_by_payload.get(shasum, set())
+                    shared_payloads.append(
+                        {
+                            "shasum": shasum,
+                            "session_count": len(entry["sessions"]),
+                            "unique_ips": len(entry["ips"]),
+                            "sample_urls": list(entry["urls"])[:5],
+                            "threat_label": entry["threat_label"],
+                            "vt_detections": entry["vt_detections"],
+                            "execution_attempts": len(exec_sessions),
+                            "execution_samples": execution_samples_by_payload.get(shasum, [])[:3],
+                        }
+                    )
+            shared_payloads.sort(key=lambda p: (p["session_count"], p["vt_detections"]), reverse=True)
+            payload_execution_payloads = sum(1 for p in shared_payloads if p.get("execution_attempts", 0) > 0)
+            payload_execution_sessions = len(
+                {sess for p in execution_sessions_by_payload.values() for sess in p}
+            )
+
+            # Summarize shared HASSH values within this command cluster
+            hassh_counts = Counter()
+            hassh_ip_sets = defaultdict(set)
+            for s in sessions:
+                hassh = hassh_by_session.get(s["session"])
+                if not hassh:
+                    continue
+                hassh_counts[hassh] += 1
+                if s.get("src_ip"):
+                    hassh_ip_sets[hassh].add(s["src_ip"])
+
+            shared_hassh = []
+            for hassh, count in hassh_counts.most_common():
+                if count > 1:
+                    shared_hassh.append(
+                        {
+                            "hassh": hassh,
+                            "session_count": count,
+                            "unique_ips": len(hassh_ip_sets[hassh]),
+                        }
+                    )
+            shared_hassh = shared_hassh[:5]
+
+            extra_description = []
+            if shared_payloads:
+                extra_description.append(f"shared payloads: {len(shared_payloads)}")
+            if payload_execution_payloads:
+                extra_description.append(f"execution attempts: {payload_execution_payloads}")
+            if shared_hassh:
+                extra_description.append(f"shared HASSH: {len(shared_hassh)}")
+
             # Store cluster in clustering database
             cluster_cursor.execute(
                 """
@@ -691,7 +891,10 @@ class ClusteringService:
                     cluster_id,
                     fingerprint,
                     f"Command Cluster {fingerprint[:8]}",
-                    f"Sessions sharing command pattern: {', '.join(sample_commands[:3])}",
+                    (
+                        f"Sessions sharing command pattern: {', '.join(sample_commands[:3])}"
+                        + (f" ({'; '.join(extra_description)})" if extra_description else "")
+                    ),
                     first_seen,
                     last_seen,
                     len(unique_ips),
@@ -701,6 +904,13 @@ class ClusteringService:
                         "sample_commands": sample_commands,
                         "interest_reasons": score_reasons,
                         "raw_sample": raw_cmds[:10],  # First 10 raw commands
+                        "shared_payloads": shared_payloads[:5],
+                        "shared_payloads_count": len(shared_payloads),
+                        "shared_payloads_execution_count": payload_execution_payloads,
+                        "shared_payloads_execution_sessions": payload_execution_sessions,
+                        "shared_hassh": shared_hassh,
+                        "shared_hassh_count": len(shared_hassh),
+                        "unique_hassh": len(hassh_counts),
                     }),
                 ),
             )
@@ -939,6 +1149,32 @@ class ClusteringService:
         cluster_conn = self._get_clustering_connection()
         cluster_cursor = cluster_conn.cursor()
 
+        # Build payload execution signal map from command clusters (if available)
+        payload_exec_info: dict[str, dict] = defaultdict(lambda: {"attempts": 0, "samples": []})
+        cluster_cursor.execute(
+            """
+            SELECT metadata
+            FROM attack_clusters
+            WHERE cluster_type = 'command'
+            AND metadata IS NOT NULL
+            """
+        )
+        for row in cluster_cursor.fetchall():
+            try:
+                metadata = json.loads(row["metadata"]) if row["metadata"] else {}
+            except json.JSONDecodeError:
+                continue
+            for payload in metadata.get("shared_payloads", []):
+                shasum = payload.get("shasum")
+                attempts = payload.get("execution_attempts") or 0
+                if not shasum or attempts <= 0:
+                    continue
+                entry = payload_exec_info[shasum]
+                entry["attempts"] += attempts
+                for cmd in payload.get("execution_samples", []) or []:
+                    if cmd not in entry["samples"] and len(entry["samples"]) < 3:
+                        entry["samples"].append(cmd)
+
         # Create cluster records for all payloads (no min_size filter for payloads)
         result_clusters = []
         for shasum, downloads in clusters.items():
@@ -963,6 +1199,10 @@ class ClusteringService:
             # VT detections are strongest signal, then distribution breadth
             score = min(100, (vt_detections * 3) + (len(unique_ips) * 5) + (len(unique_urls) * 3))
 
+            exec_info = payload_exec_info.get(shasum, {})
+            exec_attempts = exec_info.get("attempts", 0)
+            exec_samples = exec_info.get("samples", [])
+
             cluster_cursor.execute(
                 """
                 INSERT OR REPLACE INTO attack_clusters
@@ -986,6 +1226,8 @@ class ClusteringService:
                             "threat_label": threat_label,
                             "vt_detections": vt_detections,
                             "sample_urls": list(set(d["url"] for d in downloads if d["url"]))[:5],
+                            "exec_attempts": exec_attempts,
+                            "exec_samples": exec_samples,
                         }
                     ),
                 ),

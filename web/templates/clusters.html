@@ -161,6 +161,65 @@ function getVTBadge(metadata) {
     return badge;
 }
 
+function renderCommandSignals(metadata) {
+    if (!metadata) return '';
+    const payloadCount = metadata.shared_payloads_count || 0;
+    const hasshCount = metadata.shared_hassh_count || 0;
+    const execCount = metadata.shared_payloads_execution_count || 0;
+    const signals = [];
+    if (payloadCount > 0) {
+        signals.push(`${payloadCount} shared payload${payloadCount > 1 ? 's' : ''}`);
+    }
+    if (execCount > 0) {
+        signals.push(`${execCount} payload exec attempt${execCount > 1 ? 's' : ''}`);
+    }
+    if (hasshCount > 0) {
+        signals.push(`${hasshCount} shared HASSH`);
+    }
+    if (signals.length === 0) return '';
+    return `<div style="margin-top: 6px; font-size: 0.85em; color: var(--text-secondary);"><strong>Also observed:</strong> ${signals.join(', ')}</div>`;
+}
+
+function renderClusterBadges(cluster) {
+    const metadata = cluster.metadata || {};
+    const badges = [];
+
+    if (cluster.cluster_type === 'command') {
+        const payloadCount = metadata.shared_payloads_count || 0;
+        const hasshCount = metadata.shared_hassh_count || 0;
+        const execCount = metadata.shared_payloads_execution_count || 0;
+        if (payloadCount > 0) {
+            badges.push(`<span style="background: #2c3e50; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; margin-left: 6px;">Payloads: ${payloadCount}</span>`);
+        }
+        if (execCount > 0) {
+            badges.push(`<span style="background: #e67e22; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; margin-left: 6px;">Exec: ${execCount}</span>`);
+        }
+        if (hasshCount > 0) {
+            badges.push(`<span style="background: #8e44ad; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; margin-left: 6px;">HASSH: ${hasshCount}</span>`);
+        }
+    }
+
+    if (cluster.cluster_type === 'payload') {
+        const urlCount = (metadata.sample_urls || []).length;
+        const execAttempts = metadata.exec_attempts || 0;
+        if (urlCount > 0) {
+            badges.push(`<span style="background: #16a085; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; margin-left: 6px;">URLs: ${urlCount}</span>`);
+        }
+        if (execAttempts > 0) {
+            badges.push(`<span style="background: #e74c3c; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; margin-left: 6px;">Exec: ${execAttempts}</span>`);
+        }
+    }
+
+    if (cluster.cluster_type === 'hassh') {
+        const hasshShort = cluster.fingerprint ? cluster.fingerprint.substring(0, 12) : '';
+        if (hasshShort) {
+            badges.push(`<span style="background: #34495e; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; margin-left: 6px;">HASSH: ${hasshShort}</span>`);
+        }
+    }
+
+    return badges.join('');
+}
+
 function loadData() {
     const urlParams = new URLSearchParams(window.location.search);
     const hours = urlParams.get('hours') || '168';
@@ -210,6 +269,8 @@ function loadData() {
                 const urlsHtml = cluster.cluster_type === 'payload' && sampleUrls.length > 0
                     ? `<div style="margin-top: 8px; font-size: 0.85em; color: var(--text-secondary);"><strong>Sample URLs:</strong> ${sampleUrls.slice(0, 2).map(u => `<code style="word-break: break-all;">${u}</code>`).join(', ')}${sampleUrls.length > 2 ? ` (+${sampleUrls.length - 2} more)` : ''}</div>`
                     : '';
+                const commandSignals = cluster.cluster_type === 'command' ? renderCommandSignals(cluster.metadata) : '';
+                const clusterBadges = renderClusterBadges(cluster);
 
                 return `
                 <div class="cluster-card">
@@ -218,6 +279,7 @@ function loadData() {
                             <span class="cluster-type ${cluster.cluster_type}">${cluster.cluster_type}</span>
                             <strong style="margin-left: 10px;">${cluster.name || cluster.cluster_id}</strong>
                             ${vtBadge ? `<span style="margin-left: 10px;">${vtBadge}</span>` : ''}
+                            ${clusterBadges}
                         </div>
                         <div class="cluster-score ${getScoreClass(cluster.score)}">
                             Score: ${cluster.score}
@@ -240,6 +302,7 @@ function loadData() {
                         ` : ''}
                     </div>
                     <div class="cluster-description">${cluster.description || ''}</div>
+                    ${commandSignals}
                     ${urlsHtml}
                     <div class="cluster-meta">
                         <span>First seen: ${formatDate(cluster.first_seen)}</span>
