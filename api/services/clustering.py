@@ -1453,29 +1453,43 @@ class ClusteringService:
         conn.close()
         return clusters
 
-    def run_all_clustering(self, days: int = 7, min_size: int = 2) -> dict:
+    def run_all_clustering(
+        self,
+        days: int = 7,
+        min_size: int = 2,
+        min_interest_score: int = 20,
+        include_hassh: bool = False,
+        include_ttp: bool = True,
+    ) -> dict:
         """
         Run all clustering algorithms.
 
         Args:
             days: Number of days to analyze
             min_size: Minimum cluster size
+            min_interest_score: Minimum interest score for command clusters
+            include_hassh: Whether to include HASSH-only clusters
+            include_ttp: Whether to include TTP clusters
 
         Returns:
             Summary of all clusters found
         """
         results = {
-            "command_clusters": self.build_command_clusters(days, min_size),
-            "hassh_clusters": self.build_hassh_clusters(days, min_size),
+            "command_clusters": self.build_command_clusters(days, min_interest_score),
             "payload_clusters": self.build_payload_clusters(days, min_size),
         }
+        if include_hassh:
+            results["hassh_clusters"] = self.build_hassh_clusters(days, min_size)
+        if include_ttp:
+            results["ttp_clusters"] = self.build_ttp_clusters(days, min_size)
 
         results["summary"] = {  # type: ignore
             "total_clusters": sum(len(v) for v in results.values() if isinstance(v, list)),
             "command_clusters_count": len(results["command_clusters"]),
-            "hassh_clusters_count": len(results["hassh_clusters"]),
             "payload_clusters_count": len(results["payload_clusters"]),
         }
+        results["summary"]["hassh_clusters_count"] = len(results.get("hassh_clusters", []))
+        results["summary"]["ttp_clusters_count"] = len(results.get("ttp_clusters", []))
 
         return results
 

@@ -122,21 +122,22 @@ async def diagnose_clustering(
 @router.post("/clusters/analyze")
 async def trigger_cluster_analysis(
     days: int = Query(7, ge=1, le=365, description="Days to analyze"),
-    min_size: int = Query(2, ge=1, description="Minimum cluster size (for HASSH clusters)"),
+    min_size: int = Query(2, ge=1, description="Minimum cluster size (for HASSH/TTP clusters)"),
     min_interest_score: int = Query(20, ge=0, le=100, description="Minimum interest score for command clusters"),
-    cluster_types: Optional[str] = Query(None, description="Comma-separated types: command,hassh,payload"),
+    cluster_types: Optional[str] = Query(None, description="Comma-separated types: command,payload,ttp,hassh"),
 ):
     """
     Trigger manual cluster analysis.
 
-    This runs all clustering algorithms and updates the database.
+    Default behavior excludes HASSH clusters unless explicitly requested.
 
     Clustering logic:
     - **Command clusters**: Filtered by interest score (not IP count). Common recon
       commands (uname, id, ls) are deprioritized. Sophisticated attacks (useradd,
       wget+chmod, persistence) are prioritized.
-    - **HASSH clusters**: Filtered by min_size (unique IPs with same SSH fingerprint).
     - **Payload clusters**: No minimum - any shared malware download is interesting.
+    - **TTP clusters**: Grouped by MITRE ATT&CK technique patterns.
+    - **HASSH clusters**: Optional; filtered by min_size (unique IPs with same SSH fingerprint).
 
     Note: This can be CPU-intensive for large datasets.
     """
@@ -144,7 +145,7 @@ async def trigger_cluster_analysis(
         service = get_clustering_service()
 
         # Parse cluster types if provided
-        types_to_run = None
+        types_to_run = ["command", "payload", "ttp"]
         if cluster_types:
             types_to_run = [t.strip() for t in cluster_types.split(",")]
 
@@ -154,7 +155,7 @@ async def trigger_cluster_analysis(
             "min_interest_score": min_interest_score,
         }
 
-        if types_to_run is None or "command" in types_to_run:
+        if "command" in types_to_run:
             try:
                 # Command clusters use interest score, not min_size
                 results["command_clusters"] = service.build_command_clusters(days, min_interest_score)
@@ -162,15 +163,7 @@ async def trigger_cluster_analysis(
                 logger.warning(f"Command clustering failed: {e}")
                 results["command_clusters"] = []
 
-        if types_to_run is None or "hassh" in types_to_run:
-            try:
-                # HASSH clusters still use min_size
-                results["hassh_clusters"] = service.build_hassh_clusters(days, min_size)
-            except Exception as e:
-                logger.warning(f"HASSH clustering failed: {e}")
-                results["hassh_clusters"] = []
-
-        if types_to_run is None or "payload" in types_to_run:
+        if "payload" in types_to_run:
             try:
                 # Payload clusters: min_size=1 (all payloads interesting)
                 results["payload_clusters"] = service.build_payload_clusters(days, min_size=1)
@@ -178,13 +171,30 @@ async def trigger_cluster_analysis(
                 logger.warning(f"Payload clustering failed: {e}")
                 results["payload_clusters"] = []
 
+        if "ttp" in types_to_run:
+            try:
+                results["ttp_clusters"] = service.build_ttp_clusters(days, min_size=min_size)
+            except Exception as e:
+                logger.warning(f"TTP clustering failed: {e}")
+                results["ttp_clusters"] = []
+
+        if "hassh" in types_to_run:
+            try:
+                # HASSH clusters still use min_size
+                results["hassh_clusters"] = service.build_hassh_clusters(days, min_size)
+            except Exception as e:
+                logger.warning(f"HASSH clustering failed: {e}")
+                results["hassh_clusters"] = []
+
         # Summary
         results["summary"] = {
             "command_clusters_count": len(results.get("command_clusters", [])),
             "hassh_clusters_count": len(results.get("hassh_clusters", [])),
             "payload_clusters_count": len(results.get("payload_clusters", [])),
+            "ttp_clusters_count": len(results.get("ttp_clusters", [])),
             "total_clusters": sum(
-                len(results.get(k, [])) for k in ["command_clusters", "hassh_clusters", "payload_clusters"]
+                len(results.get(k, []))
+                for k in ["command_clusters", "hassh_clusters", "payload_clusters", "ttp_clusters"]
             ),
         }
 
