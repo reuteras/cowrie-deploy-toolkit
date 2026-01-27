@@ -57,6 +57,25 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
 ]
+api = [
+    "fastapi==0.128.0",
+    "uvicorn[standard]==0.40.0",
+    "pydantic==2.12.5",
+    "pydantic-settings==2.12.0",
+    "httpx==0.28.1",
+    "python-multipart==0.0.21",
+    "geoip2==5.2.0",
+    "sse-starlette==3.1.2",
+    "stix2>=3.0.0",
+    "pycti>=6.0.0",
+]
+web = [
+    "flask>=3.0.0",
+    "gunicorn>=21.0.0",
+    "geoip2>=4.8.0",
+    "requests>=2.31.0",
+    "gevent>=23.9.0",
+]
 
 [tool.ruff]
 line-length = 120
