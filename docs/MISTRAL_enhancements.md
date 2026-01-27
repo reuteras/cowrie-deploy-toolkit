@@ -372,7 +372,7 @@ CREATE TABLE cluster_relationships (
 
 ## API Endpoints
 
-```
+```text
 GET /api/v1/clusters
 - List all clusters with summary information
 - Parameters: min_size, min_score, cluster_type, time_range
