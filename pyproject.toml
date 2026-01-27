@@ -65,7 +65,7 @@ api = [
     "httpx==0.28.1",
     "python-multipart==0.0.21",
     "geoip2==5.2.0",
-    "sse-starlette==3.1.2",
+    "sse-starlette==3.2.0",
     "stix2>=3.0.0",
     "pycti>=6.0.0",
 ]
