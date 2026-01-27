@@ -16,7 +16,7 @@ Enhanced attacker clustering and threat intelligence gathering from Cowrie honey
    - Public JSON feeds, no auth
    - Daily downloads recommended
 
-2. **AbuseIPDB** 
+2. **AbuseIPDB**
    - IP reputation scoring (1,000 free/day)
    - Attack categories, confidence scores
    - 24-hour cache strategy

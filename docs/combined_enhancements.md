@@ -366,7 +366,7 @@ def find_clusters(G: nx.Graph) -> list[set]:
 ## Priority Matrix
 
 | Source | Query Type | Rate Limit | Best For |
-|--------|-----------|------------|----------|
+| -------- | ----------- | ---------- | -------- |
 | **Shodan InternetDB** | IP | Unlimited | Infrastructure profiling |
 | **ThreatFox** | IP, hash, domain | Unlimited | Malware attribution |
 | **MalwareBazaar** | Hash | Unlimited | Sample analysis |

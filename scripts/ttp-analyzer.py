@@ -116,9 +116,7 @@ def get_fingerprint_stats(clustering_db: str, days: int) -> dict:
         cursor = conn.cursor()
 
         # Check if table exists
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='ttp_fingerprints'"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ttp_fingerprints'")
         if not cursor.fetchone():
             conn.close()
             return {"total_fingerprints": 0, "recent_fingerprints": 0}
@@ -151,9 +149,7 @@ def get_fingerprint_stats(clustering_db: str, days: int) -> dict:
             try:
                 techniques = json.loads(row["dominant_techniques"])
                 if techniques:
-                    top_techniques.append(
-                        {"technique": techniques[0], "count": row["cnt"]}
-                    )
+                    top_techniques.append({"technique": techniques[0], "count": row["cnt"]})
             except (json.JSONDecodeError, IndexError):
                 pass
 
@@ -297,9 +293,7 @@ Examples:
     if not args.json:
         print("\n--- Running Batch TTP Analysis ---")
 
-    analysis_result = run_batch_analysis(
-        source_db, clustering_db, args.days, args.batch_size
-    )
+    analysis_result = run_batch_analysis(source_db, clustering_db, args.days, args.batch_size)
 
     if args.json:
         results["analysis"] = analysis_result
@@ -307,7 +301,7 @@ Examples:
         if "error" in analysis_result:
             print(f"Error: {analysis_result['error']}")
         else:
-            print(f"\nAnalysis Results:")
+            print("\nAnalysis Results:")
             print(f"  Total sessions: {analysis_result.get('total_sessions', 0)}")
             print(f"  Already analyzed: {analysis_result.get('already_analyzed', 0)}")
             print(f"  Newly analyzed: {analysis_result.get('analyzed', 0)}")
@@ -316,7 +310,7 @@ Examples:
             print(f"  Failed: {analysis_result.get('failed', 0)}")
 
             if analysis_result.get("errors"):
-                print(f"\n  First errors:")
+                print("\n  First errors:")
                 for err in analysis_result["errors"][:3]:
                     print(f"    - {err['session']}: {err['error']}")
 
@@ -325,9 +319,7 @@ Examples:
         if not args.json:
             print("\n--- Building TTP Clusters ---")
 
-        cluster_result = build_clusters(
-            source_db, clustering_db, args.days, args.min_cluster_size
-        )
+        cluster_result = build_clusters(source_db, clustering_db, args.days, args.min_cluster_size)
 
         if args.json:
             results["clusters"] = cluster_result

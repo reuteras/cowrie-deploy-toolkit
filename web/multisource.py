@@ -192,22 +192,39 @@ class MultiSourceDataSource:
         if len(available_sources) == 1:
             source = list(available_sources.values())[0]
             return self._get_sessions_single_source(
-                source, hours, limit, offset, src_ip, username, start_time, end_time,
-                has_commands, has_tty, login_success
+                source,
+                hours,
+                limit,
+                offset,
+                src_ip,
+                username,
+                start_time,
+                end_time,
+                has_commands,
+                has_tty,
+                login_success,
             )
 
         # For multiple sources, use merge strategy
         if limit > 0:
             # Paginated request: fetch enough from each source to fill the page
             return self._get_sessions_paginated(
-                available_sources, hours, limit, offset, src_ip, username, start_time, end_time,
-                has_commands, has_tty, login_success
+                available_sources,
+                hours,
+                limit,
+                offset,
+                src_ip,
+                username,
+                start_time,
+                end_time,
+                has_commands,
+                has_tty,
+                login_success,
             )
         else:
             # Unpaginated request: fetch all (expensive, use sparingly)
             return self._get_sessions_all(
-                available_sources, hours, src_ip, username, start_time, end_time,
-                has_commands, has_tty, login_success
+                available_sources, hours, src_ip, username, start_time, end_time, has_commands, has_tty, login_success
             )
 
     def _get_sessions_single_source(
@@ -300,12 +317,13 @@ class MultiSourceDataSource:
         )
 
         # Check cache - include filter params in key
-        filter_key = (f"{src_ip or ''}{username or ''}{start_time or ''}{end_time or ''}"
-                      f"{has_commands}{has_tty}{login_success}")
+        filter_key = (
+            f"{src_ip or ''}{username or ''}{start_time or ''}{end_time or ''}{has_commands}{has_tty}{login_success}"
+        )
         cache_key = f"sessions_page_{hours}_{limit}_{offset}_{filter_key}"
         cached = self.sessions_cache.get(cache_key)
         if cached is not None:
-            print(f"[MultiSource] Cache hit for paginated sessions")
+            print("[MultiSource] Cache hit for paginated sessions")
             return cached
 
         all_sessions = []
@@ -348,7 +366,9 @@ class MultiSourceDataSource:
                     # Add to total (use source's total, not fetched count)
                     total_count += result.get("total", len(sessions))
 
-                    print(f"[MultiSource] '{source.name}': got {len(sessions)} sessions (source total: {result.get('total', '?')})")
+                    print(
+                        f"[MultiSource] '{source.name}': got {len(sessions)} sessions (source total: {result.get('total', '?')})"
+                    )
                 except Exception as e:
                     print(f"[MultiSource] Error fetching from '{source.name}': {e}")
                     source_errors[source.name] = str(e)
@@ -358,7 +378,7 @@ class MultiSourceDataSource:
         all_sessions.sort(key=lambda x: x.get("start_time") or "", reverse=True)
 
         # Apply pagination
-        paginated_sessions = all_sessions[offset:offset + limit]
+        paginated_sessions = all_sessions[offset : offset + limit]
 
         result = {
             "total": total_count,
@@ -852,8 +872,7 @@ class MultiSourceDataSource:
             if key:
                 country_merged[key] = country_merged.get(key, 0) + count
         aggregated["top_countries"] = [
-            {"country": k, "count": v}
-            for k, v in sorted(country_merged.items(), key=lambda x: x[1], reverse=True)[:10]
+            {"country": k, "count": v} for k, v in sorted(country_merged.items(), key=lambda x: x[1], reverse=True)[:10]
         ]
 
         # Credentials: merge by credential and sum counts
@@ -895,8 +914,7 @@ class MultiSourceDataSource:
             if key:
                 cmd_merged[key] = cmd_merged.get(key, 0) + count
         aggregated["top_commands"] = [
-            {"command": k, "count": v}
-            for k, v in sorted(cmd_merged.items(), key=lambda x: x[1], reverse=True)[:10]
+            {"command": k, "count": v} for k, v in sorted(cmd_merged.items(), key=lambda x: x[1], reverse=True)[:10]
         ]
 
         # Clients: merge by client and sum counts
@@ -913,8 +931,7 @@ class MultiSourceDataSource:
             if key:
                 client_merged[key] = client_merged.get(key, 0) + count
         aggregated["top_clients"] = [
-            {"client": k, "count": v}
-            for k, v in sorted(client_merged.items(), key=lambda x: x[1], reverse=True)[:10]
+            {"client": k, "count": v} for k, v in sorted(client_merged.items(), key=lambda x: x[1], reverse=True)[:10]
         ]
 
         # Count how many downloads actually have VT scan results (vt_total > 0)
@@ -1037,7 +1054,9 @@ class MultiSourceDataSource:
                             # Merge: sum session counts, keep latest timestamp
                             existing = ip_attacks[ip]
                             existing["session_count"] += attack.get("session_count", 0)
-                            existing["success_count"] = existing.get("success_count", 0) + attack.get("success_count", 0)
+                            existing["success_count"] = existing.get("success_count", 0) + attack.get(
+                                "success_count", 0
+                            )
                             if attack.get("latest_timestamp", "") > existing.get("latest_timestamp", ""):
                                 existing["latest_timestamp"] = attack["latest_timestamp"]
                             # Keep first source for attribution
@@ -1046,7 +1065,9 @@ class MultiSourceDataSource:
                             existing["_sources"].append(source.name)
 
                     total_sessions += result.get("total_sessions", 0)
-                    print(f"[MultiSource] Fetched {len(result.get('attacks', []))} attack locations from '{source.name}'")
+                    print(
+                        f"[MultiSource] Fetched {len(result.get('attacks', []))} attack locations from '{source.name}'"
+                    )
 
                 except Exception as e:
                     print(f"[MultiSource] Error fetching attack map data from '{source.name}': {e}")
@@ -1096,8 +1117,7 @@ class MultiSourceDataSource:
         max_workers = min(len(available_sources), MAX_WORKERS)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_source = {
-                executor.submit(source.datasource.get_all_asns, hours): source
-                for source in available_sources.values()
+                executor.submit(source.datasource.get_all_asns, hours): source for source in available_sources.values()
             }
 
             for future in concurrent.futures.as_completed(future_to_source):
@@ -1126,12 +1146,14 @@ class MultiSourceDataSource:
         all_asns = []
         for asn_key, count in asn_counter.most_common():
             details = asn_details.get(asn_key, {})
-            all_asns.append({
-                "asn": asn_key,
-                "asn_number": details.get("asn_number", 0),
-                "asn_org": details.get("asn_org", "Unknown"),
-                "count": count,
-            })
+            all_asns.append(
+                {
+                    "asn": asn_key,
+                    "asn_number": details.get("asn_number", 0),
+                    "asn_org": details.get("asn_org", "Unknown"),
+                    "count": count,
+                }
+            )
 
         return {"asns": all_asns, "total": len(all_asns)}
 
@@ -1166,8 +1188,7 @@ class MultiSourceDataSource:
         max_workers = min(len(available_sources), MAX_WORKERS)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_source = {
-                executor.submit(source.datasource.get_all_ips, hours): source
-                for source in available_sources.values()
+                executor.submit(source.datasource.get_all_ips, hours): source for source in available_sources.values()
             }
 
             for future in concurrent.futures.as_completed(future_to_source):
@@ -1279,11 +1300,13 @@ class MultiSourceDataSource:
         all_countries = []
         for country, count in country_counter.most_common():
             details = country_details.get(country, {})
-            all_countries.append({
-                "country": country,
-                "country_code": details.get("country_code", "XX"),
-                "count": count,
-            })
+            all_countries.append(
+                {
+                    "country": country,
+                    "country_code": details.get("country_code", "XX"),
+                    "count": count,
+                }
+            )
 
         return {"countries": all_countries, "total": len(all_countries)}
 
@@ -1348,7 +1371,9 @@ class MultiSourceDataSource:
                     for cred in result.get("successful", []):
                         successful_creds.add(cred)
 
-                    print(f"[MultiSource] Fetched {len(result.get('credentials', []))} credentials from '{source.name}'")
+                    print(
+                        f"[MultiSource] Fetched {len(result.get('credentials', []))} credentials from '{source.name}'"
+                    )
 
                 except Exception as e:
                     print(f"[MultiSource] Error fetching credentials from '{source.name}': {e}")
@@ -1358,13 +1383,15 @@ class MultiSourceDataSource:
         all_credentials = []
         for cred, count in cred_counter.most_common():
             details = cred_details.get(cred, {})
-            all_credentials.append({
-                "credential": cred,
-                "username": details.get("username", ""),
-                "password": details.get("password", ""),
-                "count": count,
-                "successful": cred in successful_creds,
-            })
+            all_credentials.append(
+                {
+                    "credential": cred,
+                    "username": details.get("username", ""),
+                    "password": details.get("password", ""),
+                    "count": count,
+                    "successful": cred in successful_creds,
+                }
+            )
 
         return {
             "credentials": all_credentials,
@@ -1429,14 +1456,18 @@ class MultiSourceDataSource:
         # Build result list sorted by count
         all_clients = []
         for client, count in client_counter.most_common():
-            all_clients.append({
-                "client": client,
-                "count": count,
-            })
+            all_clients.append(
+                {
+                    "client": client,
+                    "count": count,
+                }
+            )
 
         return {"clients": all_clients, "total": len(all_clients)}
 
-    def get_all_commands(self, hours: int = 168, unique_only: bool = False, source_filter: Optional[str] = None) -> dict:
+    def get_all_commands(
+        self, hours: int = 168, unique_only: bool = False, source_filter: Optional[str] = None
+    ) -> dict:
         """
         Get ALL commands with counts from all sources via API.
 

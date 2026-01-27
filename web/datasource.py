@@ -90,14 +90,27 @@ class DataSource:
             Dict with "total" and "sessions" keys
         """
         if self.mode == "local":
-            return self._get_sessions_local(hours, limit, offset, src_ip, username, start_time, end_time,
-                                            has_commands, has_tty, login_success)
+            return self._get_sessions_local(
+                hours, limit, offset, src_ip, username, start_time, end_time, has_commands, has_tty, login_success
+            )
         else:
-            return self._get_sessions_remote(hours, limit, offset, src_ip, username, start_time, end_time,
-                                             has_commands, has_tty, login_success)
+            return self._get_sessions_remote(
+                hours, limit, offset, src_ip, username, start_time, end_time, has_commands, has_tty, login_success
+            )
 
-    def _get_sessions_local(self, hours, limit, offset, src_ip, username, start_time, end_time,
-                             has_commands=None, has_tty=None, login_success=None) -> dict:
+    def _get_sessions_local(
+        self,
+        hours,
+        limit,
+        offset,
+        src_ip,
+        username,
+        start_time,
+        end_time,
+        has_commands=None,
+        has_tty=None,
+        login_success=None,
+    ) -> dict:
         """Get sessions from local files (uses existing SessionParser)."""
         from app import session_parser
 
@@ -133,8 +146,19 @@ class DataSource:
 
         return {"total": total, "sessions": paginated}
 
-    def _get_sessions_remote(self, hours, limit, offset, src_ip, username, start_time, end_time,
-                              has_commands=None, has_tty=None, login_success=None) -> dict:
+    def _get_sessions_remote(
+        self,
+        hours,
+        limit,
+        offset,
+        src_ip,
+        username,
+        start_time,
+        end_time,
+        has_commands=None,
+        has_tty=None,
+        login_success=None,
+    ) -> dict:
         """Get sessions from remote API with pagination."""
         from datetime import datetime, timedelta, timezone
 

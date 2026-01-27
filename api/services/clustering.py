@@ -17,7 +17,6 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
-from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -183,19 +182,57 @@ class ClusteringService:
 
     # Common reconnaissance commands that are not interesting for clustering
     COMMON_RECON_COMMANDS = {
-        "uname", "uname -a", "uname -r", "uname -m", "uname -s",
-        "id", "whoami", "pwd", "hostname", "w", "who",
-        "cat /etc/passwd", "cat /etc/issue", "cat /proc/cpuinfo",
-        "cat /proc/meminfo", "cat /proc/version",
-        "ls", "ls -la", "ls -l", "ls -a", "dir",
-        "ps", "ps aux", "ps -ef", "top",
-        "ifconfig", "ip addr", "ip a", "netstat", "ss",
-        "free", "free -m", "df", "df -h", "uptime",
-        "env", "export", "echo $PATH", "echo $HOME",
-        "exit", "logout", "quit", "q",
-        "help", "?", "man",
-        "history", "last",
-        "nproc", "lscpu", "arch",
+        "uname",
+        "uname -a",
+        "uname -r",
+        "uname -m",
+        "uname -s",
+        "id",
+        "whoami",
+        "pwd",
+        "hostname",
+        "w",
+        "who",
+        "cat /etc/passwd",
+        "cat /etc/issue",
+        "cat /proc/cpuinfo",
+        "cat /proc/meminfo",
+        "cat /proc/version",
+        "ls",
+        "ls -la",
+        "ls -l",
+        "ls -a",
+        "dir",
+        "ps",
+        "ps aux",
+        "ps -ef",
+        "top",
+        "ifconfig",
+        "ip addr",
+        "ip a",
+        "netstat",
+        "ss",
+        "free",
+        "free -m",
+        "df",
+        "df -h",
+        "uptime",
+        "env",
+        "export",
+        "echo $PATH",
+        "echo $HOME",
+        "exit",
+        "logout",
+        "quit",
+        "q",
+        "help",
+        "?",
+        "man",
+        "history",
+        "last",
+        "nproc",
+        "lscpu",
+        "arch",
     }
 
     # High-interest commands indicating malicious activity
@@ -707,7 +744,7 @@ class ClusteringService:
         # Filter by interest score and create cluster records
         result_clusters = []
         for fingerprint, sessions in clusters.items():
-            unique_ips = set(s["src_ip"] for s in sessions if s["src_ip"])
+            unique_ips = {s["src_ip"] for s in sessions if s["src_ip"]}
 
             # Get raw commands from first session for interest scoring
             raw_cmds = sessions[0].get("raw_commands", []) if sessions else []
@@ -844,9 +881,7 @@ class ClusteringService:
                     )
             shared_payloads.sort(key=lambda p: (p["session_count"], p["vt_detections"]), reverse=True)
             payload_execution_payloads = sum(1 for p in shared_payloads if p.get("execution_attempts", 0) > 0)
-            payload_execution_sessions = len(
-                {sess for p in execution_sessions_by_payload.values() for sess in p}
-            )
+            payload_execution_sessions = len({sess for p in execution_sessions_by_payload.values() for sess in p})
 
             # Summarize shared HASSH values within this command cluster
             hassh_counts = Counter()
@@ -900,18 +935,20 @@ class ClusteringService:
                     len(unique_ips),
                     len(sessions),
                     interest_score,
-                    json.dumps({
-                        "sample_commands": sample_commands,
-                        "interest_reasons": score_reasons,
-                        "raw_sample": raw_cmds[:10],  # First 10 raw commands
-                        "shared_payloads": shared_payloads[:5],
-                        "shared_payloads_count": len(shared_payloads),
-                        "shared_payloads_execution_count": payload_execution_payloads,
-                        "shared_payloads_execution_sessions": payload_execution_sessions,
-                        "shared_hassh": shared_hassh,
-                        "shared_hassh_count": len(shared_hassh),
-                        "unique_hassh": len(hassh_counts),
-                    }),
+                    json.dumps(
+                        {
+                            "sample_commands": sample_commands,
+                            "interest_reasons": score_reasons,
+                            "raw_sample": raw_cmds[:10],  # First 10 raw commands
+                            "shared_payloads": shared_payloads[:5],
+                            "shared_payloads_count": len(shared_payloads),
+                            "shared_payloads_execution_count": payload_execution_payloads,
+                            "shared_payloads_execution_sessions": payload_execution_sessions,
+                            "shared_hassh": shared_hassh,
+                            "shared_hassh_count": len(shared_hassh),
+                            "unique_hassh": len(hassh_counts),
+                        }
+                    ),
                 ),
             )
 
@@ -1009,7 +1046,7 @@ class ClusteringService:
         # Filter and create cluster records
         result_clusters = []
         for hassh, sessions in clusters.items():
-            unique_ips = set(s["src_ip"] for s in sessions if s["src_ip"])
+            unique_ips = {s["src_ip"] for s in sessions if s["src_ip"]}
             if len(unique_ips) < min_size:
                 continue
 
@@ -1178,8 +1215,8 @@ class ClusteringService:
         # Create cluster records for all payloads (no min_size filter for payloads)
         result_clusters = []
         for shasum, downloads in clusters.items():
-            unique_ips = set(d["src_ip"] for d in downloads if d["src_ip"])
-            unique_urls = set(d["url"] for d in downloads if d["url"])
+            unique_ips = {d["src_ip"] for d in downloads if d["src_ip"]}
+            unique_urls = {d["url"] for d in downloads if d["url"]}
 
             # Skip if below min_size (default is 1, so effectively no filter)
             if len(unique_ips) < min_size:
@@ -1225,7 +1262,7 @@ class ClusteringService:
                             "shasum": shasum,
                             "threat_label": threat_label,
                             "vt_detections": vt_detections,
-                            "sample_urls": list(set(d["url"] for d in downloads if d["url"]))[:5],
+                            "sample_urls": list({d["url"] for d in downloads if d["url"]})[:5],
                             "exec_attempts": exec_attempts,
                             "exec_samples": exec_samples,
                         }
@@ -1518,6 +1555,126 @@ class ClusteringService:
             cursor = conn.cursor()
         except Exception as e:
             result["issues"].append(f"Cannot connect to source database: {e}")
+            return result
+
+        # Check which tables exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [row["name"] for row in cursor.fetchall()]
+        result["tables"]["existing"] = tables
+
+        # Check sessions table
+        if "sessions" in tables:
+            cursor.execute("SELECT COUNT(*) as cnt FROM sessions")
+            result["data_counts"]["total_sessions"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT COUNT(*) as cnt FROM sessions WHERE starttime >= ?", (cutoff_str,))
+            result["data_counts"]["recent_sessions"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT starttime FROM sessions ORDER BY starttime DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                result["sample_timestamps"]["latest_session"] = row["starttime"]
+
+            cursor.execute("SELECT COUNT(*) as cnt FROM sessions WHERE ip IS NULL")
+            null_ips = cursor.fetchone()["cnt"]
+            if null_ips > 0:
+                result["issues"].append(f"{null_ips} sessions have NULL ip")
+        else:
+            result["issues"].append("sessions table not found")
+
+        # Check input table (commands)
+        if "input" in tables:
+            cursor.execute("SELECT COUNT(*) as cnt FROM input")
+            result["data_counts"]["total_commands"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT COUNT(*) as cnt FROM input WHERE timestamp >= ?", (cutoff_str,))
+            result["data_counts"]["recent_commands"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT COUNT(DISTINCT session) as cnt FROM input WHERE timestamp >= ?", (cutoff_str,))
+            result["data_counts"]["sessions_with_commands"] = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT timestamp FROM input ORDER BY timestamp DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                result["sample_timestamps"]["latest_command"] = row["timestamp"]
+        else:
+            result["issues"].append("input table not found")
+
+        # Check downloads table
+        if "downloads" in tables:
+            cursor.execute("SELECT COUNT(*) as cnt FROM downloads WHERE shasum IS NOT NULL")
+            result["data_counts"]["total_downloads"] = cursor.fetchone()["cnt"]
+
+            cursor.execute(
+                "SELECT COUNT(*) as cnt FROM downloads WHERE timestamp >= ? AND shasum IS NOT NULL", (cutoff_str,)
+            )
+            result["data_counts"]["recent_downloads"] = cursor.fetchone()["cnt"]
+
+            cursor.execute(
+                "SELECT COUNT(DISTINCT shasum) as cnt FROM downloads WHERE timestamp >= ? AND shasum IS NOT NULL",
+                (cutoff_str,),
+            )
+            result["data_counts"]["unique_payloads"] = cursor.fetchone()["cnt"]
+        else:
+            result["issues"].append("downloads table not found")
+
+        # Check for potential timestamp format issues
+        if "sessions" in tables:
+            cursor.execute("SELECT starttime FROM sessions LIMIT 1")
+            row = cursor.fetchone()
+            if row and row["starttime"]:
+                sample_ts = row["starttime"]
+                result["sample_timestamps"]["session_format_example"] = sample_ts
+                # Check if format has 'T' separator (ISO8601)
+                if "T" in str(sample_ts):
+                    result["issues"].append(f"Timestamps use ISO8601 format with 'T' separator: {sample_ts}")
+
+        # Check events table for HASSH
+        if "events" in tables:
+            cursor.execute("SELECT COUNT(*) as cnt FROM events WHERE eventid = 'cowrie.client.kex'")
+            result["data_counts"]["kex_events"] = cursor.fetchone()["cnt"]
+        else:
+            result["issues"].append("events table not found - HASSH clustering will not work")
+
+        # Summary
+        if result["data_counts"].get("recent_commands", 0) == 0:
+            result["issues"].append("No commands found in time range - check timestamp format")
+
+        if result["data_counts"].get("sessions_with_commands", 0) < 2:
+            result["issues"].append("Less than 2 sessions with commands - minimum for clustering")
+
+        conn.close()
+
+        # Check clustering database
+        result["clustering_tables"] = {}
+        try:
+            cluster_conn = self._get_clustering_connection()
+            cluster_cursor = cluster_conn.cursor()
+
+            # Check which tables exist in clustering DB
+            cluster_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            cluster_tables = [row["name"] for row in cluster_cursor.fetchall()]
+            result["clustering_tables"]["existing"] = cluster_tables
+
+            # Check command_fingerprints table
+            if "command_fingerprints" in cluster_tables:
+                cluster_cursor.execute("SELECT COUNT(*) as cnt FROM command_fingerprints")
+                result["data_counts"]["fingerprints_stored"] = cluster_cursor.fetchone()["cnt"]
+
+                cluster_cursor.execute(
+                    "SELECT COUNT(DISTINCT fingerprint) as cnt FROM command_fingerprints WHERE fingerprint != 'empty'"
+                )
+                result["data_counts"]["unique_fingerprints"] = cluster_cursor.fetchone()["cnt"]
+
+            # Check attack_clusters table
+            if "attack_clusters" in cluster_tables:
+                cluster_cursor.execute("SELECT COUNT(*) as cnt FROM attack_clusters")
+                result["data_counts"]["stored_clusters"] = cluster_cursor.fetchone()["cnt"]
+
+            cluster_conn.close()
+        except Exception as e:
+            result["issues"].append(f"Cannot connect to clustering database: {e}")
+
         return result
 
     # =========================================================================
@@ -1874,7 +2031,7 @@ class ClusteringService:
         )
 
         try:
-            ttp_service = TTPExtractionService(self.source_db_path, mitre_db_path)
+            TTPExtractionService(self.source_db_path, mitre_db_path)
         except Exception as e:
             logger.error(f"Failed to initialize TTP service: {e}")
             return {"error": str(e), "analyzed": 0, "skipped": 0, "failed": 0}
@@ -1952,126 +2109,6 @@ class ClusteringService:
 
         return results
 
-        # Check which tables exist
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [row["name"] for row in cursor.fetchall()]
-        result["tables"]["existing"] = tables
-
-        # Check sessions table
-        if "sessions" in tables:
-            cursor.execute("SELECT COUNT(*) as cnt FROM sessions")
-            result["data_counts"]["total_sessions"] = cursor.fetchone()["cnt"]
-
-            cursor.execute("SELECT COUNT(*) as cnt FROM sessions WHERE starttime >= ?", (cutoff_str,))
-            result["data_counts"]["recent_sessions"] = cursor.fetchone()["cnt"]
-
-            cursor.execute("SELECT starttime FROM sessions ORDER BY starttime DESC LIMIT 1")
-            row = cursor.fetchone()
-            if row:
-                result["sample_timestamps"]["latest_session"] = row["starttime"]
-
-            cursor.execute("SELECT COUNT(*) as cnt FROM sessions WHERE ip IS NULL")
-            null_ips = cursor.fetchone()["cnt"]
-            if null_ips > 0:
-                result["issues"].append(f"{null_ips} sessions have NULL ip")
-        else:
-            result["issues"].append("sessions table not found")
-
-        # Check input table (commands)
-        if "input" in tables:
-            cursor.execute("SELECT COUNT(*) as cnt FROM input")
-            result["data_counts"]["total_commands"] = cursor.fetchone()["cnt"]
-
-            cursor.execute("SELECT COUNT(*) as cnt FROM input WHERE timestamp >= ?", (cutoff_str,))
-            result["data_counts"]["recent_commands"] = cursor.fetchone()["cnt"]
-
-            cursor.execute("SELECT COUNT(DISTINCT session) as cnt FROM input WHERE timestamp >= ?", (cutoff_str,))
-            result["data_counts"]["sessions_with_commands"] = cursor.fetchone()["cnt"]
-
-            cursor.execute("SELECT timestamp FROM input ORDER BY timestamp DESC LIMIT 1")
-            row = cursor.fetchone()
-            if row:
-                result["sample_timestamps"]["latest_command"] = row["timestamp"]
-        else:
-            result["issues"].append("input table not found")
-
-        # Check downloads table
-        if "downloads" in tables:
-            cursor.execute("SELECT COUNT(*) as cnt FROM downloads WHERE shasum IS NOT NULL")
-            result["data_counts"]["total_downloads"] = cursor.fetchone()["cnt"]
-
-            cursor.execute(
-                "SELECT COUNT(*) as cnt FROM downloads WHERE timestamp >= ? AND shasum IS NOT NULL", (cutoff_str,)
-            )
-            result["data_counts"]["recent_downloads"] = cursor.fetchone()["cnt"]
-
-            cursor.execute(
-                "SELECT COUNT(DISTINCT shasum) as cnt FROM downloads WHERE timestamp >= ? AND shasum IS NOT NULL",
-                (cutoff_str,),
-            )
-            result["data_counts"]["unique_payloads"] = cursor.fetchone()["cnt"]
-        else:
-            result["issues"].append("downloads table not found")
-
-        # Check for potential timestamp format issues
-        if "sessions" in tables:
-            cursor.execute("SELECT starttime FROM sessions LIMIT 1")
-            row = cursor.fetchone()
-            if row and row["starttime"]:
-                sample_ts = row["starttime"]
-                result["sample_timestamps"]["session_format_example"] = sample_ts
-                # Check if format has 'T' separator (ISO8601)
-                if "T" in str(sample_ts):
-                    result["issues"].append(f"Timestamps use ISO8601 format with 'T' separator: {sample_ts}")
-
-        # Check events table for HASSH
-        if "events" in tables:
-            cursor.execute("SELECT COUNT(*) as cnt FROM events WHERE eventid = 'cowrie.client.kex'")
-            result["data_counts"]["kex_events"] = cursor.fetchone()["cnt"]
-        else:
-            result["issues"].append("events table not found - HASSH clustering will not work")
-
-        # Summary
-        if result["data_counts"].get("recent_commands", 0) == 0:
-            result["issues"].append("No commands found in time range - check timestamp format")
-
-        if result["data_counts"].get("sessions_with_commands", 0) < 2:
-            result["issues"].append("Less than 2 sessions with commands - minimum for clustering")
-
-        conn.close()
-
-        # Check clustering database
-        result["clustering_tables"] = {}
-        try:
-            cluster_conn = self._get_clustering_connection()
-            cluster_cursor = cluster_conn.cursor()
-
-            # Check which tables exist in clustering DB
-            cluster_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            cluster_tables = [row["name"] for row in cluster_cursor.fetchall()]
-            result["clustering_tables"]["existing"] = cluster_tables
-
-            # Check command_fingerprints table
-            if "command_fingerprints" in cluster_tables:
-                cluster_cursor.execute("SELECT COUNT(*) as cnt FROM command_fingerprints")
-                result["data_counts"]["fingerprints_stored"] = cluster_cursor.fetchone()["cnt"]
-
-                cluster_cursor.execute(
-                    "SELECT COUNT(DISTINCT fingerprint) as cnt FROM command_fingerprints WHERE fingerprint != 'empty'"
-                )
-                result["data_counts"]["unique_fingerprints"] = cluster_cursor.fetchone()["cnt"]
-
-            # Check attack_clusters table
-            if "attack_clusters" in cluster_tables:
-                cluster_cursor.execute("SELECT COUNT(*) as cnt FROM attack_clusters")
-                result["data_counts"]["stored_clusters"] = cluster_cursor.fetchone()["cnt"]
-
-            cluster_conn.close()
-        except Exception as e:
-            result["issues"].append(f"Cannot connect to clustering database: {e}")
-
-        return result
-
     # =========================================================================
     # OpenCTI Enrichment
     # =========================================================================
@@ -2090,6 +2127,7 @@ class ClusteringService:
             Enrichment results including matched entities
         """
         import os
+
         from config import config
 
         result = {
@@ -2114,7 +2152,7 @@ class ClusteringService:
             return result
 
         try:
-            from services.opencti_client import OpenCTIClientService, OPENCTI_AVAILABLE
+            from services.opencti_client import OPENCTI_AVAILABLE
 
             if not OPENCTI_AVAILABLE:
                 result["errors"].append("OpenCTI client library (pycti) not available")
@@ -2186,23 +2224,19 @@ class ClusteringService:
                     if query_type == "ip":
                         # Search for IP in indicators
                         search_result = opencti.search_threat_intelligence(
-                            query=query_value,
-                            entity_types=["Indicator", "Infrastructure"]
+                            query=query_value, entity_types=["Indicator", "Infrastructure"]
                         )
                     elif query_type == "hash":
                         search_result = opencti.search_threat_intelligence(
-                            query=query_value,
-                            entity_types=["Indicator", "Malware"]
+                            query=query_value, entity_types=["Indicator", "Malware"]
                         )
                     elif query_type == "technique":
                         search_result = opencti.search_threat_intelligence(
-                            query=query_value,
-                            entity_types=["Attack-Pattern"]
+                            query=query_value, entity_types=["Attack-Pattern"]
                         )
                     else:
                         search_result = opencti.search_threat_intelligence(
-                            query=query_value,
-                            entity_types=["Malware", "Threat-Actor", "Campaign"]
+                            query=query_value, entity_types=["Malware", "Threat-Actor", "Campaign"]
                         )
 
                     if search_result.get("success"):
@@ -2226,31 +2260,37 @@ class ClusteringService:
                 actor_id = actor.get("id") or actor.get("standard_id")
                 if actor_id and actor_id not in seen_ids:
                     seen_ids.add(actor_id)
-                    result["threat_actors"].append({
-                        "id": actor_id,
-                        "name": actor.get("name", "Unknown"),
-                        "description": actor.get("description", "")[:200] if actor.get("description") else "",
-                    })
+                    result["threat_actors"].append(
+                        {
+                            "id": actor_id,
+                            "name": actor.get("name", "Unknown"),
+                            "description": actor.get("description", "")[:200] if actor.get("description") else "",
+                        }
+                    )
 
             for campaign in all_results["campaigns"]:
                 campaign_id = campaign.get("id") or campaign.get("standard_id")
                 if campaign_id and campaign_id not in seen_ids:
                     seen_ids.add(campaign_id)
-                    result["campaigns"].append({
-                        "id": campaign_id,
-                        "name": campaign.get("name", "Unknown"),
-                        "description": campaign.get("description", "")[:200] if campaign.get("description") else "",
-                    })
+                    result["campaigns"].append(
+                        {
+                            "id": campaign_id,
+                            "name": campaign.get("name", "Unknown"),
+                            "description": campaign.get("description", "")[:200] if campaign.get("description") else "",
+                        }
+                    )
 
             for malware in all_results["malware"]:
                 malware_id = malware.get("id") or malware.get("standard_id")
                 if malware_id and malware_id not in seen_ids:
                     seen_ids.add(malware_id)
-                    result["malware_families"].append({
-                        "id": malware_id,
-                        "name": malware.get("name", "Unknown"),
-                        "description": malware.get("description", "")[:200] if malware.get("description") else "",
-                    })
+                    result["malware_families"].append(
+                        {
+                            "id": malware_id,
+                            "name": malware.get("name", "Unknown"),
+                            "description": malware.get("description", "")[:200] if malware.get("description") else "",
+                        }
+                    )
 
             # Calculate threat score based on matches
             threat_score = cluster.get("score", 0)
@@ -2340,25 +2380,31 @@ class ClusteringService:
 
             if enrichment.get("enriched"):
                 results["enriched"] += 1
-                results["details"].append({
-                    "cluster_id": cluster_id,
-                    "status": "enriched",
-                    "threat_actors": len(enrichment.get("threat_actors", [])),
-                    "campaigns": len(enrichment.get("campaigns", [])),
-                    "malware_families": len(enrichment.get("malware_families", [])),
-                })
+                results["details"].append(
+                    {
+                        "cluster_id": cluster_id,
+                        "status": "enriched",
+                        "threat_actors": len(enrichment.get("threat_actors", [])),
+                        "campaigns": len(enrichment.get("campaigns", [])),
+                        "malware_families": len(enrichment.get("malware_families", [])),
+                    }
+                )
             elif enrichment.get("errors"):
                 results["failed"] += 1
-                results["details"].append({
-                    "cluster_id": cluster_id,
-                    "status": "failed",
-                    "error": enrichment["errors"][0] if enrichment["errors"] else "Unknown",
-                })
+                results["details"].append(
+                    {
+                        "cluster_id": cluster_id,
+                        "status": "failed",
+                        "error": enrichment["errors"][0] if enrichment["errors"] else "Unknown",
+                    }
+                )
             else:
                 results["skipped"] += 1
-                results["details"].append({
-                    "cluster_id": cluster_id,
-                    "status": "no_matches",
-                })
+                results["details"].append(
+                    {
+                        "cluster_id": cluster_id,
+                        "status": "no_matches",
+                    }
+                )
 
         return results

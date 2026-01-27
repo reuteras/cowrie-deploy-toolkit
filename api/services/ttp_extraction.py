@@ -10,8 +10,8 @@ import logging
 import re
 import sqlite3
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Optional
 
 from services.mitre_attack import MITREAttackService
 
@@ -44,7 +44,7 @@ class TTPExtractionService:
             self.ttp_patterns = {}
             self.initialized = False
 
-    def _load_ttp_patterns(self) -> Dict[str, List[dict]]:
+    def _load_ttp_patterns(self) -> dict[str, list[dict]]:
         """Load TTP patterns from MITRE database into memory."""
         if not self.initialized or not self.mitre_service:
             logger.warning("MITRE service not available, loading fallback patterns")
@@ -60,7 +60,7 @@ class TTPExtractionService:
             logger.error(f"Failed to load TTP patterns: {e}")
             return self._get_fallback_patterns()
 
-    def _get_fallback_patterns(self) -> Dict[str, List[dict]]:
+    def _get_fallback_patterns(self) -> dict[str, list[dict]]:
         """Provide basic fallback TTP patterns when MITRE DB is unavailable."""
         return {
             "T1110": [{"pattern_type": "command", "pattern_data": ".*ssh.*", "confidence_weight": 0.5}],
@@ -72,7 +72,7 @@ class TTPExtractionService:
         """Get read-only connection to Cowrie database."""
         return sqlite3.connect(f"file:{self.source_db_path}?mode=ro", uri=True)
 
-    def extract_session_ttps(self, session_id: str) -> List[dict]:
+    def extract_session_ttps(self, session_id: str) -> list[dict]:
         """
         Extract TTPs from a single session.
 
@@ -126,7 +126,7 @@ class TTPExtractionService:
 
         return self._consolidate_ttps(ttps)
 
-    def extract_command_ttps(self, commands: List[dict]) -> List[dict]:
+    def extract_command_ttps(self, commands: list[dict]) -> list[dict]:
         """
         Extract TTPs from command sequences.
 
@@ -163,7 +163,7 @@ class TTPExtractionService:
 
         return ttps
 
-    def extract_behavioral_ttps(self, commands: List[dict], session_metadata: dict) -> List[dict]:
+    def extract_behavioral_ttps(self, commands: list[dict], session_metadata: dict) -> list[dict]:
         """
         Extract TTPs from session behavior patterns.
 
@@ -281,7 +281,7 @@ class TTPExtractionService:
 
         return 0.0
 
-    def _calculate_evidence_score(self, command: str, evidence_required: List[str]) -> float:
+    def _calculate_evidence_score(self, command: str, evidence_required: list[str]) -> float:
         """
         Calculate evidence score based on required indicators.
 
@@ -313,7 +313,7 @@ class TTPExtractionService:
 
         return evidence_found / len(evidence_required) if evidence_required else 1.0
 
-    def _detect_brute_force_pattern(self, commands: List[dict], session_metadata: dict) -> bool:
+    def _detect_brute_force_pattern(self, commands: list[dict], session_metadata: dict) -> bool:
         """Detect brute force patterns in session."""
         # Look for rapid succession of authentication attempts
         if len(commands) < 5:
@@ -343,7 +343,7 @@ class TTPExtractionService:
 
         return False
 
-    def _detect_credential_dump_pattern(self, commands: List[str]) -> bool:
+    def _detect_credential_dump_pattern(self, commands: list[str]) -> bool:
         """Detect credential dumping patterns."""
         credential_commands = [
             "/etc/shadow",
@@ -356,7 +356,7 @@ class TTPExtractionService:
 
         return any(any(pattern in cmd.lower() for pattern in credential_commands) for cmd in commands)
 
-    def _detect_discovery_pattern(self, commands: List[str]) -> bool:
+    def _detect_discovery_pattern(self, commands: list[str]) -> bool:
         """Detect discovery patterns."""
         discovery_commands = ["ls", "dir", "find", "locate", "pwd", "whoami", "id", "uname"]
 
@@ -364,13 +364,13 @@ class TTPExtractionService:
 
         return discovery_count >= 3  # Multiple discovery commands
 
-    def _detect_tunneling_pattern(self, commands: List[str]) -> bool:
+    def _detect_tunneling_pattern(self, commands: list[str]) -> bool:
         """Detect tunneling patterns."""
         tunnel_commands = ["ssh -R", "ssh -L", "nc -e", "ncat -e"]
 
         return any(any(pattern in cmd.lower() for pattern in tunnel_commands) for cmd in commands)
 
-    def _consolidate_ttps(self, ttps: List[dict]) -> List[dict]:
+    def _consolidate_ttps(self, ttps: list[dict]) -> list[dict]:
         """
         Consolidate multiple TTP matches for the same technique.
 
@@ -427,7 +427,7 @@ class TTPExtractionService:
                 [ttp["technique_id"] for ttp in sorted(ttps, key=lambda x: x["confidence"], reverse=True)][:3]
             ),
             "confidence_score": sum(ttp["confidence"] for ttp in ttps) / len(ttps),
-            "tactics": json.dumps(list(set(self._get_tactic_for_technique(ttp["technique_id"]) for ttp in ttps))),
+            "tactics": json.dumps(list({self._get_tactic_for_technique(ttp["technique_id"]) for ttp in ttps})),
         }
 
         return fingerprint

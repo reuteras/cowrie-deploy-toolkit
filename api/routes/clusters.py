@@ -93,7 +93,7 @@ async def list_clusters(
         }
     except Exception as e:
         logger.error(f"Failed to list clusters: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # NOTE: Static paths (/clusters/diagnose, /clusters/analyze) MUST come before
@@ -116,7 +116,7 @@ async def diagnose_clustering(
         return service.diagnose(days)
     except Exception as e:
         logger.error(f"Failed to diagnose clustering: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/clusters/analyze")
@@ -202,7 +202,7 @@ async def trigger_cluster_analysis(
 
     except Exception as e:
         logger.error(f"Failed to run cluster analysis: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/clusters/{cluster_id}")
@@ -225,7 +225,7 @@ async def get_cluster_detail(cluster_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to get cluster detail: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/clusters/{cluster_id}/members")
@@ -252,7 +252,7 @@ async def get_cluster_members(
         raise
     except Exception as e:
         logger.error(f"Failed to get cluster members: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/ip/{ip}/clusters")
@@ -272,7 +272,7 @@ async def get_ip_clusters(ip: str):
         }
     except Exception as e:
         logger.error(f"Failed to get IP clusters: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =============================================================================
@@ -306,7 +306,7 @@ async def get_ip_threat_intel(
 
     except Exception as e:
         logger.error(f"Failed to get IP threat intel: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/intel/hash/{file_hash}")
@@ -335,7 +335,7 @@ async def get_hash_threat_intel(
 
     except Exception as e:
         logger.error(f"Failed to get hash threat intel: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/intel/url")
@@ -351,7 +351,7 @@ async def get_url_threat_intel(url: str = Query(..., description="URL to check")
 
     except Exception as e:
         logger.error(f"Failed to get URL threat intel: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/intel/sources")
@@ -419,7 +419,7 @@ async def cleanup_threat_intel_cache():
 
     except Exception as e:
         logger.error(f"Failed to cleanup cache: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =============================================================================
@@ -459,8 +459,8 @@ async def analyze_session_ttp(request: dict):
         if "no such table" in str(e):
             raise HTTPException(
                 status_code=503, detail="TTP analysis database not ready. Please try again in a few moments."
-            )
-        raise HTTPException(status_code=500, detail=str(e))
+            ) from e
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/clusters/ttp")
@@ -480,7 +480,7 @@ async def get_ttp_clusters(
 
     except Exception as e:
         logger.error(f"Failed to get TTP clusters: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/clusters/ttp/build")
@@ -505,7 +505,7 @@ async def build_ttp_clusters(
 
     except Exception as e:
         logger.error(f"Failed to build TTP clusters: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/clusters/ttp/batch-analyze")
@@ -535,7 +535,7 @@ async def batch_analyze_ttps(
 
     except Exception as e:
         logger.error(f"Failed to batch analyze TTPs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/clusters/ttp/{technique_id}")
@@ -559,7 +559,7 @@ async def get_clusters_by_technique(technique_id: str):
 
     except Exception as e:
         logger.error(f"Failed to get clusters for technique {technique_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/intel/ttp/{technique_id}")
@@ -588,7 +588,7 @@ async def get_technique_details(technique_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to get technique details for {technique_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =============================================================================
@@ -639,7 +639,7 @@ async def export_cluster_stix(
         raise
     except Exception as e:
         logger.error(f"Failed to export cluster {cluster_id} to STIX: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/stix/export")
@@ -696,7 +696,7 @@ async def bulk_stix_export(
         raise
     except Exception as e:
         logger.error(f"Failed to export clusters to STIX: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/stix/validate/{cluster_id}")
@@ -734,7 +734,7 @@ async def validate_cluster_stix(cluster_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to validate STIX for cluster {cluster_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/stix/info")
@@ -745,8 +745,8 @@ async def get_stix_info():
     Returns supported formats, STIX version, and available object types.
     """
     try:
-        from services.stix_export import STIX_AVAILABLE
         from services.opencti_client import OPENCTI_AVAILABLE
+        from services.stix_export import STIX_AVAILABLE
 
         info = {
             "stix_available": STIX_AVAILABLE,
@@ -774,7 +774,7 @@ async def get_stix_info():
 
     except Exception as e:
         logger.error(f"Failed to get STIX info: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =============================================================================
@@ -783,9 +783,7 @@ async def get_stix_info():
 
 
 @router.get("/opencti/health")
-async def opencti_health_check(
-    quick: bool = Query(False, description="Quick check (skip connection test)")
-):
+async def opencti_health_check(quick: bool = Query(False, description="Quick check (skip connection test)")):
     """
     Check OpenCTI connection health.
 
@@ -851,7 +849,7 @@ async def opencti_health_check(
 
     except Exception as e:
         logger.error(f"OpenCTI health check failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/opencti/search")
@@ -897,7 +895,7 @@ async def opencti_search(
         raise
     except Exception as e:
         logger.error(f"OpenCTI search failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/clusters/{cluster_id}/enrich")
@@ -922,7 +920,7 @@ async def enrich_cluster(cluster_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to enrich cluster {cluster_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/clusters/enrich")
@@ -943,7 +941,7 @@ async def enrich_clusters_bulk(
 
     except Exception as e:
         logger.error(f"Failed to bulk enrich clusters: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/opencti/push/{cluster_id}")
@@ -1005,4 +1003,4 @@ async def push_cluster_to_opencti(cluster_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to push cluster {cluster_id} to OpenCTI: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

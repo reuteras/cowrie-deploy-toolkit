@@ -81,21 +81,15 @@ class VirusTotalScanner:
 
     def is_already_scanned(self, shasum: str) -> bool:
         """Check if file has already been scanned."""
-        cursor = self.conn.execute(
-            "SELECT 1 FROM virustotal_scans WHERE shasum = ?", (shasum,)
-        )
+        cursor = self.conn.execute("SELECT 1 FROM virustotal_scans WHERE shasum = ?", (shasum,))
         return cursor.fetchone() is not None
 
     def is_pending(self, shasum: str) -> bool:
         """Check if file is in pending queue."""
-        cursor = self.conn.execute(
-            "SELECT 1 FROM virustotal_pending WHERE shasum = ?", (shasum,)
-        )
+        cursor = self.conn.execute("SELECT 1 FROM virustotal_pending WHERE shasum = ?", (shasum,))
         return cursor.fetchone() is not None
 
-    def scan_file(
-        self, shasum: str, session: str = None, src_ip: str = None
-    ) -> Optional[dict]:
+    def scan_file(self, shasum: str, session: str = None, src_ip: str = None) -> Optional[dict]:
         """
         Scan a file hash with VirusTotal.
 
@@ -139,9 +133,7 @@ class VirusTotalScanner:
                 # Remove from pending if it was there
                 self._remove_from_pending(shasum)
 
-                print(
-                    f"[VT] {shasum[:16]}... detected: {result['positives']}/{result['total']}"
-                )
+                print(f"[VT] {shasum[:16]}... detected: {result['positives']}/{result['total']}")
                 return result
 
             elif response.status_code == 404:
@@ -158,9 +150,7 @@ class VirusTotalScanner:
 
             else:
                 print(f"[VT] API error: HTTP {response.status_code}")
-                self._add_to_pending(
-                    shasum, session, src_ip, f"HTTP {response.status_code}"
-                )
+                self._add_to_pending(shasum, session, src_ip, f"HTTP {response.status_code}")
                 return None
 
         except requests.exceptions.Timeout:
@@ -227,14 +217,10 @@ class VirusTotalScanner:
         )
         self.conn.commit()
 
-    def _add_to_pending(
-        self, shasum: str, session: str, src_ip: str, error: str
-    ):
+    def _add_to_pending(self, shasum: str, session: str, src_ip: str, error: str):
         """Add file to pending scan queue."""
         # Check if already pending
-        cursor = self.conn.execute(
-            "SELECT retry_count FROM virustotal_pending WHERE shasum = ?", (shasum,)
-        )
+        cursor = self.conn.execute("SELECT retry_count FROM virustotal_pending WHERE shasum = ?", (shasum,))
         row = cursor.fetchone()
 
         if row:
@@ -285,9 +271,7 @@ class VirusTotalScanner:
 
     def _remove_from_pending(self, shasum: str):
         """Remove file from pending queue."""
-        self.conn.execute(
-            "DELETE FROM virustotal_pending WHERE shasum = ?", (shasum,)
-        )
+        self.conn.execute("DELETE FROM virustotal_pending WHERE shasum = ?", (shasum,))
         self.conn.commit()
 
     def process_pending_scans(self) -> int:
@@ -906,9 +890,7 @@ class EventIndexer:
 
         # Start VT pending scan worker thread if VT is enabled
         if self.vt_enabled and self.vt_scanner:
-            self._vt_thread = threading.Thread(
-                target=self._vt_pending_worker, name="vt-pending-worker", daemon=True
-            )
+            self._vt_thread = threading.Thread(target=self._vt_pending_worker, name="vt-pending-worker", daemon=True)
             self._vt_thread.start()
 
             # Check for pending VT scans from previous runs

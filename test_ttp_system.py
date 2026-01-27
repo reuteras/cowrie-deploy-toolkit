@@ -5,16 +5,16 @@ Test script for TTP clustering system
 Tests the core functionality without requiring optional dependencies like STIX2 or PyCTI.
 """
 
-import sys
 import os
+import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "api"))
 
+from services.clustering import ClusteringService
 from services.mitre_attack import MITREAttackService
 from services.ttp_extraction import TTPExtractionService
-from services.clustering import ClusteringService
 
 
 def test_mitre_service():
@@ -62,7 +62,7 @@ def test_ttp_extraction():
         mitre_db = tempfile.mktemp(suffix="_mitre.db")
 
         # Create services
-        mitre_service = MITREAttackService(mitre_db)
+        MITREAttackService(mitre_db)
         ttp_service = TTPExtractionService(source_db, mitre_db)
 
         # Test command analysis
@@ -100,8 +100,8 @@ def test_clustering():
         mitre_db = tempfile.mktemp(suffix="_mitre.db")
 
         # Initialize services
-        mitre_service = MITREAttackService(mitre_db)
-        clustering_service = ClusteringService(source_db, clustering_db)
+        MITREAttackService(mitre_db)
+        ClusteringService(source_db, clustering_db)
 
         # Test database schema creation
         # (This would normally create tables, but we can't test with real data without a proper DB)

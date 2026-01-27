@@ -137,9 +137,7 @@ class ThreatIntelService:
                 return None
         return None
 
-    def _set_cached(
-        self, feed_name: str, query_type: str, query_value: str, data: dict, ttl_hours: int = 24
-    ):
+    def _set_cached(self, feed_name: str, query_type: str, query_value: str, data: dict, ttl_hours: int = 24):
         """
         Cache a response.
 

@@ -14,7 +14,7 @@ import tempfile
 import threading
 import time
 import zipfile
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -37,6 +37,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_
 @app.context_processor
 def inject_base_path():
     return {"base_path": request.script_root or ""}
+
 
 # Configuration from environment variables
 CONFIG = {
@@ -451,9 +452,7 @@ class SessionParser:
                         elif event_id == "cowrie.command.input":
                             cmd_input = (entry.get("input") or "").strip()
                             if cmd_input:
-                                session["commands"].append(
-                                    {"command": cmd_input, "timestamp": entry["timestamp"]}
-                                )
+                                session["commands"].append({"command": cmd_input, "timestamp": entry["timestamp"]})
 
                         elif event_id == "cowrie.session.file_download":
                             session["downloads"].append(
@@ -1594,16 +1593,19 @@ def api_sessions():
         print(f"[/api/sessions] Fetched {returned} sessions (limit={limit}, offset={offset}, total={total})")
 
         # Return full response with pagination info
-        return jsonify({
-            "sessions": sessions,
-            "total": total,
-            "offset": offset,
-            "limit": limit,
-            "returned": returned,
-        })
+        return jsonify(
+            {
+                "sessions": sessions,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "returned": returned,
+            }
+        )
     except Exception as e:
         print(f"[/api/sessions] Error fetching sessions: {e}")
         import traceback
+
         traceback.print_exc()
         # Return error response
         return jsonify({"sessions": [], "total": 0, "error": str(e)})
@@ -1658,14 +1660,16 @@ def api_system_info():
             app.logger.warning(f"Failed to fetch system info from API: {e}")
 
         # Fallback to config values if API unavailable
-        return jsonify({
-            "server_ip": CONFIG["server_ip"],
-            "honeypot_hostname": CONFIG["honeypot_hostname"],
-            "cowrie_version": "unknown",
-            "git_commit": None,
-            "build_date": None,
-            "uptime_seconds": None,
-        })
+        return jsonify(
+            {
+                "server_ip": CONFIG["server_ip"],
+                "honeypot_hostname": CONFIG["honeypot_hostname"],
+                "cowrie_version": "unknown",
+                "git_commit": None,
+                "build_date": None,
+                "uptime_seconds": None,
+            }
+        )
 
 
 @app.route("/api/canary-tokens")
@@ -2132,9 +2136,7 @@ def sessions_data():
     login_success = parse_bool_param(successful_login_param)
 
     # Check if we have client-side only filters
-    has_client_filters = any([
-        country_filter, credentials_filter, client_version_filter, command_filter
-    ])
+    has_client_filters = any([country_filter, credentials_filter, client_version_filter, command_filter])
 
     try:
         if not has_client_filters:
@@ -2157,13 +2159,15 @@ def sessions_data():
 
             print(f"[/api/sessions-data] Server-side pagination: page={page}, got {len(sessions)} of {total} total")
 
-            return jsonify({
-                "sessions": sessions,
-                "total": total,
-                "page": page,
-                "per_page": per_page,
-                "pages": (total + per_page - 1) // per_page,
-            })
+            return jsonify(
+                {
+                    "sessions": sessions,
+                    "total": total,
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": (total + per_page - 1) // per_page,
+                }
+            )
 
         # CLIENT-SIDE FILTER PATH: Some filters need post-processing
         # Fetch more data since we need to filter client-side
@@ -2187,6 +2191,7 @@ def sessions_data():
     except Exception as e:
         print(f"[/api/sessions-data] Error fetching sessions: {e}")
         import traceback
+
         traceback.print_exc()
         all_sessions_list = []
         has_client_filters = True  # Fall through to empty filter path
@@ -2861,14 +2866,16 @@ def cluster_enrich(cluster_id: str):
             elif response.status_code == 503:
                 return jsonify(response.json()), 503
         except req.exceptions.Timeout:
-            return jsonify({
-                "error": "OpenCTI query timed out",
-                "enriched": False,
-                "opencti_available": True,
-                "threat_actors": [],
-                "campaigns": [],
-                "malware_families": [],
-            }), 504
+            return jsonify(
+                {
+                    "error": "OpenCTI query timed out",
+                    "enriched": False,
+                    "opencti_available": True,
+                    "threat_actors": [],
+                    "campaigns": [],
+                    "malware_families": [],
+                }
+            ), 504
         except Exception as e:
             print(f"[!] Failed to enrich cluster from API: {e}")
 

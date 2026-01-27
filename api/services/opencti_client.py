@@ -8,7 +8,7 @@ for importing and exporting threat intelligence data.
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,7 @@ def get_opencti_client(url: str, api_key: str, ssl_verify: bool = True) -> Optio
     except Exception as e:
         logger.error(f"Failed to create OpenCTI client: {type(e).__name__}: {e}")
         import traceback
+
         logger.error(f"Traceback: {traceback.format_exc()}")
         return None
 
@@ -135,7 +136,7 @@ class OpenCTIClientService:
             logger.error(f"OpenCTI connection test failed: {e}")
             raise
 
-    def push_cluster(self, cluster_data: dict, stix_bundle: Optional[dict] = None) -> Dict[str, Any]:
+    def push_cluster(self, cluster_data: dict, stix_bundle: Optional[dict] = None) -> dict[str, Any]:
         """
         Push cluster data to OpenCTI.
 
@@ -171,7 +172,7 @@ class OpenCTIClientService:
             logger.error(f"Failed to push cluster {cluster_data.get('cluster_id')}: {e}")
             return {"success": False, "entities_created": [], "entities_updated": [], "errors": [str(e)]}
 
-    def _push_stix_bundle(self, stix_bundle: dict) -> Dict[str, Any]:
+    def _push_stix_bundle(self, stix_bundle: dict) -> dict[str, Any]:
         """
         Push STIX bundle to OpenCTI.
 
@@ -194,7 +195,7 @@ class OpenCTIClientService:
             bundle_file = io.BytesIO(bundle_json.encode("utf-8"))
 
             # Use OpenCTI's file upload and import
-            file_info = self.client.file.upload_file(
+            self.client.file.upload_file(
                 file_name="cowrie_cluster_bundle.json", file_content=bundle_file, mime_type="application/json"
             )
 
@@ -214,7 +215,7 @@ class OpenCTIClientService:
             logger.error(f"Failed to push STIX bundle: {e}")
             return {"entities_created": [], "entities_updated": [], "errors": [str(e)]}
 
-    def _push_cluster_entities(self, cluster_data: dict) -> Dict[str, Any]:
+    def _push_cluster_entities(self, cluster_data: dict) -> dict[str, Any]:
         """
         Push cluster data as individual OpenCTI entities.
 
@@ -245,7 +246,7 @@ class OpenCTIClientService:
 
         return result
 
-    def _create_attack_pattern_from_cluster(self, cluster_data: dict) -> Dict[str, Any]:
+    def _create_attack_pattern_from_cluster(self, cluster_data: dict) -> dict[str, Any]:
         """Create attack pattern from TTP cluster."""
         try:
             technique_id = cluster_data.get("dominant_technique", "")
@@ -276,7 +277,7 @@ class OpenCTIClientService:
             logger.error(f"Failed to create attack pattern: {e}")
             return {"created": [], "updated": [], "errors": [str(e)]}
 
-    def _create_malware_from_cluster(self, cluster_data: dict) -> Dict[str, Any]:
+    def _create_malware_from_cluster(self, cluster_data: dict) -> dict[str, Any]:
         """Create malware entity from payload cluster."""
         try:
             malware_data = {
@@ -296,7 +297,7 @@ class OpenCTIClientService:
             logger.error(f"Failed to create malware: {e}")
             return {"created": [], "updated": [], "errors": [str(e)]}
 
-    def _create_indicator_from_cluster(self, cluster_data: dict) -> Dict[str, Any]:
+    def _create_indicator_from_cluster(self, cluster_data: dict) -> dict[str, Any]:
         """Create indicator from IOC cluster."""
         try:
             indicator_data = {
@@ -317,7 +318,7 @@ class OpenCTIClientService:
             logger.error(f"Failed to create indicator: {e}")
             return {"created": [], "updated": [], "errors": [str(e)]}
 
-    def pull_related_entities(self, cluster_id: str) -> Dict[str, Any]:
+    def pull_related_entities(self, cluster_id: str) -> dict[str, Any]:
         """
         Pull related threat intelligence from OpenCTI for a cluster.
 
@@ -351,7 +352,7 @@ class OpenCTIClientService:
                 "error": str(e),
             }
 
-    def search_threat_intelligence(self, query: str, entity_types: List[str] = None) -> Dict[str, Any]:
+    def search_threat_intelligence(self, query: str, entity_types: list[str] = None) -> dict[str, Any]:
         """
         Search OpenCTI for threat intelligence.
 
@@ -383,7 +384,7 @@ class OpenCTIClientService:
             logger.error(f"Failed to search OpenCTI: {e}")
             return {"query": query, "results": {}, "success": False, "error": str(e)}
 
-    def get_platform_info(self) -> Dict[str, Any]:
+    def get_platform_info(self) -> dict[str, Any]:
         """
         Get OpenCTI platform information.
 
@@ -409,7 +410,7 @@ class OpenCTIClientService:
             logger.error(f"Failed to get platform info: {e}")
             return {"error": str(e)}
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """
         Perform health check on OpenCTI connection.
 

@@ -459,12 +459,14 @@ class SQLiteStatsParser:
             result = []
             for asn_key, count in asn_counter.most_common():
                 details = asn_details.get(asn_key, {})
-                result.append({
-                    "asn": asn_key,
-                    "asn_number": details.get("asn_number", 0),
-                    "asn_org": details.get("asn_org", "Unknown"),
-                    "count": count,
-                })
+                result.append(
+                    {
+                        "asn": asn_key,
+                        "asn_number": details.get("asn_number", 0),
+                        "asn_org": details.get("asn_org", "Unknown"),
+                        "count": count,
+                    }
+                )
 
             return result
 
@@ -518,22 +520,24 @@ class SQLiteStatsParser:
                 ip = row["ip"]
                 geo = self._geoip_lookup(ip)
 
-                result.append({
-                    "ip": ip,
-                    "count": row["session_count"],
-                    "successful_logins": row["successful_logins"] or 0,
-                    "failed_logins": row["failed_logins"] or 0,
-                    "last_seen": row["last_seen"],
-                    "geo": {
-                        "country": geo["country"],
-                        "country_code": geo["country_code"],
-                        "city": geo["city"],
-                        "latitude": geo["latitude"],
-                        "longitude": geo["longitude"],
-                        "asn": geo["asn"],
-                        "asn_org": geo["asn_org"],
-                    },
-                })
+                result.append(
+                    {
+                        "ip": ip,
+                        "count": row["session_count"],
+                        "successful_logins": row["successful_logins"] or 0,
+                        "failed_logins": row["failed_logins"] or 0,
+                        "last_seen": row["last_seen"],
+                        "geo": {
+                            "country": geo["country"],
+                            "country_code": geo["country_code"],
+                            "city": geo["city"],
+                            "latitude": geo["latitude"],
+                            "longitude": geo["longitude"],
+                            "asn": geo["asn"],
+                            "asn_org": geo["asn_org"],
+                        },
+                    }
+                )
 
             return result
 
@@ -596,11 +600,13 @@ class SQLiteStatsParser:
             result = []
             for country, count in country_counter.most_common():
                 details = country_details.get(country, {})
-                result.append({
-                    "country": country,
-                    "country_code": details.get("country_code", "XX"),
-                    "count": count,
-                })
+                result.append(
+                    {
+                        "country": country,
+                        "country_code": details.get("country_code", "XX"),
+                        "count": count,
+                    }
+                )
 
             return result
 
@@ -651,13 +657,15 @@ class SQLiteStatsParser:
             successful = []
             for row in cursor.fetchall():
                 cred = f"{row['username']}:{row['password']}"
-                credentials.append({
-                    "credential": cred,
-                    "username": row["username"],
-                    "password": row["password"],
-                    "count": row["count"],
-                    "successful": bool(row["has_success"]),
-                })
+                credentials.append(
+                    {
+                        "credential": cred,
+                        "username": row["username"],
+                        "password": row["password"],
+                        "count": row["count"],
+                        "successful": bool(row["has_success"]),
+                    }
+                )
                 if row["has_success"]:
                     successful.append(cred)
 
@@ -708,10 +716,12 @@ class SQLiteStatsParser:
 
             result = []
             for row in cursor.fetchall():
-                result.append({
-                    "client": row["client"],
-                    "count": row["count"],
-                })
+                result.append(
+                    {
+                        "client": row["client"],
+                        "count": row["count"],
+                    }
+                )
 
             return result
 
@@ -766,13 +776,15 @@ class SQLiteStatsParser:
 
                 result = []
                 for row in cursor.fetchall():
-                    result.append({
-                        "command": row["command"],
-                        "count": row["count"],
-                        "timestamp": row["timestamp"],
-                        "src_ip": row["src_ip"],
-                        "session_id": row["session_id"],
-                    })
+                    result.append(
+                        {
+                            "command": row["command"],
+                            "count": row["count"],
+                            "timestamp": row["timestamp"],
+                            "src_ip": row["src_ip"],
+                            "session_id": row["session_id"],
+                        }
+                    )
             else:
                 # Get all commands (limited for performance)
                 cursor.execute(
@@ -793,13 +805,15 @@ class SQLiteStatsParser:
 
                 result = []
                 for row in cursor.fetchall():
-                    result.append({
-                        "command": row["command"],
-                        "count": 1,
-                        "timestamp": row["timestamp"],
-                        "src_ip": row["src_ip"],
-                        "session_id": row["session_id"],
-                    })
+                    result.append(
+                        {
+                            "command": row["command"],
+                            "count": 1,
+                            "timestamp": row["timestamp"],
+                            "src_ip": row["src_ip"],
+                            "session_id": row["session_id"],
+                        }
+                    )
 
             return result
 
@@ -843,10 +857,13 @@ class SQLiteStatsParser:
                 """,
                 (cutoff_str,),
             )
-            ip_stats = {row["ip"]: {
-                "session_count": row["session_count"],
-                "latest_timestamp": row["latest_timestamp"],
-            } for row in cursor.fetchall()}
+            ip_stats = {
+                row["ip"]: {
+                    "session_count": row["session_count"],
+                    "latest_timestamp": row["latest_timestamp"],
+                }
+                for row in cursor.fetchall()
+            }
 
             # Get success counts per IP from auth table
             cursor.execute(
@@ -879,19 +896,21 @@ class SQLiteStatsParser:
                 success_count = stats.get("success_count", 0)
                 total_sessions += session_count
 
-                attacks.append({
-                    "ip": ip,
-                    "lat": geo["latitude"],
-                    "lon": geo["longitude"],
-                    "city": geo.get("city", "-"),
-                    "country": geo.get("country", "-"),
-                    "country_code": geo.get("country_code", "XX"),
-                    "asn": geo.get("asn"),
-                    "asn_org": geo.get("asn_org"),
-                    "session_count": session_count,
-                    "success_count": success_count,
-                    "latest_timestamp": stats["latest_timestamp"],
-                })
+                attacks.append(
+                    {
+                        "ip": ip,
+                        "lat": geo["latitude"],
+                        "lon": geo["longitude"],
+                        "city": geo.get("city", "-"),
+                        "country": geo.get("country", "-"),
+                        "country_code": geo.get("country_code", "XX"),
+                        "asn": geo.get("asn"),
+                        "asn_org": geo.get("asn_org"),
+                        "session_count": session_count,
+                        "success_count": success_count,
+                        "latest_timestamp": stats["latest_timestamp"],
+                    }
+                )
 
             # Sort by latest timestamp for animation ordering
             attacks.sort(key=lambda x: x["latest_timestamp"] or "")

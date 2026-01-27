@@ -9,7 +9,7 @@ import logging
 import sqlite3
 import urllib.request
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +318,7 @@ class MITREAttackService:
             }
         return None
 
-    def get_ttp_patterns(self, technique_id: Optional[str] = None) -> List[dict]:
+    def get_ttp_patterns(self, technique_id: Optional[str] = None) -> list[dict]:
         """Get TTP patterns, optionally filtered by technique."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -345,7 +345,7 @@ class MITREAttackService:
         conn.close()
         return patterns
 
-    def get_tactics(self) -> List[dict]:
+    def get_tactics(self) -> list[dict]:
         """Get all tactics."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()

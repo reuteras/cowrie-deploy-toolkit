@@ -52,7 +52,7 @@ Deploy realistic [Cowrie](https://github.com/cowrie/cowrie) SSH honeypots on Het
 - **STIX 2.1 Export** - Standardized threat intelligence sharing (optional)
 - **OpenCTI Sync** - Bidirectional integration with threat intelligence platforms (optional)
 
-### Configuration
+### Integration Configuration
 
 **STIX Export**: Automatically enabled when containers are deployed (stix2 package pre-installed)
 - Use `/api/v1/stix/clusters/{id}` and `/api/v1/stix/export` endpoints

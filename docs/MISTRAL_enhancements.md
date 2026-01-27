@@ -14,7 +14,7 @@ The current system has:
 ## Recommended Free Threat Intelligence Sources
 
 ### 1. **ThreatFox (abuse.ch)**
-**URL:** https://threatfox.abuse.ch/api/
+**URL:** <https://threatfox.abuse.ch/api/>
 **Coverage:** Malware IPs, domains, URLs, hashes
 **Rate Limit:** No API key required, reasonable rate limits
 **Value:** Malware family attribution, threat types, confidence levels
@@ -31,7 +31,7 @@ def query_threatfox(ioc: str, ioc_type: str = "ip:port") -> dict:
 ```
 
 ### 2. **AlienVault OTX (Open Threat Exchange)**
-**URL:** https://otx.alienvault.com/api
+**URL:** <https://otx.alienvault.com/api>
 **Coverage:** Global threat data, pulses, IOCs
 **Rate Limit:** Free API key required, generous limits
 **Value:** Pulse-based threat sharing, IOC correlation, community intelligence
@@ -48,31 +48,31 @@ def query_otx(ip: str, api_key: str) -> dict:
 ```
 
 ### 3. **AbuseIPDB**
-**URL:** https://www.abuseipdb.com/api
+**URL:** <https://www.abuseipdb.com/api>
 **Coverage:** IP reputation scoring
 **Rate Limit:** Free tier available (1000 requests/day)
 **Value:** Abuse confidence scores, report history, ISP information
 
 ### 4. **CIRCL Passive DNS**
-**URL:** https://www.circl.lu/services/passive-dns/
+**URL:** <https://www.circl.lu/services/passive-dns/>
 **Coverage:** Historical DNS records
 **Rate Limit:** Free access
 **Value:** Domain-IP relationships, infrastructure mapping
 
 ### 5. **URLScan.io**
-**URL:** https://urlscan.io/api
+**URL:** <https://urlscan.io/api>
 **Coverage:** URL analysis, screenshots, network requests
 **Rate Limit:** Free tier available
 **Value:** Malicious URL detection, infrastructure analysis
 
 ### 6. **MISP (Malware Information Sharing Platform)**
-**URL:** https://www.misp-project.org/
+**URL:** <https://www.misp-project.org/>
 **Coverage:** Threat intelligence sharing
 **Rate Limit:** Community-driven, various instances
 **Value:** STIX/TAXII feeds, structured threat data
 
 ### 7. **DShield/SANS Internet Storm Center**
-**URL:** https://isc.sans.edu/api/
+**URL:** <https://isc.sans.edu/api/>
 **Coverage:** Global attack data
 **Rate Limit:** Free access
 **Value:** Attack trends, IP reputation, global threat landscape
@@ -97,7 +97,7 @@ def cluster_by_commands(sessions: list) -> dict:
         fp = create_command_fingerprint(session.commands)
         clusters[fp].append(session.src_ip)
     return {fp: ips for fp, ips in clusters.items() if len(ips) > 1}
-```
+```text
 
 ### 2. **HASSH Fingerprint Clustering**
 
@@ -403,7 +403,7 @@ GET /api/v1/threat/sources
 ### 1. **Multi-Feature Clustering**
 Combine multiple clustering methods with weighted scoring:
 - Command sequence similarity (weight: 0.4)
-- HASSH fingerprint match (weight: 0.3) 
+- HASSH fingerprint match (weight: 0.3)
 - Malware payload sharing (weight: 0.2)
 - Temporal proximity (weight: 0.1)
 

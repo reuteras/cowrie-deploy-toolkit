@@ -75,7 +75,7 @@ def cluster_by_hassh(sessions: list) -> dict[str, set[str]]:
     return {h: ips for h, ips in clusters.items() if len(ips) > 1}
 ```
 
-HASSH database for lookup: https://github.com/salesforce/hassh
+HASSH database for lookup: <https://github.com/salesforce/hassh>
 
 ### 3. Payload Hash Correlation
 
@@ -165,7 +165,7 @@ All sources below have free tiers suitable for honeypot research.
 
 ### 1. ThreatFox (abuse.ch)
 
-**URL:** https://threatfox.abuse.ch/api/
+**URL:** <https://threatfox.abuse.ch/api/>
 
 **Value:** IOC database with malware family attribution, C2 indicators
 
@@ -188,7 +188,7 @@ def query_threatfox(ioc: str, ioc_type: str = "ip:port") -> dict:
 
 ### 2. URLhaus (abuse.ch)
 
-**URL:** https://urlhaus.abuse.ch/api/
+**URL:** <https://urlhaus.abuse.ch/api/>
 
 **Value:** Malware distribution URLs, payload hashes
 
@@ -207,7 +207,7 @@ def query_urlhaus_host(host: str) -> dict:
 
 ### 3. Feodo Tracker (abuse.ch)
 
-**URL:** https://feodotracker.abuse.ch/
+**URL:** <https://feodotracker.abuse.ch/>
 
 **Value:** Botnet C2 server tracking (Emotet, Dridex, TrickBot, QakBot)
 
@@ -226,7 +226,7 @@ def query_feodo(ip: str) -> dict:
 
 ### 4. MalwareBazaar (abuse.ch)
 
-**URL:** https://bazaar.abuse.ch/api/
+**URL:** <https://bazaar.abuse.ch/api/>
 
 **Value:** Malware sample database, YARA matches, tags
 
@@ -247,7 +247,7 @@ def query_malwarebazaar(sha256: str) -> dict:
 
 ### 5. IPinfo.io
 
-**URL:** https://ipinfo.io/
+**URL:** <https://ipinfo.io/>
 
 **Value:** ASN, hosting detection, VPN/proxy/Tor identification
 
@@ -268,7 +268,7 @@ def query_ipinfo(ip: str, token: str = None) -> dict:
 
 ### 6. BGPView
 
-**URL:** https://bgpview.io/
+**URL:** <https://bgpview.io/>
 
 **Value:** ASN relationships, IP prefix announcements, peer networks
 
@@ -291,7 +291,7 @@ def query_bgpview_asn(asn: int) -> dict:
 
 ### 7. Shodan (InternetDB)
 
-**URL:** https://internetdb.shodan.io/
+**URL:** <https://internetdb.shodan.io/>
 
 **Value:** Open ports, vulnerabilities, hostnames - NO API KEY REQUIRED
 
@@ -311,7 +311,7 @@ def query_shodan_internetdb(ip: str) -> dict:
 
 ### 8. CIRCL Passive DNS
 
-**URL:** https://www.circl.lu/services/passive-dns/
+**URL:** <https://www.circl.lu/services/passive-dns/>
 
 **Value:** Historical DNS resolutions
 
@@ -321,7 +321,7 @@ def query_shodan_internetdb(ip: str) -> dict:
 
 ### 9. AlienVault OTX
 
-**URL:** https://otx.alienvault.com/api
+**URL:** <https://otx.alienvault.com/api>
 
 **Value:** Pulses (threat reports), IOC correlation, community intelligence
 
@@ -341,7 +341,7 @@ def query_otx(ip: str, api_key: str) -> dict:
 
 ### 10. Pulsedive
 
-**URL:** https://pulsedive.com/api/
+**URL:** <https://pulsedive.com/api/>
 
 **Value:** Threat intelligence aggregation, risk scoring
 
@@ -363,7 +363,7 @@ def query_pulsedive(indicator: str, api_key: str) -> dict:
 ## Enrichment Priority Matrix
 
 | Source | Query Type | Rate Limit | Best For |
-|--------|-----------|------------|----------|
+| -------- | ----------- | ---------- | -------- |
 | **Shodan InternetDB** | IP | Unlimited | Infrastructure profiling |
 | **ThreatFox** | IP, hash, domain | Unlimited | Malware attribution |
 | **MalwareBazaar** | Hash | Unlimited | Sample analysis |

@@ -8,13 +8,12 @@ indicators, attack patterns, and malware objects.
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 try:
-    import stix2
-    from stix2 import Bundle, Indicator, AttackPattern, Malware, Relationship, Identity
+    from stix2 import AttackPattern, Bundle, Identity, Indicator, Malware, Relationship
 
     STIX_AVAILABLE = True
 except ImportError:
@@ -47,7 +46,11 @@ logger = logging.getLogger(__name__)
 class STIXExportService:
     """Service for creating STIX 2.1 bundles from threat intelligence data."""
 
-    def __init__(self, identity_name: str = "Cowrie Honeypot", identity_id: str = "identity--a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"):
+    def __init__(
+        self,
+        identity_name: str = "Cowrie Honeypot",
+        identity_id: str = "identity--a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    ):
         """
         Initialize STIX export service.
 
@@ -105,7 +108,7 @@ class STIXExportService:
 
         return bundle
 
-    def _create_command_cluster_objects(self, cluster_data: dict) -> List[Any]:
+    def _create_command_cluster_objects(self, cluster_data: dict) -> list[Any]:
         """Create STIX objects for command-based clusters."""
         objects = []
 
@@ -129,7 +132,7 @@ class STIXExportService:
 
         return objects
 
-    def _create_hassh_cluster_objects(self, cluster_data: dict) -> List[Any]:
+    def _create_hassh_cluster_objects(self, cluster_data: dict) -> list[Any]:
         """Create STIX objects for HASSH-based clusters."""
         objects = []
 
@@ -148,7 +151,7 @@ class STIXExportService:
 
         return objects
 
-    def _create_payload_cluster_objects(self, cluster_data: dict) -> List[Any]:
+    def _create_payload_cluster_objects(self, cluster_data: dict) -> list[Any]:
         """Create STIX objects for payload-based clusters."""
         objects = []
 
@@ -156,6 +159,7 @@ class STIXExportService:
         metadata = cluster_data.get("metadata", {})
         if isinstance(metadata, str):
             import json
+
             try:
                 metadata = json.loads(metadata)
             except (json.JSONDecodeError, TypeError):
@@ -191,7 +195,7 @@ class STIXExportService:
 
         return objects
 
-    def _create_ttp_cluster_objects(self, cluster_data: dict) -> List[Any]:
+    def _create_ttp_cluster_objects(self, cluster_data: dict) -> list[Any]:
         """Create STIX objects for TTP-based clusters."""
         objects = []
 
@@ -217,7 +221,7 @@ class STIXExportService:
 
         return objects
 
-    def _create_generic_cluster_objects(self, cluster_data: dict) -> List[Any]:
+    def _create_generic_cluster_objects(self, cluster_data: dict) -> list[Any]:
         """Create STIX objects for generic clusters."""
         objects = []
 
@@ -234,7 +238,7 @@ class STIXExportService:
 
         return objects
 
-    def _create_cluster_relationships(self, objects: List[Any], cluster_data: dict) -> List[Relationship]:
+    def _create_cluster_relationships(self, objects: list[Any], cluster_data: dict) -> list[Relationship]:
         """Create relationships between STIX objects in the cluster."""
         relationships = []
 
@@ -259,7 +263,7 @@ class STIXExportService:
 
         return relationships
 
-    def create_bulk_bundle(self, clusters: List[dict], bundle_name: str = "Cowrie Threat Intelligence") -> Bundle:
+    def create_bulk_bundle(self, clusters: list[dict], bundle_name: str = "Cowrie Threat Intelligence") -> Bundle:
         """
         Create a STIX bundle containing multiple clusters.
 
@@ -270,7 +274,6 @@ class STIXExportService:
         Returns:
             STIX Bundle containing all clusters
         """
-        objects = [self.identity]
         cluster_objects = []
 
         # Create objects for each cluster
@@ -315,7 +318,7 @@ class STIXExportService:
         """
         return json.loads(bundle.serialize())
 
-    def validate_bundle(self, bundle: Bundle) -> Dict[str, Any]:
+    def validate_bundle(self, bundle: Bundle) -> dict[str, Any]:
         """
         Validate STIX bundle for correctness.
 
@@ -353,8 +356,8 @@ class STIXExportService:
         return results
 
     def export_clusters_to_stix(
-        self, clusters: List[dict], output_format: str = "json", validate: bool = True
-    ) -> Dict[str, Any]:
+        self, clusters: list[dict], output_format: str = "json", validate: bool = True
+    ) -> dict[str, Any]:
         """
         Export clusters to STIX format.
 
