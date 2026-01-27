@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "CVE-2025-47273"
+ignoreUntil = "2026-07-26"
+reason = "pycti currently pins setuptools < 71.2; setuptools PackageIndex/easy_install code path is not used in our CI/runtime. Time-boxed exception pending upstream fix."
