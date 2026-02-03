@@ -984,9 +984,9 @@ opentelemetry-api==1.22.0 \
     # via
     #   opentelemetry-sdk
     #   pycti
-opentelemetry-sdk==1.22.0 \
-    --hash=sha256:45267ac1f38a431fc2eb5d6e0c0d83afc0b78de57ac345488aa58c28c17991d0 \
-    --hash=sha256:a730555713d7c8931657612a88a141e3a4fe6eb5523d9e2d5a8b1e673d76efa6
+opentelemetry-sdk==1.39.1 \
+    --hash=sha256:4d5482c478513ecb0a5d938dcc61394e647066e0cc2676bee9f3af3f3f45f01c \
+    --hash=sha256:cf4d4563caf7bff906c9f7967e2be22d0d6b349b908be0d90fb21c8e9c995cc6
     # via pycti
 opentelemetry-semantic-conventions==0.43b0 \
     --hash=sha256:291284d7c1bf15fdaddf309b3bd6d3b7ce12a253cec6d27144439819a15d8445 \
