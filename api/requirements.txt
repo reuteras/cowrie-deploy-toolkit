@@ -1124,9 +1124,9 @@ pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementatio
     --hash=sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29 \
     --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
     # via cffi
-pycti==6.2.11 \
-    --hash=sha256:05b864433bc4af0c40116439effb9d7bb244cff5a2888d25d27fd0f3b3033064 \
-    --hash=sha256:e58b01aeb842c04da38ea72104df9050429f0187988ab45535ab81eeb46528cc
+pycti==6.9.17 \
+    --hash=sha256:2a2e1dcbcf60c34c8e6ca507acf8674605ff1a0a2e53fbdadd520d4f3e3167fd \
+    --hash=sha256:9e4afa0d41cea25f47b5b38439402d4deae306635d46a8d52427363a297664aa
 pydantic==2.12.5 \
     --hash=sha256:4d351024c75c0f085a9febbb665ce8c0c6ec5d30e903bdb6394b7ede26aebb49 \
     --hash=sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d
