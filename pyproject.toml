@@ -52,7 +52,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "cowrie>=2.9.0",
+    "cowrie @ git+https://github.com/cowrie/cowrie@v2.9.11",
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
