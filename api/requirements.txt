@@ -397,9 +397,9 @@ idna==3.11 \
     #   httpx
     #   requests
     #   yarl
-importlib-metadata==6.11.0 \
-    --hash=sha256:1231cf92d825c9e03cfc4da076a16de6422c863558229ea0b22b675657463443 \
-    --hash=sha256:f0afba6205ad8f8947c7d338b5342d5db2afbfd82f9cbef7879a9539cc12eb9b
+importlib-metadata==8.7.1 \
+    --hash=sha256:49fef1ae6440c182052f407c8d34a68f72efc36db9ca90dc0113398f2fdde8bb \
+    --hash=sha256:5a1f80bf1daa489495071efbb095d75a634cf28a8bc299581244063b53176151
     # via opentelemetry-api
 inotify-simple==2.0.1 \
     --hash=sha256:e5da495f2064889f8e68b67f9358b0d102e03b783c2d42e5b8e132ab859a5d8a \
