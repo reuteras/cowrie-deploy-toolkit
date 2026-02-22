@@ -665,9 +665,9 @@ multidict==6.7.1 \
     # via
     #   aiohttp
     #   yarl
-opentelemetry-api==1.22.0 \
-    --hash=sha256:15ae4ca925ecf9cfdfb7a709250846fbb08072260fca08ade78056c502b86bed \
-    --hash=sha256:43621514301a7e9f5d06dd8013a1b450f30c2e9372b8e30aaeb4562abf2ce034
+opentelemetry-api==1.39.1 \
+    --hash=sha256:2edd8463432a7f8443edce90972169b195e7d6a05500cd29e6d13898187c9950 \
+    --hash=sha256:fbde8c80e1b937a2c61f20347e91c0c18a1940cecf012d62e65a7caf08967c9c
     # via
     #   opentelemetry-sdk
     #   pycti
