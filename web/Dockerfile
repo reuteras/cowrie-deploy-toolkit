@@ -18,7 +18,9 @@ COPY . .
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl && \
-    pip install --no-cache-dir --require-hashes -r requirements.txt && \
+    pip install --no-cache-dir "cowrie @ git+https://github.com/cowrie/cowrie@fb38e08c729a8d6f0aae2ed1f9eba6730a34718d" && \
+    grep -v "^cowrie @" requirements.txt > /tmp/requirements-hashed.txt && \
+    pip install --no-cache-dir --require-hashes -r /tmp/requirements-hashed.txt && \
     mkdir -p /app/static /app/templates /geoip /identity && \
     groupadd -r cowrie && useradd -r -g cowrie cowrie && \
     chown -R cowrie:cowrie /app && \
