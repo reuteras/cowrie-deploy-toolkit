@@ -17,7 +17,8 @@ COPY . .
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        curl && \
+        curl \
+        git && \
     pip install --no-cache-dir "cowrie @ git+https://github.com/cowrie/cowrie@fb38e08c729a8d6f0aae2ed1f9eba6730a34718d" && \
     grep -v "^cowrie @" requirements.txt > /tmp/requirements-hashed.txt && \
     pip install --no-cache-dir --require-hashes -r /tmp/requirements-hashed.txt && \
