@@ -532,9 +532,9 @@ deprecation==2.1.0 \
     --hash=sha256:72b3bde64e5d778694b0cf68178aed03d15e15477116add3fb773e581f9518ff \
     --hash=sha256:a10811591210e1fb0e768a8c25517cabeabcba6f0bf96564f8ff45189f90b14a
     # via pycti
-fastapi==0.129.2 \
-    --hash=sha256:e21d9f6e8db376655187905ad0145edd6f6a4e5f2bff241c4efb8a0bffd6a540 \
-    --hash=sha256:e2b3637a2b47856e704dbd9a3a09393f6df48e8b9cb6c7a3e26ba44d2053f9ab
+fastapi==0.135.0 \
+    --hash=sha256:31e2ddc78d6406c6f7d5d7b9996a057985e2600fbe7e9ba6ace8205d48dff688 \
+    --hash=sha256:bd37903acf014d1284bda027096e460814dca9699f9dacfe11c275749d949f4d
     # via pycti
 filigran-sseclient==1.0.2 \
     --hash=sha256:3ec9dd84fb79334e711ec0ed6cedb7d9e37bafc669c9d505294072329d32977d \
