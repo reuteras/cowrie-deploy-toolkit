@@ -1011,9 +1011,9 @@ opentelemetry-sdk==1.35.0 \
     --hash=sha256:223d9e5f5678518f4842311bb73966e0b6db5d1e0b74e35074c052cd2487f800 \
     --hash=sha256:2a400b415ab68aaa6f04e8a6a9f6552908fb3090ae2ff78d6ae0c597ac581954
     # via pycti
-opentelemetry-semantic-conventions==0.56b0 \
-    --hash=sha256:c114c2eacc8ff6d3908cb328c811eaf64e6d68623840be9224dc829c4fd6c2ea \
-    --hash=sha256:df44492868fd6b482511cc43a942e7194be64e94945f572db24df2e279a001a2
+opentelemetry-semantic-conventions==0.60b1 \
+    --hash=sha256:87c228b5a0669b748c76d76df6c364c369c28f1c465e50f661e39737e84bc953 \
+    --hash=sha256:9fa8c8b0c110da289809292b0591220d3a7b53c1526a23021e977d68597893fb
     # via opentelemetry-sdk
 packaging==26.0 \
     --hash=sha256:00243ae351a257117b6a241061796684b084ed1c516a08c48a3f7e147a9d80b4 \
