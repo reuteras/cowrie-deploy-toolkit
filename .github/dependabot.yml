@@ -22,6 +22,22 @@ updates:
       pip:
         patterns:
           - "*"
+    ignore:
+      # pycti 7.x requires fastapi<0.130.0,>=0.129.2
+      - dependency-name: "fastapi"
+        versions: [">=0.130.0"]
+      # pycti 7.x requires opentelemetry-api~=1.35.0
+      - dependency-name: "opentelemetry-api"
+        versions: [">=1.36.0"]
+      # pycti 7.x requires opentelemetry-sdk~=1.35.0
+      - dependency-name: "opentelemetry-sdk"
+        versions: [">=1.36.0"]
+      # tied to opentelemetry-sdk 1.35.x
+      - dependency-name: "opentelemetry-semantic-conventions"
+        versions: [">=0.57b0"]
+      # pycti 7.x requires prometheus-client~=0.22.1
+      - dependency-name: "prometheus-client"
+        versions: [">=0.23.0"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
