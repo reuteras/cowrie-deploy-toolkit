@@ -133,5 +133,12 @@ module = [
 ]
 ignore_missing_imports = true
 
+[tool.uv]
+override-dependencies = [
+    # pycti 6.2.11 pins setuptools~=71.1.0 which is vulnerable (CVE/GHSA path traversal).
+    # Override to force a patched version.
+    "setuptools>=78.1.1",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["scripts"]
