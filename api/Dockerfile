@@ -13,13 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-# Install VCS dependencies separately (pip --require-hashes can't hash VCS repos).
-# setuptools is excluded from the hashed install because pycti 6.x pins an old
-# vulnerable version (~=71.1.0) that we override here with the patched release.
+# Install VCS dependencies separately (pip --require-hashes can't hash VCS repos)
 RUN pip install --no-cache-dir "cowrie @ git+https://github.com/cowrie/cowrie@fb38e08c729a8d6f0aae2ed1f9eba6730a34718d" && \
-    grep -v "^cowrie @\|^setuptools==" requirements.txt > /tmp/requirements-hashed.txt && \
-    pip install --no-cache-dir --require-hashes -r /tmp/requirements-hashed.txt && \
-    pip install --no-cache-dir "setuptools>=78.1.1"
+    grep -v "^cowrie @" requirements.txt > /tmp/requirements-hashed.txt && \
+    pip install --no-cache-dir --require-hashes -r /tmp/requirements-hashed.txt
 
 # Copy application code
 COPY . .
