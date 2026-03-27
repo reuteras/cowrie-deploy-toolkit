@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 
 dependencies = [
     # HTTP requests (VirusTotal)
-    "requests>=2.31.0",
+    "requests>=2.33.0",
 
     # GeoIP lookups (MaxMind GeoLite2)
     "geoip2>=4.7.0",
@@ -52,7 +52,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "cowrie @ git+https://github.com/cowrie/cowrie@v2.9.11",
+    "cowrie @ git+https://github.com/cowrie/cowrie@v2.9.15",
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
@@ -134,3 +134,9 @@ ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["scripts"]
+
+[tool.uv]
+override-dependencies = [
+    # cowrie 2.9.15 pins requests==2.32.5 which is vulnerable to GHSA-gc5v-m9x4-r6x2
+    "requests>=2.33.0",
+]
