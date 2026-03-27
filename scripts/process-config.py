@@ -110,23 +110,6 @@ def generate_docker_env_file(config: dict) -> str:
     reporting = shared.get("reporting", config.get("reporting", {}))
     advanced = shared.get("advanced", config.get("advanced", {}))
 
-    # OpenCTI settings
-    if advanced:
-        for key in [
-            "opencti_enabled",
-            "opencti_url",
-            "opencti_api_key",
-            "opencti_ssl_verify",
-            "opencti_auto_push",
-            "opencti_push_threshold",
-        ]:
-            if key in advanced:
-                value = advanced[key]
-                # Convert boolean to string
-                if isinstance(value, bool):
-                    value = "true" if value else "false"
-                lines.append(f"{key.upper()}={value}")
-
     # VirusTotal and AbuseIPDB
     if reporting:
         if "virustotal_api_key" in reporting:
@@ -148,26 +131,12 @@ def generate_env_file(config: dict) -> str:
     email = shared.get("email", config.get("email", {}))
     advanced = shared.get("advanced", config.get("advanced", {}))
 
-    # Advanced settings (including OpenCTI)
+    # Advanced settings
     if advanced:
         lines.append("# Advanced Configuration")
-        # Handle OpenCTI settings specifically
-        opencti_keys = [
-            "opencti_enabled",
-            "opencti_url",
-            "opencti_api_key",
-            "opencti_ssl_verify",
-            "opencti_auto_push",
-            "opencti_push_threshold",
-        ]
         for key, value in advanced.items():
-            if key in opencti_keys:
-                # Convert TOML key to environment variable name
-                env_var = key.upper()
-                lines.append(f'export {env_var}="{value}"')
-            elif key not in opencti_keys:  # Other advanced settings
-                env_var = key.upper()
-                lines.append(f'export {env_var}="{value}"')
+            env_var = key.upper()
+            lines.append(f'export {env_var}="{value}"')
         lines.append("")
 
     # VirusTotal

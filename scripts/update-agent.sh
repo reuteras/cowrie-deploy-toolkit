@@ -430,7 +430,7 @@ update_api() {
         log_warning "Could not determine SERVER_IP or HONEYPOT_HOSTNAME"
     fi
 
-    # Source report.env to get OpenCTI and other API environment variables
+    # Source report.env to get API environment variables
     if [ -f "${COWRIE_DIR}/etc/report.env" ]; then
         log_info "Loading environment from report.env..."
         # shellcheck source=/dev/null

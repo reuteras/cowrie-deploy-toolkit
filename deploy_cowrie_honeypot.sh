@@ -1808,7 +1808,7 @@ docker network rm cowrie-internal 2>/dev/null || true
 if [ "$ENABLE_API" = "true" ] && [ -f docker-compose.api.yml ]; then
   echo "[remote] API is enabled, including docker-compose.api.yml"
 
-  # Source report.env to get OpenCTI and other API environment variables
+  # Source report.env to get API environment variables
   if [ -f /opt/cowrie/etc/report.env ]; then
     echo "[remote] Loading environment from report.env..."
     # shellcheck source=/dev/null

@@ -129,14 +129,6 @@ def test_optional_dependencies():
         else:
             print("⚠️  STIX2 library not available (optional)")
 
-        # Test OpenCTI availability
-        from api.services.opencti_client import OPENCTI_AVAILABLE
-
-        if OPENCTI_AVAILABLE:
-            print("✅ PyCTI library is available")
-        else:
-            print("⚠️  PyCTI library not available (optional)")
-
         return True
 
     except Exception as e:

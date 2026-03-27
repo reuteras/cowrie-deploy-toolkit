@@ -528,7 +528,7 @@ sync_config() {
         log_info "  - Uploading docker.env to ${name}..."
         if scp_copy "${temp_docker_env}" "root@${ts_host}:/opt/cowrie/etc/docker.env" "${ssh_port}" > /dev/null 2>&1; then
             ssh_exec "${ts_host}" "chmod 600 /opt/cowrie/etc/docker.env" "${ssh_port}" > /dev/null 2>&1
-            log_success "docker.env uploaded (OpenCTI, VT, AbuseIPDB env vars)"
+            log_success "docker.env uploaded (VT, AbuseIPDB env vars)"
         else
             log_warning "Failed to upload docker.env"
         fi
@@ -550,7 +550,7 @@ sync_config() {
         log_warning "Could not restart event-indexer (may not be installed)"
     fi
 
-    # Restart API container to pick up new docker.env (OpenCTI config)
+    # Restart API container to pick up new docker.env
     log_info "Restarting API container to apply new configuration..."
     if ssh_exec "${ts_host}" "cd /opt/cowrie && docker compose -f docker-compose.yml -f docker-compose.api.yml up -d --no-deps --force-recreate cowrie-api 2>/dev/null || true" "${ssh_port}" > /dev/null 2>&1; then
         log_success "API container restarted with new configuration"
