@@ -10,7 +10,6 @@ Provides API endpoints for attack cluster analysis:
 """
 
 import logging
-import os
 from typing import Optional
 
 from config import config
@@ -765,4 +764,3 @@ async def get_stix_info():
     except Exception as e:
         logger.error(f"Failed to get STIX info: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
-

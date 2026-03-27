@@ -108,7 +108,7 @@ def generate_docker_env_file(config: dict) -> str:
 
     shared = config.get("shared", {})
     reporting = shared.get("reporting", config.get("reporting", {}))
-    advanced = shared.get("advanced", config.get("advanced", {}))
+    shared.get("advanced", config.get("advanced", {}))
 
     # VirusTotal and AbuseIPDB
     if reporting:
