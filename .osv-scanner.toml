@@ -1,3 +1,5 @@
 [[IgnoredVulns]]
 id = "GHSA-5239-wwwm-4pmq"
 reason = "Not relevant for this project and no patch"
+id = " GHSA-m959-cc7f-wv43"
+reason = "Not relevant for this project"
