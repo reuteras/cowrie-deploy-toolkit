@@ -139,4 +139,5 @@ packages = ["scripts"]
 override-dependencies = [
     # cowrie 2.9.15 pins requests==2.32.5 which is vulnerable to GHSA-gc5v-m9x4-r6x2
     "requests>=2.33.0",
+    "cryptography>=46.0.6",
 ]
