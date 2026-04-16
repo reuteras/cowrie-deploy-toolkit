@@ -671,7 +671,7 @@ api = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
-    { name = "python-multipart", specifier = ">=0.0.21" },
+    { name = "python-multipart", specifier = ">=0.0.26" },
     { name = "sse-starlette", specifier = ">=3.1.2" },
     { name = "stix2", specifier = ">=3.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.40.0" },
@@ -911,6 +911,7 @@ dependencies = [
     { name = "zope-event" },
     { name = "zope-interface" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/20/27/1062fa31333dc3428a1f5f33cd6598b0552165ba679ca3ba116de42c9e8e/gevent-26.4.0.tar.gz", hash = "sha256:288d03addfccf0d1c67268358b6759b04392bf3bc35d26f3d9a45c82899c292d", size = 6242440, upload-time = "2026-04-09T12:08:19.482Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/12/0e/330c4788860520850b7f4c6f84dd8591df5172cfd3f2796c046704ee879e/gevent-26.4.0-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:201323a5fb9a0646a0c7b384395ca55d60ee83200677919229df0648c4b78e6c", size = 1767278, upload-time = "2026-04-08T22:23:16.491Z" },
     { url = "https://files.pythonhosted.org/packages/cf/27/717593d7cce74a2fd6bee0713793518e0398132303d5267f02dd587c5945/gevent-26.4.0-cp311-cp311-manylinux_2_28_ppc64le.whl", hash = "sha256:82d68a60a4207826db295b4e80a204c9d392ce78ccc15679195faeb9e29d8388", size = 1861609, upload-time = "2026-04-08T22:27:09.302Z" },
@@ -1916,11 +1917,11 @@ wheels = [
 
 [[package]]
 name = "python-multipart"
-version = "0.0.24"
+version = "0.0.26"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8a/45/e23b5dc14ddb9918ae4a625379506b17b6f8fc56ca1d82db62462f59aea6/python_multipart-0.0.24.tar.gz", hash = "sha256:9574c97e1c026e00bc30340ef7c7d76739512ab4dfd428fec8c330fa6a5cc3c8", size = 37695, upload-time = "2026-04-05T20:49:13.829Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/71/b145a380824a960ebd60e1014256dbb7d2253f2316ff2d73dfd8928ec2c3/python_multipart-0.0.26.tar.gz", hash = "sha256:08fadc45918cd615e26846437f50c5d6d23304da32c341f289a617127b081f17", size = 43501, upload-time = "2026-04-10T14:09:59.473Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/73/89930efabd4da63cea44a3f438aeb753d600123570e6d6264e763617a9ce/python_multipart-0.0.24-py3-none-any.whl", hash = "sha256:9b110a98db707df01a53c194f0af075e736a770dc5058089650d70b4a182f950", size = 24420, upload-time = "2026-04-05T20:49:12.555Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/22/f1925cdda983ab66fc8ec6ec8014b959262747e58bdca26a4e3d1da29d56/python_multipart-0.0.26-py3-none-any.whl", hash = "sha256:c0b169f8c4484c13b0dcf2ef0ec3a4adb255c4b7d18d8e420477d2b1dd03f185", size = 28847, upload-time = "2026-04-10T14:09:58.131Z" },
 ]
 
 [[package]]
