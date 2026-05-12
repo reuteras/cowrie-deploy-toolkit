@@ -1,5 +1,8 @@
 # Cowrie Deploy Toolkit
 
+**Update 2026-05-12:** Since I currently don't run this I have archived this
+project. If and when I use it again that will change.
+
 Deploy realistic [Cowrie](https://github.com/cowrie/cowrie) SSH honeypots on Hetzner Cloud with anti-fingerprinting features.
 
 ## Features
