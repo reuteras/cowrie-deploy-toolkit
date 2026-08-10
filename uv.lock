@@ -716,7 +716,7 @@ api = [
     { name = "python-multipart", specifier = ">=0.0.26" },
     { name = "sse-starlette", specifier = ">=3.1.2" },
     { name = "stix2", specifier = ">=3.0.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.40.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.46.0" },
 ]
 dev = [
     { name = "cowrie", git = "https://github.com/cowrie/cowrie?rev=v2.9.15" },
